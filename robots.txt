@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://katrielmoses.github.io/voidaccess/sitemap.xml

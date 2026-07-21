@@ -3,23 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VoidAccess — Self-hostable OSINT for threat intelligence</title>
-  <meta name="description" content="Self-hostable OSINT for turning dark-web research queries into structured threat intelligence.">
+  <title>VoidAccess &mdash; Free Dark Web OSINT Tool | Self-Hosted Threat Intelligence</title>
+  <meta name="description" content="VoidAccess is a free, open-source dark web OSINT platform. Automated dark web scraping, clearnet investigation, entity extraction, and threat intelligence reporting &mdash; self-hosted, no subscription required.">
   <meta name="theme-color" content="#0b0c1a">
   <link rel="canonical" href="https://katrielmoses.github.io/voidaccess/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://katrielmoses.github.io/voidaccess/">
-  <meta property="og:title" content="VoidAccess — Dark-web OSINT, structured">
-  <meta property="og:description" content="Collection, enrichment, relationship mapping, and export in one self-hosted workflow.">
+  <meta property="og:title" content="VoidAccess &mdash; Free Dark Web OSINT Tool | Self-Hosted Threat Intelligence">
+  <meta property="og:description" content="Automated dark web scraping, clearnet investigation, and structured threat intelligence &mdash; self-hosted, open source, no subscription.">
   <meta property="og:image" content="https://katrielmoses.github.io/voidaccess/public/terminal-hero.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="VoidAccess — Dark-web OSINT, structured">
-  <meta name="twitter:description" content="Collection, enrichment, relationship mapping, and export in one self-hosted workflow.">
+  <meta name="twitter:title" content="VoidAccess &mdash; Free Dark Web OSINT Tool | Self-Hosted Threat Intelligence">
+  <meta name="twitter:description" content="Automated dark web scraping, clearnet investigation, and structured threat intelligence &mdash; self-hosted, open source, no subscription.">
   <meta name="twitter:image" content="https://katrielmoses.github.io/voidaccess/public/terminal-hero.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles-v2.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "VoidAccess",
+    "applicationCategory": "SecurityApplication",
+    "operatingSystem": "Cross-platform (Linux, macOS, Windows)",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "description": "VoidAccess is a free, self-hosted dark web OSINT platform for automated threat intelligence collection. It performs dark web scraping across Tor, clearnet investigation across GitHub, GitLab, paste sites, and security RSS feeds, then extracts entities, enriches indicators, and maps relationships into structured threat intelligence reports.",
+    "url": "https://katrielmoses.github.io/voidaccess/",
+    "downloadUrl": "https://pypi.org/project/voidaccess/",
+    "softwareVersion": "1.7.2",
+    "license": "https://github.com/KatrielMoses/VoidAccess/blob/main/LICENSE"
+  }
+  </script>
 </head>
 <body>
   <header class="site-header shell">
@@ -35,6 +50,7 @@
       <div class="eyebrow"><span class="status-dot"></span> open source · self-hosted · MIT</div>
       <h1>Dark-web intelligence,<br><em>structured.</em></h1>
       <p class="hero-copy">Turn research queries into collection, enrichment, relationship mapping, and export — in one workflow.</p>
+      <p class="hero-detail">VoidAccess automates dark web OSINT investigations end to end — scraping Tor, clearnet sources, and paste sites, then extracting indicators and building a structured intelligence graph without a subscription or vendor lock-in.</p>
       <div class="hero-actions"><a class="button button-primary" href="https://github.com/KatrielMoses/VoidAccess" target="_blank" rel="noreferrer">View on GitHub <span>↗</span></a><a class="button button-quiet" href="https://github.com/KatrielMoses/VoidAccess/blob/main/docs/architecture.md" target="_blank" rel="noreferrer">Read the docs <span>↗</span></a></div>
       <figure class="terminal-frame hero-terminal"><div class="terminal-bar"><span class="window-dots"><i></i><i></i><i></i></span><span>void@tor · ~/voidaccess</span><span class="terminal-live">● live</span></div><img src="public/terminal-hero.png" alt="VoidAccess terminal output showing the 13-step investigation pipeline" fetchpriority="high"></figure>
       <div class="install-row"><div class="install-command"><span class="prompt">$</span><code>pip install voidaccess</code></div><button class="copy-button" data-copy="pip install voidaccess"><span class="copy-label">Copy</span><span aria-hidden="true">⌘</span></button></div>
@@ -50,6 +66,7 @@
     <section class="section shell" id="pipeline">
       <div class="section-kicker">02 / how it works</div>
       <div class="section-heading"><h2>From query to<br><em>intelligence graph.</em></h2><a class="text-link" href="https://github.com/KatrielMoses/VoidAccess/blob/main/docs/architecture.md#2-investigation-pipeline" target="_blank" rel="noreferrer">Read full architecture <span>↗</span></a></div>
+      <p class="section-intro">Every VoidAccess investigation runs the same dark web scraping and clearnet investigation pipeline — from a natural language query to an analyst-ready report, fully automated and self-hosted on your own infrastructure.</p>
       <div class="pipeline"><div class="pipeline-line"></div><ol><li><span>01</span><b>Refine</b><small>query</small></li><li><span>02</span><b>Collect</b><small>Tor + open web</small></li><li><span>03</span><b>Filter</b><small>signal</small></li><li><span>04</span><b>Enrich</b><small>threat intel</small></li><li><span>05</span><b>Discover</b><small>linked pages</small></li><li><span>06</span><b>Extract</b><small>entities</small></li><li><span>07</span><b>Map</b><small>relationships</small></li><li><span>08</span><b>Export</b><small>analyst-ready</small></li></ol></div>
       <p class="pipeline-foot"><strong>13 steps</strong> under the hood · parallel collection · cache-aware enrichment · structured exports</p>
     </section>
@@ -57,6 +74,7 @@
     <section class="section shell" id="extracts">
       <div class="section-kicker">03 / what it extracts</div>
       <div class="section-heading"><h2>Find the signal<br><em>inside the noise.</em></h2><p>Regex, NER, and optional LLM analysis surface indicators and identity context.</p></div>
+      <p class="section-intro">Whether you're running a dark web investigation, a clearnet OSINT sweep, or both together, VoidAccess extracts the indicators that matter — cross-referenced against real threat intelligence sources.</p>
       <div class="extract-grid"><div class="extract-card"><span class="extract-index">01</span><h3>Network indicators</h3><p>IPv4 · IPv6 · domains · URLs · .onion · PGP keys</p></div><div class="extract-card"><span class="extract-index">02</span><h3>File indicators</h3><p>MD5 · SHA-1 · SHA-256 · malware families</p></div><div class="extract-card"><span class="extract-index">03</span><h3>Cryptocurrency</h3><p>Bitcoin · Ethereum · Monero · Litecoin · Zcash · Solana</p></div><div class="extract-card"><span class="extract-index">04</span><h3>Identity & actors</h3><p>Handles · people · organizations · ransomware groups</p></div><div class="extract-card"><span class="extract-index">05</span><h3>Credentials</h3><p>Cloud keys · tokens · JWTs · API keys · stealer logs</p></div><div class="extract-card"><span class="extract-index">06</span><h3>Detection content</h3><p>YARA · Nuclei · Snort · Suricata indicators</p></div></div>
       <div class="sources-strip"><span>08 enrichment layers</span><span>Threat feeds</span><span>IP + domain context</span><span>File + identity context</span><span>Blockchain</span><span>Open-web collection</span></div>
     </section>
@@ -77,6 +95,11 @@
     --no-llm --no-tor --depth shallow
 
 <span class="green">✓</span> investigation queued</code></pre></div></section>
+    <section class="section shell seo-close">
+      <div class="section-kicker">06 / built for investigation</div>
+      <h2>Built for dark web and clearnet OSINT</h2>
+      <p>VoidAccess is built for security researchers, SOC analysts, and threat intelligence teams who need dark web OSINT and clearnet investigation in one tool. It replaces manual dark web scraping workflows with an automated pipeline — Tor search, paste site collection, GitHub and GitLab scraping, and security RSS monitoring — enriched against real threat intelligence feeds and exported in formats analysts already use.</p>
+    </section>
   </main>
 
   <footer class="site-footer shell"><a class="wordmark" href="#top"><span>voidaccess</span></a><p>Self-hostable OSINT for authorized security research.</p><div class="footer-links"><a href="https://github.com/KatrielMoses/VoidAccess" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://pypi.org/project/voidaccess/" target="_blank" rel="noreferrer">PyPI ↗</a><a href="https://github.com/KatrielMoses/VoidAccess/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT License ↗</a><a href="https://github.com/KatrielMoses/VoidAccess/blob/main/docs/USAGE_POLICY.md" target="_blank" rel="noreferrer">Usage policy ↗</a></div></footer>

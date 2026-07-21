@@ -91,6 +91,13 @@ h2 em { color: #7169ee; font-style: normal; }
   font-size: 18px;
   line-height: 1.7;
 }
+.hero-detail {
+  max-width: 700px;
+  margin: 16px auto 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.75;
+}
 .hero-actions {
   display: flex;
   justify-content: center;
@@ -195,6 +202,13 @@ h2 em { color: #7169ee; font-style: normal; }
   color: var(--muted);
   font-size: 15px;
   line-height: 1.8;
+}
+.section-intro {
+  max-width: 790px;
+  margin: -18px 0 34px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.75;
 }
 .text-link { color: #9c98ff; font: 13px var(--mono); white-space: nowrap; }
 
@@ -332,6 +346,8 @@ h2 em { color: #7169ee; font-style: normal; }
 }
 .quickstart-copy h2 { margin: 20px 0 22px; }
 .quickstart-copy p { margin-bottom: 28px; }
+.seo-close h2 { max-width: 560px; margin: 0 0 18px; font-size: 34px; line-height: 1.1; letter-spacing: -.04em; }
+.seo-close p { max-width: 790px; margin: 0; color: var(--muted); font-size: 15px; line-height: 1.8; }
 .quick-terminal pre {
   padding: 23px 25px;
   margin: 0;
