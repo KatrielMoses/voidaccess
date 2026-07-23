@@ -311,6 +311,28 @@ async def extract_with_llm(
         for key in merged:
             merged[key] = list(set(merged[key]))
 
+        # belief-gate verification pass.  The LLM has *declared* which
+        # format-constrained IOCs it found; a deterministic parser now
+        # computes which of those are actually well-formed AND present in the
+        # source text (required - present).  Truncated hashes, hallucinated
+        # CVEs and invented MITRE techniques are dropped here — before they
+        # reach the result dict — so they never clear the downstream
+        # confidence floor on method prior alone.  Only the LLM-added,
+        # format-constrained keys are touched; regex/NER values already in
+        # `result` and non-gated LLM keys pass through untouched.  Never
+        # raises; disable with VOIDACCESS_VERIFY_LLM_IOCS=false.
+        try:
+            from extractor.verify_gate import gate_llm_merged, is_enabled
+            if is_enabled():
+                merged, _verdicts = gate_llm_merged(merged, text)
+                for _v in _verdicts:
+                    logger.info(
+                        "verify-gate: rejected %d/%d unverifiable %s from LLM",
+                        len(_v.missing), len(_v.required), _v.entity_type,
+                    )
+        except Exception as _gate_exc:
+            logger.debug("verify-gate skipped (non-fatal): %s", _gate_exc)
+
         # Merge LLM results into result dict (keyed by internal entity type)
         for llm_key, entity_type in _LLM_KEY_TO_TYPE.items():
             new_vals = merged[llm_key]
