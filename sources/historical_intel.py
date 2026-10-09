@@ -55,8 +55,11 @@ _mitre_feed = CachedFeed(
     _MITRE_CACHE,
     ttl_seconds=604800,
 )
+# /news/press-releases/rss 404s (verified 2026-10-09). sources/rss_scraper.py
+# reads the all-news replacement /news/rss and filters downstream; here the
+# lookup is on press-release titles only, so restrict the feed with ?type=.
 _fbi_feed = CachedFeed(
-    "https://www.justice.gov/news/press-releases/rss",
+    "https://www.justice.gov/news/rss?type=press_release",
     _FBI_CACHE,
     ttl_seconds=43200)
 

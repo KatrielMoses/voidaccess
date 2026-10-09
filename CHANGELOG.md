@@ -2,6 +2,18 @@
 
 All notable changes to VoidAccess are documented here.
 
+## [Unreleased]
+
+- Point the CISA advisories feed at `cybersecurity-advisories/all.xml` and the
+  DOJ press-release feed at `news/rss?type=press_release`; the former
+  `all.json` and `news/press-releases/rss` endpoints return 404, which every
+  investigation logged repeatedly as `CachedFeed: HTTP 404`.
+- `CachedFeed` now parses RSS/Atom bodies (via `feedparser`) into JSON entry
+  lists with the keys the former JSON feeds exposed, normalizes publication
+  dates to ISO-8601, and treats an HTTP 200 non-feed body (WAF challenge or
+  maintenance page) as a fetch failure so the stale cache is preserved instead
+  of being overwritten with an empty list.
+
 ## [2.0.3] - 2026-08-04
 
 - Enforce owner-only permissions on the project `.env` in both CLI configure

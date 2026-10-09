@@ -20,7 +20,8 @@ from sources.cache import CachedFeed
 logger = logging.getLogger(__name__)
 
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-CISA_ADVISORIES_URL = "https://www.cisa.gov/cybersecurity-advisories/all.json"
+# The former all.json endpoint 404s (verified 2026-10-09); CISA now serves advisories as RSS.
+CISA_ADVISORIES_URL = "https://www.cisa.gov/cybersecurity-advisories/all.xml"
 
 _KEV_CACHE = "/tmp/voidaccess_cisa_kev.json"
 _ADVISORIES_CACHE = "/tmp/voidaccess_cisa_advisories.json"
