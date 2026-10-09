@@ -56,6 +56,110 @@ def _text_response(text: str, status: int = 200) -> MagicMock:
 
 
 class TestCachedFeed(unittest.TestCase):
+    # <category> exercises the tags mapping; note the live CISA all.xml feed
+    # (checked 2026-10-09) emits no categories, so tags are [] in production.
+    _RSS = """<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel><title>All CISA Advisories</title>
+<item>
+  <title>Siemens SIMATIC</title>
+  <link>https://www.cisa.gov/news-events/ics-advisories/icsa-26-281-01</link>
+  <pubDate>Thu, 08 Oct 2026 12:00:00 +0000</pubDate>
+  <category>ICS</category>
+</item>
+</channel></rss>"""
+
+    def test_parse_feed_body_rss_normalizes_entries(self):
+        """RSS bodies (CISA advisories, DOJ press) flatten to dicts with JSON-era keys."""
+        from sources.cache import _parse_feed_body
+
+        entries = _parse_feed_body(self._RSS, "application/rss+xml; charset=utf-8")
+        self.assertEqual(len(entries), 1)
+        e = entries[0]
+        self.assertEqual(e["title"], "Siemens SIMATIC")
+        self.assertEqual(e["url"], e["link"])
+        self.assertTrue(e["link"].endswith("icsa-26-281-01"))
+        self.assertEqual(e["datePublished"], e["published"])
+        self.assertEqual(e["published"], "2026-10-08T12:00:00+00:00")
+        self.assertEqual(e["tags"], ["ICS"])
+
+    def test_parse_feed_body_atom_updated_fallback(self):
+        """Atom entries that carry only <updated> still get a timestamp."""
+        from sources.cache import _parse_feed_body
+
+        atom = (
+            '<feed xmlns="http://www.w3.org/2005/Atom"><title>t</title>'
+            '<entry><title>e</title><link href="https://example.com/e"/>'
+            "<updated>2026-10-08T12:00:00Z</updated></entry></feed>"
+        )
+        e = _parse_feed_body(atom, "application/atom+xml")[0]
+        self.assertEqual(e["published"], "2026-10-08T12:00:00+00:00")
+        self.assertEqual(e["url"], "https://example.com/e")
+
+    def test_parse_feed_body_two_digit_year_normalized(self):
+        """The live CISA feed emits RFC-822 dates with a 2-digit year; they must come out as ISO."""
+        from sources.cache import _parse_feed_body
+
+        rss = self._RSS.replace("Thu, 08 Oct 2026 12:00:00 +0000", "Thu, 08 Oct 26 12:00:00 +0000")
+        self.assertEqual(_parse_feed_body(rss, "application/rss+xml")[0]["published"], "2026-10-08T12:00:00+00:00")
+
+    def test_parse_feed_body_empty_but_valid_feed_returns_empty_list(self):
+        from sources.cache import _parse_feed_body
+
+        rss = '<?xml version="1.0"?><rss version="2.0"><channel><title>Empty</title></channel></rss>'
+        self.assertEqual(_parse_feed_body(rss, "application/rss+xml"), [])
+
+    def test_parse_feed_body_html_error_page_raises(self):
+        """An HTTP-200 HTML page (WAF challenge, maintenance page) must not be cached as an empty feed."""
+        from sources.cache import _parse_feed_body
+
+        html = "<!DOCTYPE html><html><head><title>Access Denied</title></head><body>blocked</body></html>"
+        with self.assertRaises(ValueError):
+            _parse_feed_body(html, "text/html; charset=utf-8")
+        with self.assertRaises(ValueError):
+            _parse_feed_body(html, "")
+        with self.assertRaises(ValueError):
+            _parse_feed_body(html, "application/xml")
+
+    def test_cached_feed_html_200_falls_back_to_stale_cache(self):
+        """End-to-end: a 200 HTML body leaves the stale disk cache intact and returns it."""
+        import sources.cache as cache_mod
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stale_file = os.path.join(tmpdir, "stale.json")
+            stale_payload = {"vulnerabilities": [{"cveID": "CVE-2021-44228"}]}
+            with open(stale_file, "w") as f:
+                json.dump(stale_payload, f)
+            old_mtime = time.time() - 2000
+            os.utime(stale_file, (old_mtime, old_mtime))
+
+            feed = cache_mod.CachedFeed(url="https://example.com/html-200.json", cache_path=stale_file, ttl_seconds=300)
+
+            resp = _text_response("<!DOCTYPE html><html><body>Access Denied</body></html>")
+            resp.headers = {"Content-Type": "text/html"}
+            mock_session = MagicMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=False)
+            mock_session.get = MagicMock(return_value=resp)
+
+            with patch("aiohttp.ClientSession", return_value=mock_session):
+                result = asyncio.run(feed.fetch())
+
+            self.assertEqual(result, stale_payload)
+            with open(stale_file) as f:
+                self.assertEqual(json.load(f), stale_payload)
+
+    def test_parse_feed_body_json_passthrough(self):
+        from sources.cache import _parse_feed_body
+
+        data = _parse_feed_body('{"vulnerabilities": [{"cveID": "CVE-2021-44228"}]}', "application/json")
+        self.assertEqual(data["vulnerabilities"][0]["cveID"], "CVE-2021-44228")
+
+    def test_parse_feed_body_detects_xml_without_content_type(self):
+        from sources.cache import _parse_feed_body
+
+        entries = _parse_feed_body(self._RSS, "")
+        self.assertEqual(entries[0]["title"], "Siemens SIMATIC")
+
     def test_fresh_cache_returns_cached_data(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_path = os.path.join(tmpdir, "feed.json")
