@@ -2,6 +2,15 @@
 
 All notable changes to VoidAccess are documented here.
 
+## Unreleased
+
+- Align CLI and API content-safety gates: Tor and side-source page text is
+  scanned via shared `gate_pages()` before persistence, vector cache, extraction,
+  or summarization; URL and entity gates fail closed on errors.
+- Add `VOIDACCESS_SAFETY_BYPASS_PROMPT` (`on` default, `off` for cloud runners)
+  to omit the LLM authorization preamble from refine, filter, and summary prompts
+  without disabling mandatory content filters.
+
 ## [2.0.3] - 2026-08-04
 
 - Enforce owner-only permissions on the project `.env` in both CLI configure

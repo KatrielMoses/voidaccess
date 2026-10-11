@@ -859,27 +859,6 @@ async def _run_investigation(
             display.update_step("Scraping pages", "skip", "no links")
     _metric_finish("scraping")
 
-    # --- Step 4.1 — discover seeds from scraped pages --------------------
-    # scrape_multiple already submits discovered seeds fire-and-forget, but
-    # the CLI also wants an explicit count to show in the progress display
-    # and to surface in the final report payload.
-    seeds_discovered = 0
-    try:
-
-        seeds_discovered = await _discover_seeds_from_pages(
-            scraped_pages,
-            investigation_id=investigation_id,
-        )
-        if seeds_discovered > 0:
-            display.update_step(
-                "Discovering seeds",
-                "ok",
-                f"{seeds_discovered} new .onion addresses",
-            )
-    except Exception as exc:
-        logger.debug("Seed discovery from CLI pages failed (non-fatal): %s", exc)
-        display.update_step("Discovering seeds", "skip", "no new seeds")
-
     # Merge only clearnet pages that passed the relevance filter.
     if no_llm:
         filtered_clearnet_pages = _annotate_no_llm_dependency_relationships(
@@ -926,8 +905,31 @@ async def _run_investigation(
                 ),
             })
 
+    from utils.content_safety import gate_pages
     from utils.content_dedup import deduplicate_page_records
+
+    scraped_pages, _safety_dropped = gate_pages(scraped_pages)
     scraped_pages = deduplicate_page_records(scraped_pages)
+
+    # --- Step 4.1 — discover seeds from gated pages only -----------------
+    # scrape_multiple already submits discovered seeds fire-and-forget, but
+    # the CLI also wants an explicit count to show in the progress display
+    # and to surface in the final report payload.
+    seeds_discovered = 0
+    try:
+        seeds_discovered = await _discover_seeds_from_pages(
+            scraped_pages,
+            investigation_id=investigation_id,
+        )
+        if seeds_discovered > 0:
+            display.update_step(
+                "Discovering seeds",
+                "ok",
+                f"{seeds_discovered} new .onion addresses",
+            )
+    except Exception as exc:
+        logger.debug("Seed discovery from CLI pages failed (non-fatal): %s", exc)
+        display.update_step("Discovering seeds", "skip", "no new seeds")
 
     # Resolve page_ids from DB (scrape_multiple persisted .onion pages)
     page_ids = await asyncio.to_thread(_lookup_page_ids, [p["url"] for p in scraped_pages])
