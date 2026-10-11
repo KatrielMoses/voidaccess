@@ -340,3 +340,22 @@ class InvestigationDisplay:
         self.console.print(panel)
 
 
+class RichDisplaySink:
+    """The Rich live display as a progress sink.
+
+    Replays the pipeline's UI calls (``update_step``, ``update_substep``, ...)
+    on an :class:`InvestigationDisplay`, in order and synchronously, so terminal
+    output is identical to calling the display directly. It is the one inline
+    sink: rendering must stay ordered with the console prints around it.
+    """
+
+    inline = True
+
+    def __init__(self, display: "InvestigationDisplay"):
+        self.display = display
+
+    def handle(self, event) -> None:
+        if event.type != "display" or not event.call:
+            return
+        getattr(self.display, event.call)(*(event.args or []))
+
