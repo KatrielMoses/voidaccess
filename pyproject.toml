@@ -124,6 +124,7 @@ include = [
     "monitor*",
     "crawler*",
     "pacing*",
+    "progress*",
     "owned_index*",
     "index_population*",
     "freshness*",
