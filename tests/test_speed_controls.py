@@ -94,3 +94,33 @@ def test_enrichment_timeout_is_opt_in(monkeypatch):
     assert inv._explicit_enrichment_timeout() is None
     monkeypatch.setenv("VOIDACCESS_ENRICHMENT_TIMEOUT", "25")
     assert inv._explicit_enrichment_timeout() == 25
+
+
+def test_llm_chunk_concurrency_preserves_order_and_overlaps(monkeypatch):
+    import extractor.llm_extract as le
+
+    text = ("alpha " * 3000) + ("beta " * 3000) + ("gamma " * 3000)
+    seen, active, peak = [], 0, 0
+
+    async def fake_chunk(chunk, llm):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        seen.append(chunk[:5])
+        return '{"threat_actors": ["' + chunk.split()[0] + '"]}'
+
+    monkeypatch.setattr(le, "_extract_chunk", fake_chunk)
+
+    async def run():
+        return await le.extract_with_llm(text, object(), {}, disable_cache=True, max_chunk_chars=6000)
+
+    monkeypatch.delenv("VOIDACCESS_LLM_CHUNK_CONCURRENCY", raising=False)
+    seq = asyncio.run(run())
+    assert peak == 1
+    monkeypatch.setenv("VOIDACCESS_LLM_CHUNK_CONCURRENCY", "4")
+    peak = 0
+    par = asyncio.run(run())
+    assert peak > 1
+    assert par == seq

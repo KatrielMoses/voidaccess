@@ -34,7 +34,7 @@ All notable changes to VoidAccess are documented here.
   JSONL / callback sinks, `voidaccess investigate --events-jsonl PATH`.
 - `VOIDACCESS_ENRICHMENT_SOURCES` allowlist for enrichment sources.
 - `VOIDACCESS_SEARCH_WORKERS`, `VOIDACCESS_SCRAPE_WORKERS`,
-  `VOIDACCESS_EXTRACT_CONCURRENCY`, `VOIDACCESS_SEARCH_DEADLINE`,
+  `VOIDACCESS_EXTRACT_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_CONCURRENCY`, `VOIDACCESS_SEARCH_DEADLINE`,
   `VOIDACCESS_CONCURRENT_COLLECT`; `VOIDACCESS_ENRICHMENT_TIMEOUT` is now applied
   on the CLI path when set. See docs/architecture.md section 13.17.
 - `benchmark probe` artifacts report `latency_p90_ms` and `unique_result_share`

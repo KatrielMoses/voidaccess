@@ -20,6 +20,7 @@ Configuration
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
@@ -78,6 +79,21 @@ _LLM_KEY_TO_TYPE: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Cache layer
 # ---------------------------------------------------------------------------
+
+# Opt-in concurrency for the LLM chunk calls of one page.  Default 1 keeps the
+# original one-chunk-at-a-time behaviour.
+LLM_CHUNK_CONCURRENCY_ENV = "VOIDACCESS_LLM_CHUNK_CONCURRENCY"
+LLM_CHUNK_CONCURRENCY_DEFAULT = 1
+
+
+def _llm_chunk_concurrency() -> int:
+    raw = (os.getenv(LLM_CHUNK_CONCURRENCY_ENV) or "").strip()
+    try:
+        value = int(raw) if raw else LLM_CHUNK_CONCURRENCY_DEFAULT
+    except ValueError:
+        return LLM_CHUNK_CONCURRENCY_DEFAULT
+    return max(1, value)
+
 
 def _get_cache_disabled(flag: Optional[bool] = None) -> bool:
     """Check if cache should be disabled (CLI flag overrides env var)."""
@@ -273,10 +289,24 @@ async def extract_with_llm(
 
         # Collect raw chunk responses for per-chunk independent parsing
         chunk_contents: list[str] = []
-        for chunk in chunks:
-            raw = await _extract_chunk(chunk, llm)
-            if raw:
-                chunk_contents.append(raw)
+        chunk_workers = _llm_chunk_concurrency()
+        if chunk_workers <= 1 or len(chunks) <= 1:
+            for chunk in chunks:
+                raw = await _extract_chunk(chunk, llm)
+                if raw:
+                    chunk_contents.append(raw)
+        else:
+            # Opt-in: send a page's chunks concurrently.  gather() preserves
+            # chunk order, so the merge below sees exactly the sequential input.
+            chunk_sem = asyncio.Semaphore(chunk_workers)
+
+            async def _bounded(chunk: str) -> str:
+                async with chunk_sem:
+                    return await _extract_chunk(chunk, llm)
+
+            for raw in await asyncio.gather(*[_bounded(c) for c in chunks]):
+                if raw:
+                    chunk_contents.append(raw)
 
         # Merge dict keyed by LLM output keys — each chunk parsed independently
         merged: dict[str, list] = {key: [] for key in _LLM_KEY_TO_TYPE}
