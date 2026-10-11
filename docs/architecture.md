@@ -1597,6 +1597,7 @@ All of these are unset by default and change nothing for self-hosters. Each over
 | `VOIDACCESS_SCRAPE_WORKERS` | `DEPTH_PRESETS[depth].max_workers` | Concurrent page fetches. |
 | `VOIDACCESS_EXTRACT_CONCURRENCY` | `DEPTH_PRESETS[depth].extract_concurrency` (3 / 5 / 6) | Pages extracted concurrently. |
 | `VOIDACCESS_LLM_CHUNK_CONCURRENCY` | `1` | LLM extraction splits a long page into 12,000-character chunks and sends them one after another. A value above 1 sends a page's chunks concurrently (results are merged in the same order, so output is identical). |
+| `VOIDACCESS_LLM_CHUNK_TIMEOUT` | none | Seconds. Caps one LLM extraction chunk call; a stalled call then contributes nothing instead of holding the extraction stage (one measured run spent 759 s there). |
 | `VOIDACCESS_SEARCH_DEADLINE` | none (wait for the slowest engine) | Seconds. When it passes, the search stage returns the engines that have answered and cancels the rest (reported as `deadline`, not counted against the circuit breaker). |
 | `VOIDACCESS_CONCURRENT_COLLECT` | off | `1` runs the side sources (paste, GitHub, GitLab, RSS, Torch/Haystack, Telegram) concurrently with the Tor engine fan-out instead of after it. |
 | `VOIDACCESS_ENRICHMENT_TIMEOUT` | not enforced on the CLI | Seconds; caps the whole enrichment cluster on the CLI and keeps partial results. |

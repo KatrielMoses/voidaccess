@@ -86,6 +86,21 @@ LLM_CHUNK_CONCURRENCY_ENV = "VOIDACCESS_LLM_CHUNK_CONCURRENCY"
 LLM_CHUNK_CONCURRENCY_DEFAULT = 1
 
 
+# Opt-in cap (seconds) on one LLM chunk call.  Unset keeps the provider client's own
+# behaviour; a stalled request then costs only that chunk, which contributes
+# nothing (the same outcome as any other chunk error).
+LLM_CHUNK_TIMEOUT_ENV = "VOIDACCESS_LLM_CHUNK_TIMEOUT"
+
+
+def _llm_chunk_timeout() -> Optional[float]:
+    raw = (os.getenv(LLM_CHUNK_TIMEOUT_ENV) or "").strip()
+    try:
+        value = float(raw) if raw else 0.0
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
 def _llm_chunk_concurrency() -> int:
     raw = (os.getenv(LLM_CHUNK_CONCURRENCY_ENV) or "").strip()
     try:
@@ -495,9 +510,14 @@ async def _extract_chunk(chunk: str, llm) -> str:
         # legacy handler's stdout as a final guard so partial JSON tokens can
         # never corrupt the CLI's progress/output stream.
         with redirect_stdout(io.StringIO()):
-            response = await silent_llm.ainvoke(prompt)
+            response = await asyncio.wait_for(
+                silent_llm.ainvoke(prompt), timeout=_llm_chunk_timeout()
+            )
         content = response.content if hasattr(response, "content") else str(response)
         return content.strip()
+    except asyncio.TimeoutError:
+        logger.warning("LLM chunk extraction timed out after %ss", _llm_chunk_timeout())
+        return ""
     except Exception as exc:
         logger.warning("LLM chunk extraction failed: %s", exc)
         return ""

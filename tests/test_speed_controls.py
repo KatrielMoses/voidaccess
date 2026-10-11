@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import time
 
 import pytest
 
@@ -124,3 +125,22 @@ def test_llm_chunk_concurrency_preserves_order_and_overlaps(monkeypatch):
     par = asyncio.run(run())
     assert peak > 1
     assert par == seq
+
+
+def test_llm_chunk_timeout_is_opt_in_and_returns_empty(monkeypatch):
+    import extractor.llm_extract as le
+
+    class SlowLLM:
+        def with_config(self, cfg):
+            return self
+
+        async def ainvoke(self, prompt):
+            await asyncio.sleep(5)
+
+    monkeypatch.delenv("VOIDACCESS_LLM_CHUNK_TIMEOUT", raising=False)
+    assert le._llm_chunk_timeout() is None
+    monkeypatch.setenv("VOIDACCESS_LLM_CHUNK_TIMEOUT", "0.2")
+    assert le._llm_chunk_timeout() == 0.2
+    t0 = time.monotonic()
+    assert asyncio.run(le._extract_chunk("text", SlowLLM())) == ""
+    assert time.monotonic() - t0 < 2
