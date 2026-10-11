@@ -6,11 +6,11 @@ All notable changes to VoidAccess are documented here.
 
 ### Default changes (self-hosters will notice these)
 
-- **Packaging:** `pip install voidaccess` now ships 14 packages it previously
+- **Packaging:** `pip install voidaccess` now ships 13 packages it previously
   omitted (`shared_corpus`, `trust_gate`, `netpool`, `jobqueue`, `hygiene`,
   `sanitizer`, `ratelimit`, `observability`, `snapshot_store`,
-  `credential_presence`, `feeds`, `ingest`, `benchmark`, and the new
-  `progress`). A wheel install used to crash on import. `tests/test_packaging.py`
+  `credential_presence`, `feeds`, `ingest`, `benchmark`) plus the new
+  `progress` package. A wheel install used to crash on import. `tests/test_packaging.py`
   builds a wheel and checks it from a clean venv.
 - **CLI page cap:** `voidaccess investigate` now honours `MAX_LLM_PAGES_PER_INV`
   (default unchanged at 10); it was silently ignored before.
