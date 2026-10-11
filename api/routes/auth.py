@@ -4,34 +4,26 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends, status, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from api.auth import (
     LoginRequest, LoginResponse, ResetPasswordRequest,
     verify_password, hash_password, create_access_token,
     get_current_user, CurrentUser,
 )
-from auth.token_blacklist import revoke_token
+from api.rate_limit import rate_limit
+from auth.token_blacklist import revoke_token, is_blacklist_configured
 from db.models import User
 from db.session import get_db
 from sqlalchemy.orm import Session
-from config import REDIS_URL
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DISABLE_RATE_LIMIT = os.getenv("DISABLE_RATE_LIMIT", "false").lower() == "true"
-if DISABLE_RATE_LIMIT:
-    _limiter = None
-else:
-    _limiter = Limiter(key_func=get_remote_address)
+# Per-route limits enforced in-process via the ratelimit substrate (no Redis,
+# no slowapi). These are FastAPI dependencies, so the same limiter that the
+# global middleware and P4 per-key limits use also guards login/reset.
+login_limit = rate_limit(5, 60, scope="login")
+reset_limit = rate_limit(3, 60, scope="reset-password")
 
-
-def _no_op_decorator(func):
-    return func
-
-login_limit = _limiter.limit("5/minute") if _limiter else _no_op_decorator
-reset_limit = _limiter.limit("3/minute") if _limiter else _no_op_decorator
 
 def validate_password_strength(password: str) -> None:
     """
@@ -57,8 +49,12 @@ def validate_password_strength(password: str) -> None:
 
 
 @router.post("/login", response_model=LoginResponse)
-@login_limit
-async def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
+async def login(
+    request: Request,
+    body: LoginRequest,
+    db: Session = Depends(get_db),
+    _rl: None = Depends(login_limit),
+):
     """
     Authenticate with email + password.
     Returns JWT token.
@@ -86,12 +82,12 @@ async def login(request: Request, body: LoginRequest, db: Session = Depends(get_
 
 
 @router.post("/reset-password")
-@reset_limit
 async def reset_password(
     request: Request,
     body: ResetPasswordRequest,
     db: Session = Depends(get_db),
     current: CurrentUser = Depends(get_current_user),
+    _rl: None = Depends(reset_limit),
 ):
     """
     Reset password. Requires valid JWT token.
@@ -148,7 +144,10 @@ async def logout(
         remaining_seconds = int((exp - now).total_seconds())
         if remaining_seconds > 0:
             success = await revoke_token(current.jti, remaining_seconds)
-            if not success and REDIS_URL:
+            # Only surface a hard error when a revocation store is configured
+            # (Redis or DB) yet the write failed. With no store configured,
+            # logout is best-effort by design and never 503s.
+            if not success and is_blacklist_configured():
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="Logout failed due to internal token store error",

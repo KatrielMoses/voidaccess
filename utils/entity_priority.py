@@ -8,6 +8,8 @@ enough variation for it to be meaningful.
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from math import isfinite, log1p
@@ -187,3 +189,172 @@ def score_map(
 ) -> dict[str, dict[str, Any]]:
     """Convenience lookup keyed by the entity id used by both surfaces."""
     return {item["id"]: item for item in score_entities(entities, relationships)}
+
+
+# --------------------------------------------------------------------------- #
+# Low-noise-by-default ranking + non-destructive suppression (P1.6)
+# --------------------------------------------------------------------------- #
+#
+# ``score_entities`` produces the per-entity ``priority_score``.  Ranking and
+# suppression are layered on top *here* — in the one shared module every surface
+# already calls — so the ordering and the ``suppressed`` flag are identical for
+# the same investigation across the API, the CLI export, and the summary feed
+# (the parity the audit called out).  Suppression is deprioritise-and-mark, never
+# delete: every input entity appears in the output, suppressed ones ranked last
+# and flagged with a reason, so an analyst can always drill in (a surface toggle
+# re-includes them).  All levers are the existing signals — the blended
+# ``priority_score`` (confidence + corroboration + freshness) and a per-type
+# display cap — plus a deterministic high-signal exemption.  No ML, no corpus.
+
+# Deterministic P1.3–P1.5 relevance flags (stored as ``corroborating_sources``
+# tags).  Presence exempts an entity from suppression and, among entities with an
+# equal ``priority_score``, surfaces it first.  These are a *display-time*
+# surfacing hint only — they never enter ``priority_score`` (that would break the
+# P1.3 ranking invariant that derived tags do not inflate corroboration).
+HIGH_SIGNAL_TAGS = frozenset(
+    {"kev", "exploit_public", "ransom_wallet", "phishing", "malicious_cert",
+     "pwned_password"}
+)
+_HIGH_SIGNAL_PREFIXES = (
+    "ransom_wallet_", "phishing_", "malicious_cert_", "pwned_password_count_",
+)
+
+# Default priority floor: entities scoring below this are suppressed (unless
+# high-signal).  Tunable via env so the P1-end live-Tor run can sweep it against
+# the committed junk-ratio baseline without a code change.
+DEFAULT_PRIORITY_FLOOR = 0.25
+
+# Per-type *display* caps — within a noisy type only the top-N by priority stay
+# visible; the tail is suppressed (still reachable).  Distinct from the
+# extraction-time ``extractor.pipeline.PER_TYPE_CAPS`` (which bounds what is
+# *stored*); this bounds what is *shown* by default.
+PER_TYPE_DISPLAY_CAPS = {
+    "DATE": 10,
+    "LOCATION": 10,
+    "PERSON_NAME": 15,
+    "ORGANIZATION_NAME": 25,
+}
+
+
+def _priority_floor() -> float:
+    raw = os.getenv("VOIDACCESS_PRIORITY_FLOOR")
+    if raw:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_PRIORITY_FLOOR
+        if 0.0 <= value <= 1.0:
+            return value
+    return DEFAULT_PRIORITY_FLOOR
+
+
+def _coerce_tags(raw: Any) -> tuple[str, ...]:
+    """Normalize ``corroborating_sources`` (a JSON string on ORM rows, a list on
+    API/CLI dicts) into a tuple of tag strings.  Never raises."""
+    if not raw:
+        return ()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return ()
+    if isinstance(raw, (list, tuple)):
+        return tuple(str(item) for item in raw)
+    return ()
+
+
+def _has_high_signal_tag(item: Any) -> bool:
+    for tag in _coerce_tags(_value(item, "corroborating_sources")):
+        if tag in HIGH_SIGNAL_TAGS or tag.startswith(_HIGH_SIGNAL_PREFIXES):
+            return True
+    return False
+
+
+def rank_entities(
+    entities: Iterable[Any],
+    relationships: Iterable[Any] = (),
+    *,
+    priority_floor: float | None = None,
+    per_type_display_caps: Mapping[str, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Return the scored records ordered high-signal-first with suppression flags.
+
+    Each record carries every field ``score_entities`` produces plus:
+
+    * ``index`` — the entity's original position in *entities* (lets callers map
+      a ranked record back to the input object even when ids are absent).
+    * ``entity_type`` — echoed for the per-type cap and for callers.
+    * ``high_signal`` — carries a deterministic P1.3–P1.5 relevance flag.
+    * ``rank`` — 1-based position after ordering by ``priority_score`` desc
+      (high-signal breaking ties, then id for full determinism).
+    * ``suppressed`` / ``suppression_reason`` — non-destructive: the entity stays
+      in the list, ranked last, marked ``"below_priority_floor"`` or
+      ``"per_type_display_cap"``.  High-signal entities are never suppressed.
+
+    Deterministic and surface-independent: the same input set yields the same
+    ordering and flags on every surface.
+    """
+    entity_list = list(entities or ())
+    scored = score_entities(entity_list, relationships)
+    floor = _priority_floor() if priority_floor is None else priority_floor
+    caps = PER_TYPE_DISPLAY_CAPS if per_type_display_caps is None else per_type_display_caps
+
+    for index, (record, entity) in enumerate(zip(scored, entity_list)):
+        record["index"] = index
+        record["entity_type"] = str(_value(entity, "entity_type", "") or "")
+        record["high_signal"] = _has_high_signal_tag(entity)
+
+    scored.sort(
+        key=lambda r: (-r["priority_score"], 0 if r["high_signal"] else 1, r["id"])
+    )
+
+    per_type_seen: dict[str, int] = {}
+    for position, record in enumerate(scored, start=1):
+        record["rank"] = position
+        reason: str | None = None
+        if not record["high_signal"]:
+            entity_type = record["entity_type"].upper()
+            cap = caps.get(entity_type)
+            if cap is not None:
+                seen = per_type_seen.get(entity_type, 0) + 1
+                per_type_seen[entity_type] = seen
+                if seen > cap:
+                    reason = "per_type_display_cap"
+            if reason is None and record["priority_score"] < floor:
+                reason = "below_priority_floor"
+        record["suppressed"] = reason is not None
+        record["suppression_reason"] = reason
+    return scored
+
+
+def rank_map(
+    entities: Iterable[Any],
+    relationships: Iterable[Any] = (),
+) -> dict[str, dict[str, Any]]:
+    """``rank_entities`` keyed by entity id (for the DB-backed surfaces)."""
+    return {record["id"]: record for record in rank_entities(entities, relationships)}
+
+
+def order_and_filter_for_summary(
+    entities: Iterable[Any],
+    relationships: Iterable[Any] = (),
+    *,
+    limit: int | None = None,
+    include_suppressed: bool = False,
+) -> list[Any]:
+    """Return the input entity *objects* ordered high-signal-first with suppressed
+    ones dropped — the low-noise, prioritized set to feed the LLM report.
+
+    Non-destructive with respect to storage: this only shapes what the summary
+    sees.  Ordering matches every other surface because it reuses
+    ``rank_entities``.
+    """
+    entity_list = list(entities or ())
+    ordered: list[Any] = []
+    for record in rank_entities(entity_list, relationships):
+        if not include_suppressed and record["suppressed"]:
+            continue
+        ordered.append(entity_list[record["index"]])
+        if limit is not None and len(ordered) >= limit:
+            break
+    return ordered

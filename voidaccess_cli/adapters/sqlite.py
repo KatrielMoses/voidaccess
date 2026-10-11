@@ -48,6 +48,10 @@ _REQUIRED_SCHEMA_COLUMNS: dict[str, frozenset[str]] = {
     # every entity merge, so silently proceeding without it produces an empty
     # investigation that looks successful but can never persist entities.
     "entities": frozenset({"investigation_count"}),
+    # Shared tier, added by Alembic migration 0027 (create_all mirrors it on the
+    # SQLite path).  ``get_columns`` on a missing table returns [], so this also
+    # catches a DB where the shared-corpus tables never materialized.
+    "global_entities": frozenset({"canonical_value"}),
 }
 
 
@@ -154,6 +158,13 @@ def init_db() -> None:
     # absent.  This is a no-op on a fresh DB.
     _ensure_metadata_column(engine)
 
+    # P1.1: guarantee the metrics table exists on pre-existing DB files.
+    # ``create_all`` above already creates it (it is an ORM-mapped table), so
+    # this is defensive belt-and-suspenders: it keeps the guarantee explicit and
+    # local, independent of whether ``db.models`` happened to register the model,
+    # and is the regression anchor for the P1.0 baseline-integrity check.
+    _ensure_investigation_step_metrics(engine)
+
     # Create page_extraction_cache table if missing
     with engine.connect() as conn:
         conn.execute(text("""
@@ -241,6 +252,25 @@ def _ensure_metadata_column(engine) -> None:
         import logging
         logging.getLogger(__name__).debug(
             "_ensure_metadata_column skipped: %s", exc
+        )
+
+
+def _ensure_investigation_step_metrics(engine) -> None:
+    """Idempotently guarantee the ``investigation_step_metrics`` table exists.
+
+    Created drift-free via the ORM table itself (``checkfirst=True``) so its
+    schema is byte-identical to what ``Base.metadata.create_all`` would build —
+    no hand-written DDL to drift out of sync with the model. Best-effort like the
+    other ``_ensure_*`` helpers: a failure here must never block the CLI, because
+    step metrics are additive instrumentation, not pipeline control flow.
+    """
+    try:
+        from db.models import InvestigationStepMetric
+        InvestigationStepMetric.__table__.create(bind=engine, checkfirst=True)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug(
+            "_ensure_investigation_step_metrics skipped: %s", exc
         )
 
 
@@ -608,16 +638,30 @@ def get_entities(
         # confidence signal as the API, while preserving the CLI's existing
         # display-time effective-confidence adjustment.
         try:
-            from utils.entity_priority import score_map
+            from utils.entity_priority import rank_map
             relationships = get_relationships(full)
-            priority_by_id = score_map(rows, relationships)
+            priority_by_id = rank_map(rows, relationships)
         except Exception:
             priority_by_id = {}
+        # Merge only the prioritization fields — never the rank record's raw
+        # ``entity_type`` (the CLI keeps its own UPPERCASE-normalized value) or
+        # internal keys like ``index``.
+        _priority_keys = (
+            "priority_score", "priority_score_components",
+            "priority_score_centrality_contribution", "typed_relationship_degree",
+            "freshness_tag", "rank", "suppressed", "suppression_reason",
+            "high_signal",
+        )
         row_dicts = []
         for row in rows:
             item = _entity_row(row)
-            item.update(priority_by_id.get(str(row.id), {}))
+            rec = priority_by_id.get(str(row.id), {})
+            item.update({k: rec[k] for k in _priority_keys if k in rec})
             row_dicts.append(item)
+        # Low-noise default: order high-signal-first, identical to the API. The
+        # full set is retained (non-destructive) — suppressed rows keep their flag
+        # + reason and sort last.
+        row_dicts.sort(key=lambda d: d.get("rank", 1 << 30))
         try:
             from extractor.normalizer import resolve_entity_type_conflicts
             from extractor.identity import entity_canonical_id

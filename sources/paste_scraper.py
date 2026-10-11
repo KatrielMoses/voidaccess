@@ -45,6 +45,7 @@ from urllib.parse import quote_plus
 import aiohttp
 
 import pacing
+from sources import http_pool
 from sources.proxy_client import clearnet_fetch
 from utils.content_safety import is_blocked_query, sanitize_content
 
@@ -172,16 +173,16 @@ class PasteScraper:
         self._session: Optional[aiohttp.ClientSession] = None
 
     async def __aenter__(self) -> "PasteScraper":
-        self._session = aiohttp.ClientSession(
-            headers=HEADERS,
-            timeout=aiohttp.ClientTimeout(total=pacing.scale_timeout(REQUEST_TIMEOUT)),
-        )
+        # Shared clearnet pool (P1.2): borrow the pooled session (the direct
+        # transport for clearnet_fetch), never close it. HEADERS move onto each
+        # clearnet_fetch call; clearnet_fetch already supplies its own per-request
+        # timeout, so the old session-level timeout was already overridden.
+        self._session = http_pool.get_clearnet_session()
         return self
 
     async def __aexit__(self, *args) -> None:
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
+        # The shared session is owned by the pool; nothing to close here.
+        self._session = None
 
     # -----------------------------------------------------------------------
     # Public entry point
@@ -328,6 +329,7 @@ class PasteScraper:
             status, _content_type, body = await clearnet_fetch(
                 search_url,
                 expect="html",
+                headers=HEADERS,
                 fallback_session=self._session,
             )
             if status != 200:
@@ -376,6 +378,7 @@ class PasteScraper:
             status, _content_type, body = await clearnet_fetch(
                 paste_url,
                 expect="text",
+                headers=HEADERS,
                 fallback_session=self._session,
             )
             if status != 200:

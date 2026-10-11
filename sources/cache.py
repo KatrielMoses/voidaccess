@@ -26,10 +26,33 @@ class CachedFeed:
       - If fetch fails and no cache exists: log error and return None.
     """
 
-    def __init__(self, url: str, cache_path: str, ttl_seconds: int):
+    def __init__(self, url: str, cache_path: str, ttl_seconds: int, parse: str = "json",
+                 headers: Optional[dict] = None):
         self.url = url
         self.cache_path = Path(cache_path)
         self.ttl_seconds = ttl_seconds
+        # "json" (default, unchanged behavior) parses the body as JSON; "text"
+        # caches and returns the raw body as a str — used for bulk CSV feeds
+        # (e.g. ExploitDB's files_exploits.csv) that are not JSON.
+        if parse not in ("json", "text"):
+            raise ValueError(f"CachedFeed parse must be 'json' or 'text', got {parse!r}")
+        self.parse = parse
+        # Optional request headers, e.g. abuse.ch's Auth-Key. Resolved per-fetch by
+        # a callable so a key that appears in the env after construction is picked
+        # up; a plain dict is also accepted.
+        self._headers = headers
+
+    def _load_file(self):
+        with self.cache_path.open("r", encoding="utf-8") as f:
+            return f.read() if self.parse == "text" else json.load(f)
+
+    def _write_file(self, data) -> None:
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.cache_path.open("w", encoding="utf-8") as f:
+            if self.parse == "text":
+                f.write(data)
+            else:
+                json.dump(data, f)
 
     def _is_fresh(self) -> bool:
         if not self.cache_path.exists():
@@ -37,8 +60,9 @@ class CachedFeed:
         mtime = self.cache_path.stat().st_mtime
         return (time.time() - mtime) < self.ttl_seconds
 
-    async def fetch(self) -> Optional[dict | list]:
+    async def fetch(self) -> Optional[dict | list | str]:
         import aiohttp
+        from sources import http_pool
 
         now = time.time()
         cache_key = self.url
@@ -50,27 +74,26 @@ class CachedFeed:
 
         if self._is_fresh():
             try:
-                with self.cache_path.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    _memory_cache[cache_key] = (data, now)
-                    return data
+                data = self._load_file()
+                _memory_cache[cache_key] = (data, now)
+                return data
             except Exception:
                 pass
 
+        headers = self._headers() if callable(self._headers) else self._headers
+
         try:
             timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(self.url) as resp:
+            async with http_pool.clearnet_session() as session:
+                async with session.get(self.url, timeout=timeout, headers=headers) as resp:
                     if resp.status != 200:
                         logger.warning("CachedFeed: HTTP %s for %s", resp.status, self.url)
                         stale = self._stale_cache()
                         if stale is not None and cache_key in _memory_cache:
                             return stale
                         return stale
-                    data = await resp.json(content_type=None)
-                    self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    with self.cache_path.open("w", encoding="utf-8") as f:
-                        json.dump(data, f)
+                    data = await resp.text() if self.parse == "text" else await resp.json(content_type=None)
+                    self._write_file(data)
                     _memory_cache[cache_key] = (data, now)
                     return data
         except Exception as e:
@@ -81,12 +104,11 @@ class CachedFeed:
                 return cached_data
             return self._stale_cache()
 
-    def _stale_cache(self) -> Optional[dict | list]:
+    def _stale_cache(self) -> Optional[dict | list | str]:
         if self.cache_path.exists():
             try:
-                with self.cache_path.open("r", encoding="utf-8") as f:
-                    logger.warning("CachedFeed: falling back to stale cache %s", self.cache_path)
-                    return json.load(f)
+                logger.warning("CachedFeed: falling back to stale cache %s", self.cache_path)
+                return self._load_file()
             except Exception:
                 pass
         return None

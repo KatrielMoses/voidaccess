@@ -52,6 +52,11 @@ async def enrich_cisa_cve(cve_id: str) -> list[dict]:
                 "vulnerability_name": entry.get("vulnerabilityName", ""),
                 "date_added": entry.get("dateAdded", ""),
                 "short_description": entry.get("shortDescription", ""),
+                # Added P1.3 (additive): remediation due date + whether the CVE is
+                # known to be used in ransomware campaigns — both feed the fused
+                # CVE-priority signal in sources/cve_intel.py.
+                "due_date": entry.get("dueDate", ""),
+                "ransomware_use": (entry.get("knownRansomwareCampaignUse") or "").strip().lower() == "known",
             }]
     return []
 

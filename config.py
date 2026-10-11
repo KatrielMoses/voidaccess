@@ -128,6 +128,193 @@ XPOSEDORNOT_API_KEY = _clean_env("XPOSEDORNOT_API_KEY", "")
 NVD_API_KEY = _clean_env("NVD_API_KEY", "")
 # ransomlook.io (2nd ransomware tracker, cross-validates ransomware.live) needs NO key.
 
+# ---------------------------------------------------------------------------
+# Page-snapshot object store (P2.1) — S3-compatible, provider-agnostic.
+# ---------------------------------------------------------------------------
+# The shared-corpus page-snapshot store (snapshot_store/) uploads sanitized page
+# content to any S3-compatible backend: Cloudflare R2 in production (zero
+# egress, see CC-2), MinIO locally, or any S3 store — same code, configured only
+# by endpoint + bucket + credentials. There is NO hard R2/boto SDK dependency;
+# the client signs SigV4 over aiohttp.
+#
+# All four of endpoint/bucket/access-key/secret must be present for the store to
+# be "configured"; with any missing, snapshot writes degrade to a graceful
+# no-op (the tool never requires object storage to run — CLI $0 path, or a
+# private-mode install). Credentials must be supplied by the operator via .env,
+# never hardcoded.
+S3_ENDPOINT_URL      = _clean_env("S3_ENDPOINT_URL")       # e.g. https://<acct>.r2.cloudflarestorage.com
+S3_BUCKET            = _clean_env("S3_BUCKET")             # snapshot bucket name
+S3_ACCESS_KEY_ID     = _clean_env("S3_ACCESS_KEY_ID")
+S3_SECRET_ACCESS_KEY = _clean_env("S3_SECRET_ACCESS_KEY")
+# R2 ignores region and expects the literal "auto"; real S3/MinIO use their own.
+S3_REGION            = _clean_env("S3_REGION", "auto") or "auto"
+
+# ---------------------------------------------------------------------------
+# Owned persistent index (P3.0 / requirement 1.3) — self-hosted Meilisearch.
+# ---------------------------------------------------------------------------
+# The owned index (owned_index/) is a central-service / shared-tier component: it
+# lives on the Oracle box alongside the shared corpus and gives search a source
+# that survives any third-party onion engine's death (req 1.8). It is a clearnet
+# HTTP service reached over netpool with pacing-scaled timeouts.
+#
+# MEILI_HOST is the sole "configured" gate: unset means the index no-ops and the
+# tool falls back to live fan-out (the CLI/$0-local path and private-mode installs
+# run without it — graceful, never a crash). MEILI_KEY is the master/API key; an
+# empty value is valid for a keyless local dev container (the Authorization header
+# is then omitted). Credentials come from .env, never hardcoded.
+MEILI_HOST  = _clean_env("MEILI_HOST")                    # e.g. http://127.0.0.1:7700
+MEILI_KEY   = _clean_env("MEILI_KEY", "")                 # master/API key; "" = keyless local dev
+MEILI_INDEX = _clean_env("MEILI_INDEX", "onion_pages")    # index uid
+
+
+# ---------------------------------------------------------------------------
+# Owned-index freshness loop (P3.3 / requirement 1.6) — durable-queue re-crawl.
+# ---------------------------------------------------------------------------
+# The freshness loop re-crawls previously-seen onions for liveness + content-diff
+# on the P2.3 durable queue. It is bounded and cost-controlled: staleness-
+# prioritized and capped per cycle so re-crawl volume never balloons on the
+# $0/Tor budget. All values env-tunable. The loop is inert unless the owned index
+# is configured (MEILI_HOST set) and a durable-queue worker is running (central
+# service only) — a local/$0 install never runs it.
+def _clean_int(name, default):
+    try:
+        return int(_clean_env(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clean_float(name, default):
+    try:
+        return float(_clean_env(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clean_csv_set(name, default):
+    """Parse a comma-separated env value into a lowercased set of tokens.
+
+    Empty/unset falls back to *default* (an iterable). Used for tunable
+    membership sets like the trust gate's trusted-feed allowlist.
+    """
+    raw = _clean_env(name, None)
+    if not raw:
+        return {str(t).strip().lower() for t in default if str(t).strip()}
+    return {tok.strip().lower() for tok in raw.split(",") if tok.strip()}
+
+# Seconds between freshness cycles (the self-re-enqueuing scan tick). Default 6h.
+FRESHNESS_INTERVAL_SECONDS = _clean_int("FRESHNESS_INTERVAL_SECONDS", 6 * 3600)
+# Max onions re-crawled per cycle — the hard per-cycle cap (no exhaustive crawl).
+FRESHNESS_BATCH_CAP = _clean_int("FRESHNESS_BATCH_CAP", 20)
+# An onion is "due" for re-crawl once its last_seen is older than this. Default 24h.
+FRESHNESS_STALE_AFTER_SECONDS = _clean_int("FRESHNESS_STALE_AFTER_SECONDS", 24 * 3600)
+# Consecutive dead re-crawls before an onion is dropped from active retrieval and
+# re-crawl scheduling (the dead→drop policy).
+FRESHNESS_DEAD_DROP_THRESHOLD = _clean_int("FRESHNESS_DEAD_DROP_THRESHOLD", 3)
+
+# ---------------------------------------------------------------------------
+# Trust gate — P4.0 scoring machinery (requirement 3.2 / 3.3). All tunable.
+# ---------------------------------------------------------------------------
+# The automated, deterministic anti-poisoning gate. These thresholds are the
+# single tunable surface (CC-4): the gate hardcodes none of them — it reads a
+# TrustGateConfig snapshot built from these values. Defaults are the P4.0 brief's
+# starting point, calibrated by the red-team suite.
+#
+# Promotion: an artifact reaches CORROBORATED only with >= this many *independent*
+# sources; a single trusted-feed cross-hit reaches FEED_VALIDATED outright.
+TRUST_GATE_MIN_INDEPENDENT_SOURCES = _clean_int("TRUST_GATE_MIN_INDEPENDENT_SOURCES", 2)
+# Corroboration also requires >= this many distinct CONTRIBUTORS (not just origins).
+# This closes the reputation-gaming Sybil path: a single (even trusted) contributor
+# claiming one IOC across many fabricated origins supplies only ONE contributor, so
+# it can never self-corroborate. In P4.1-local each onion is its own contributor, so
+# genuine cross-onion corroboration is unaffected.
+TRUST_GATE_MIN_INDEPENDENT_CONTRIBUTORS = _clean_int(
+    "TRUST_GATE_MIN_INDEPENDENT_CONTRIBUTORS", 2
+)
+# The trusted-feed allowlist — a cross-hit against any of these validates an
+# artifact regardless of the contributing onion's reputation (feed validation is
+# source-independent). Defaults to the abuse.ch / CISA-KEV / NVD family.
+TRUST_GATE_TRUSTED_FEEDS = _clean_csv_set(
+    "TRUST_GATE_TRUSTED_FEEDS",
+    {
+        "sslbl", "feodo", "urlhaus", "threatfox", "malwarebazaar", "abuse.ch",
+        "kev", "cisa_kev", "cisa", "nvd", "epss", "openphish", "phishtank",
+        "ransomwhere",
+    },
+)
+# Flood / rate limit: max artifacts one source may contribute within the window.
+TRUST_GATE_SOURCE_RATE_LIMIT = _clean_int("TRUST_GATE_SOURCE_RATE_LIMIT", 50)
+TRUST_GATE_RATE_WINDOW_SECONDS = _clean_int("TRUST_GATE_RATE_WINDOW_SECONDS", 60)
+# Entity-stuffing: max entities in a single submission before it is flagged.
+TRUST_GATE_STUFFING_MAX_ENTITIES = _clean_int("TRUST_GATE_STUFFING_MAX_ENTITIES", 100)
+# Templated injection: a submission whose distinct-fingerprint ratio falls below
+# this (near-identical records) is flagged as templated.
+TRUST_GATE_TEMPLATED_MIN_DISTINCT_RATIO = _clean_float(
+    "TRUST_GATE_TEMPLATED_MIN_DISTINCT_RATIO", 0.2
+)
+TRUST_GATE_TEMPLATED_MIN_SUBMISSION = _clean_int("TRUST_GATE_TEMPLATED_MIN_SUBMISSION", 5)
+# Mass-identical: how many byte-identical records from one source before the
+# repeats are rejected as a mass-identical flood.
+TRUST_GATE_MASS_IDENTICAL_MAX = _clean_int("TRUST_GATE_MASS_IDENTICAL_MAX", 5)
+# Source reputation: neutral start; a source drops below the block threshold
+# (blocked outright) or the corroborate threshold (contributions no longer count
+# toward promotion) as it accrues contradictions/anomalies.
+TRUST_GATE_REPUTATION_START = _clean_float("TRUST_GATE_REPUTATION_START", 1.0)
+TRUST_GATE_REPUTATION_BLOCK_THRESHOLD = _clean_float(
+    "TRUST_GATE_REPUTATION_BLOCK_THRESHOLD", 0.3
+)
+TRUST_GATE_REPUTATION_MIN_TO_CORROBORATE = _clean_float(
+    "TRUST_GATE_REPUTATION_MIN_TO_CORROBORATE", 0.5
+)
+# How much a contributor's reputation rises each time its claim agrees with
+# independently-established trusted data (feed cross-hit or already-corroborated).
+# A fresh ingest key must earn several such agreements to cross the corroborate
+# threshold — the slow, Sybil-resistant path to earning trust.
+TRUST_GATE_REPUTATION_REWARD = _clean_float("TRUST_GATE_REPUTATION_REWARD", 0.25)
+TRUST_GATE_CONTRADICTION_DECAY = _clean_float("TRUST_GATE_CONTRADICTION_DECAY", 0.5)
+TRUST_GATE_ANOMALY_DECAY = _clean_float("TRUST_GATE_ANOMALY_DECAY", 0.6)
+TRUST_GATE_MAX_CONTRADICTIONS = _clean_int("TRUST_GATE_MAX_CONTRADICTIONS", 3)
+TRUST_GATE_MAX_ANOMALIES = _clean_int("TRUST_GATE_MAX_ANOMALIES", 3)
+
+# ---------------------------------------------------------------------------
+# Cross-install ingest API — P4.3 (central-service only). All tunable.
+# ---------------------------------------------------------------------------
+# The ingest endpoint is ABSENT on installs not running a central service: set
+# VOIDACCESS_INGEST_ENABLED=true only on the central corpus service. A $0/local
+# install leaves it off → no /ingest routes, no regression.
+INGEST_ENABLED = (
+    (_clean_env("VOIDACCESS_INGEST_ENABLED", "false") or "false").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+# A freshly self-registered ingest key starts at LOW reputation — below the
+# corroborate threshold — so its claimed origins do not count until the key has
+# earned trust by agreeing with independently-corroborated data. This is the
+# Sybil defense: a thousand fresh keys promote nothing.
+TRUST_GATE_CONTRIBUTOR_START_REPUTATION = _clean_float(
+    "TRUST_GATE_CONTRIBUTOR_START_REPUTATION", 0.2
+)
+# Payload caps (CC-2 — protect the $0 box). Env-tunable.
+INGEST_MAX_ARTIFACTS_PER_REQUEST = _clean_int("INGEST_MAX_ARTIFACTS_PER_REQUEST", 100)
+INGEST_MAX_VALUE_LENGTH = _clean_int("INGEST_MAX_VALUE_LENGTH", 2048)
+# Per-key ingest rate limit (reuses the P2.3 in-process substrate, per-key scope).
+INGEST_RATE_LIMIT = _clean_int("INGEST_RATE_LIMIT", 60)
+INGEST_RATE_WINDOW_SECONDS = _clean_int("INGEST_RATE_WINDOW_SECONDS", 60)
+# Soft anti-key-farming friction: cap new self-registrations per client IP.
+INGEST_REGISTER_RATE_LIMIT = _clean_int("INGEST_REGISTER_RATE_LIMIT", 5)
+INGEST_REGISTER_WINDOW_SECONDS = _clean_int("INGEST_REGISTER_WINDOW_SECONDS", 3600)
+
+# ---------------------------------------------------------------------------
+# Shared-corpus consent / private mode (P2.2 / requirement 2.4)
+# ---------------------------------------------------------------------------
+# Contribution to the shared corpus is default-ON with a clear opt-out. Set
+# VOIDACCESS_PRIVATE_MODE=true to run a fully private install: it reads nothing
+# from and writes nothing to the central corpus, INDEPENDENT of whether S3 is
+# configured. Read via shared_corpus.consent.contribution_enabled() (which reads
+# this value live, so tests and a one-shot override take effect).
+PRIVATE_MODE = (
+    (_clean_env("VOIDACCESS_PRIVATE_MODE", "false") or "false").strip().lower()
+    in ("1", "true", "yes", "on")
+)
+
 # Phase 1.6 — optional clearnet proxy.  Read directly by
 # sources/proxy_client.py via os.getenv; the module-level constant is
 # exposed for code that wants to introspect the value (the same way
@@ -224,6 +411,15 @@ OPTIONAL_KEYS = [
     "BLOCKCYPHER_TOKEN",
     "ETHERSCAN_API_KEY",
     "SCRAPINGANT_API_KEY",
+    # Page-snapshot object store (P2.1) — unset means the shared-corpus snapshot
+    # store no-ops; the tool runs fine without it.
+    "S3_ENDPOINT_URL",
+    "S3_BUCKET",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    # Owned persistent index (P3.0) — unset means the owned index no-ops and
+    # search falls back to live fan-out; the tool runs fine without it.
+    "MEILI_HOST",
 ]
 
 

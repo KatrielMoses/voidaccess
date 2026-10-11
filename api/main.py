@@ -22,13 +22,11 @@ from fastapi import FastAPI, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from api.routes import entities, export, investigations, monitors, search, auth, admin, settings, actors
 from api.auth import get_current_user
 from api.errors import log_exception, safe_error_body
+from api.rate_limit import global_rate_limit_middleware
 from monitor.scheduler import start_scheduler
 
 from config import TOR_PROXY_HOST, TOR_PROXY_PORT, PLAYWRIGHT_ENABLED, JWT_SECRET
@@ -38,30 +36,64 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 # ---------------------------------------------------------------------------
-# Rate limiter setup
+# Durable job-queue helpers (P2.3)
 # ---------------------------------------------------------------------------
 
-DISABLE_RATE_LIMIT = (os.getenv("DISABLE_RATE_LIMIT", "false") or "false").lower() == "true"
-
-if DISABLE_RATE_LIMIT:
-    limiter = None
-else:
-    limiter = Limiter(key_func=get_remote_address)
+def _worker_count() -> int:
+    return max(1, int(os.getenv("VOIDACCESS_QUEUE_WORKERS", "1") or 1))
 
 
-def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    return JSONResponse(
-        status_code=429,
-        content={
-            "detail": "Too many requests. Please wait 60 seconds before retrying.",
-            "retry_after": 60,
-        },
-        headers={
-            "Retry-After": "60",
-            "X-RateLimit-Limit": "3",
-            "X-RateLimit-Window": "60s",
-        },
-    )
+def _worker_disabled() -> bool:
+    return (
+        os.getenv("VOIDACCESS_DISABLE_QUEUE_WORKER", "false") or "false"
+    ).strip().lower() == "true"
+
+
+_handlers_registered = False
+
+
+def _register_job_handlers() -> None:
+    """Register the durable-queue task handlers (idempotent).
+
+    The ``investigation`` handler runs the existing, self-contained pipeline task
+    with the payload the create endpoint enqueued — so a worker (this process, or
+    a fresh one after a restart) executes exactly what BackgroundTasks used to.
+    """
+    global _handlers_registered
+    if _handlers_registered:
+        return
+    from jobqueue import register_handler
+    from api.routes.investigations import _run_investigation_task
+
+    async def _investigation_handler(payload: dict) -> None:
+        await _run_investigation_task(
+            investigation_id=payload["investigation_id"],
+            run_id=payload["run_id"],
+            query=payload["query"],
+            model=payload.get("model"),
+            run_crawler=bool(payload.get("run_crawler", False)),
+        )
+
+    register_handler("investigation", _investigation_handler)
+
+    # P3.3 — freshness loop (owned-index re-crawl) on the same durable queue.
+    try:
+        from freshness import register_handlers as _register_freshness_handlers
+
+        _register_freshness_handlers()
+    except Exception as e:  # never let freshness break server startup
+        logger.warning(f"Freshness handler registration failed (non-fatal): {e}")
+
+    _handlers_registered = True
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+# Enforcement lives in api/rate_limit.py over the in-process ``ratelimit``
+# substrate (no Redis, no slowapi). The global per-IP cap is applied as an HTTP
+# middleware (registered below); stricter per-route limits (login, create
+# investigation) are FastAPI dependencies. Honors DISABLE_RATE_LIMIT.
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +140,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Vector store pre-warm failed (non-fatal): {e}")
 
+    # P3-HARDEN / DRIFT-1 — fail loud on the central path if real MiniLM did not
+    # load. When the owned index is configured (MEILI_HOST set), semantic ranking
+    # + index vectors are the differentiator; silently serving the SHA-256
+    # fallback as "semantic" embeddings is a silent product failure. A local/$0
+    # install (no index) has no such requirement and keeps the graceful fallback.
+    try:
+        from vector.model_singleton import (
+            assert_real_embeddings,
+            semantic_embeddings_required,
+        )
+
+        _semantic_required = semantic_embeddings_required()
+    except Exception as e:
+        logger.warning("Embedding-backend health check unavailable (non-fatal): %s", e)
+        _semantic_required = False
+        assert_real_embeddings = None
+
+    if _semantic_required and assert_real_embeddings is not None:
+        try:
+            assert_real_embeddings(context="MEILI_HOST is set")
+            logger.warning(
+                "Embedding backend verified: real MiniLM active (semantic ranking enabled)"
+            )
+        except Exception as e:
+            logger.error(
+                "Refusing to start: semantic embeddings required (owned index "
+                "configured) but unavailable. %s",
+                e,
+            )
+            raise
+
     # Load curated .onion seed catalogue (no Tor validation on startup — too slow)
     try:
         from sources.seed_manager import get_seed_manager
@@ -121,17 +184,56 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Seed database load failed (non-fatal): {e}")
 
-    # Recover stranded processing investigations (Phase 6.3 startup sweep)
-    # On startup: every investigation left in 'processing' by a previous
-    # process is marked failed — the pipeline tasks that owned them are
-    # gone.  A periodic sweep (every 5 min) handles investigations that
-    # get stuck while the server is alive.
+    # Durable job queue (P2.3): register the investigation handler and recover
+    # orphaned jobs BEFORE the sweep. Every 'running' job belonged to the now-dead
+    # previous process, so requeue them wholesale — a worker will resume/re-run
+    # them, and the sweep below skips investigations that still have a live job.
+    _register_job_handlers()
+    try:
+        if os.getenv("DATABASE_URL"):
+            from jobqueue import requeue_orphans
+            from db.session import get_session
+
+            def _reboot_requeue() -> int:
+                with get_session() as session:
+                    return requeue_orphans(session, all_running=True)
+
+            requeued = await asyncio.to_thread(_reboot_requeue)
+            if requeued:
+                logger.warning(
+                    "Requeued %d interrupted job(s) for restart recovery.", requeued
+                )
+    except Exception as e:
+        logger.warning(f"Job-queue reboot recovery failed (non-fatal): {e}")
+
+    # P3.3 — seed the singleton freshness-scan chain on the durable queue. It is
+    # idempotent (skips if a scan is already pending) and no-ops when the owned
+    # index is unconfigured, so it is safe to call on every startup.
+    try:
+        if os.getenv("DATABASE_URL"):
+            from freshness import bootstrap as _freshness_bootstrap
+            from db.session import get_session
+
+            def _seed_freshness() -> bool:
+                with get_session() as session:
+                    seeded = _freshness_bootstrap(session)
+                    session.commit()
+                    return seeded
+
+            if await asyncio.to_thread(_seed_freshness):
+                logger.info("Freshness scan chain seeded on the durable queue.")
+    except Exception as e:
+        logger.warning(f"Freshness bootstrap failed (non-fatal): {e}")
+
+    # Stuck-investigation sweep is now a BACKSTOP (P2.3): it only fails
+    # investigations that have NO live queue job (truly orphaned / legacy). Ones
+    # with a queued/running job are left for a worker to resume.
     try:
         if os.getenv("DATABASE_URL"):
             swept = await _sweep_stuck_investigations(cutoff_minutes=None)
             if swept:
                 logger.warning(
-                    "Recovered %d stranded investigations (marked as failed).",
+                    "Backstop-swept %d stranded investigations with no live job.",
                     swept,
                 )
     except Exception as e:
@@ -164,9 +266,29 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Failed to start periodic sweeper: {e}")
 
+    # Start durable-queue workers (server only; the CLI stays synchronous).
+    _worker_tasks: list[asyncio.Task] = []
+    if os.getenv("DATABASE_URL") and not _worker_disabled():
+        try:
+            from jobqueue import start_workers
+
+            _worker_tasks = start_workers(n=_worker_count())
+            logger.warning("Durable job-queue workers started: %d", _worker_count())
+        except Exception as e:
+            logger.error(f"Failed to start job-queue workers: {e}")
+
     yield
 
     # --- Shutdown ---
+    for _t in _worker_tasks:
+        if not _t.done():
+            _t.cancel()
+    for _t in _worker_tasks:
+        try:
+            await _t
+        except (asyncio.CancelledError, Exception):
+            pass
+
     if _periodic_sweep_task is not None and not _periodic_sweep_task.done():
         _periodic_sweep_task.cancel()
         try:
@@ -255,6 +377,19 @@ async def _sweep_stuck_investigations(cutoff_minutes: Optional[int] = 30) -> int
                 query = query.filter(Investigation.created_at < cutoff_dt)
 
             stuck = query.all()
+            if not stuck:
+                return 0
+
+            # Backstop only (P2.3): an investigation that still has a live
+            # (queued/running) job in the durable queue is NOT orphaned — a
+            # worker will resume/re-run it. Exclude those from the sweep.
+            try:
+                from jobqueue import active_dedup_keys
+
+                live_keys = active_dedup_keys(session, task_type="investigation")
+            except Exception:
+                live_keys = set()
+            stuck = [inv for inv in stuck if str(inv.id) not in live_keys]
             if not stuck:
                 return 0
 
@@ -352,12 +487,6 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
-# Add rate limiter to app state and register exception handler
-if limiter is not None:
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     errors = []
@@ -387,29 +516,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # ---------------------------------------------------------------------------
-# Global rate limit middleware (100/minute for all API routes)
+# Global rate limit middleware — a real per-IP cap (no longer a no-op).
+# Implemented over the in-process ``ratelimit`` substrate in api/rate_limit.py.
 # ---------------------------------------------------------------------------
-
-
-@app.middleware("http")
-async def global_rate_limit_middleware(request: Request, call_next: Callable):
-    if limiter is None:
-        return await call_next(request)
-
-    exempt_paths = {"/health", "/docs", "/redoc", "/openapi.json"}
-    if request.url.path in exempt_paths:
-        return await call_next(request)
-
-    if request.url.path.startswith("/api/") or request.url.path in exempt_paths:
-        pass
-    else:
-        return await call_next(request)
-
-    # Removed invalid limiter.check call causing 500 error
-    # Rate limiting should be handled via decorators on specific routes
-    pass
-
-    return await call_next(request)
+app.middleware("http")(global_rate_limit_middleware)
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +577,16 @@ app.include_router(
     tags=["settings"],
     dependencies=[Depends(get_current_user)],
 )
+
+# Cross-install ingest (P4.3) — mounted ONLY on a central-service install
+# (VOIDACCESS_INGEST_ENABLED). Absent/inert on $0/local installs, so there is no
+# regression there. Its own per-key auth (not JWT) — no get_current_user dep.
+import config as _config  # noqa: E402
+
+if getattr(_config, "INGEST_ENABLED", False):
+    from api.routes import ingest as _ingest  # noqa: E402
+
+    app.include_router(_ingest.router)
 
 
 # ---------------------------------------------------------------------------

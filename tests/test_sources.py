@@ -5,7 +5,6 @@ No real network connections.  All HTTP is mocked.  Telethon is mocked via
 unittest.mock so it does not need to be installed (though it is in requirements.txt).
 
 Covers:
-  - search_darksearch  (JSON parsing, pagination, graceful error)
   - search_onionsearch (HTML parsing, link extraction, graceful error)
   - get_seeds          (no filter, category filter, language filter, combined)
   - fetch_recent_pastes (keyword match returns result, no match skips,
@@ -138,118 +137,6 @@ def _patch_session(responses: dict):
 def _patch_connector():
     """Context manager: patch ProxyConnector so no real Tor is needed."""
     return patch("aiohttp_socks.ProxyConnector.from_url", return_value=MagicMock())
-
-
-# ===========================================================================
-# TestDarkSearch
-# ===========================================================================
-
-class TestDarkSearch:
-    """Tests for sources.engines.search_darksearch."""
-
-    def _run(self, *args, **kwargs):
-        from sources.engines import search_darksearch
-        return asyncio.run(search_darksearch(*args, **kwargs))
-
-    def test_returns_results_on_success(self):
-        api_data = {
-            "current_page": 1,
-            "last_page": 1,
-            "data": [
-                {"title": "Forum post", "link": "http://abc.onion/post", "description": "some content"},
-                {"title": "Market", "link": "http://xyz.onion/", "description": ""},
-            ],
-        }
-        with _patch_connector(), _patch_session({"darksearch": _json_response(api_data)}):
-            results = self._run("ransomware", pages=1)
-
-        assert len(results) == 2
-        assert results[0]["title"] == "Forum post"
-        assert results[0]["url"] == "http://abc.onion/post"
-        assert results[0]["source"] == "DarkSearch"
-        assert results[1]["snippet"] == ""
-
-    def test_snippet_truncated_at_500(self):
-        long_desc = "x" * 1000
-        api_data = {
-            "current_page": 1, "last_page": 1,
-            "data": [{"title": "T", "link": "http://a.onion/", "description": long_desc}],
-        }
-        with _patch_connector(), _patch_session({"darksearch": _json_response(api_data)}):
-            results = self._run("x", pages=1)
-
-        assert len(results[0]["snippet"]) == 500
-
-    def test_pagination_stops_at_last_page(self):
-        calls: list = []
-        api_data = {"current_page": 1, "last_page": 1, "data": []}
-
-        resp = _json_response(api_data)
-        original_json = resp.json
-
-        async def tracking_json(*a, **kw):
-            calls.append(1)
-            return await original_json()
-
-        resp.json = tracking_json
-
-        with _patch_connector(), _patch_session({"darksearch": resp}):
-            self._run("test", pages=5)
-
-        # Only one page fetched because last_page == 1
-        assert len(calls) == 1
-
-    def test_returns_empty_on_http_error(self):
-        with _patch_connector(), _patch_session({"darksearch": _html_response("", status=500)}):
-            results = self._run("test")
-
-        assert results == []
-
-    def test_returns_empty_on_network_error(self):
-        session = MagicMock()
-        session.get = MagicMock(side_effect=Exception("connection refused"))
-        session.__aenter__ = AsyncMock(return_value=session)
-        session.__aexit__ = AsyncMock(return_value=False)
-
-        with _patch_connector(), patch("aiohttp.ClientSession", return_value=session):
-            results = self._run("test")
-
-        assert results == []
-
-    def test_skips_entries_with_no_link(self):
-        api_data = {
-            "current_page": 1, "last_page": 1,
-            "data": [
-                {"title": "No link", "link": "", "description": ""},
-                {"title": "Has link", "link": "http://valid.onion/", "description": ""},
-            ],
-        }
-        with _patch_connector(), _patch_session({"darksearch": _json_response(api_data)}):
-            results = self._run("x", pages=1)
-
-        assert len(results) == 1
-        assert results[0]["title"] == "Has link"
-
-    def test_uses_api_key_header_when_configured(self, monkeypatch):
-        monkeypatch.setattr("sources.engines.DARKSEARCH_API_KEY", "testkey123")
-        captured_headers: list = []
-
-        session = MagicMock()
-        resp = _json_response({"current_page": 1, "last_page": 1, "data": []})
-
-        def get(url, *, params=None, headers=None, **kw):
-            captured_headers.append(headers or {})
-            return resp
-
-        session.get = MagicMock(side_effect=get)
-        session.__aenter__ = AsyncMock(return_value=session)
-        session.__aexit__ = AsyncMock(return_value=False)
-
-        with _patch_connector(), patch("aiohttp.ClientSession", return_value=session):
-            self._run("test", pages=1)
-
-        assert any("Authorization" in h for h in captured_headers)
-        assert any("testkey123" in h.get("Authorization", "") for h in captured_headers)
 
 
 # ===========================================================================
@@ -807,8 +694,7 @@ class TestCollectAllSources:
         return asyncio.run(collect_all_sources(*args, **kwargs))
 
     def test_returns_all_four_keys(self):
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])):
             result = self._run("ransomware")
 
@@ -818,26 +704,22 @@ class TestCollectAllSources:
         assert "seed_urls" in result
 
     def test_search_and_pastes_both_called(self):
-        dark_mock = AsyncMock(return_value=[{"url": "d", "title": "D", "snippet": "", "source": "DarkSearch"}])
         onion_mock = AsyncMock(return_value=[{"url": "o", "title": "O", "snippet": "", "source": "OnionSearch"}])
         paste_mock = AsyncMock(return_value=[{"title": "P", "url": "p", "content_snippet": "", "posted_at": None, "source": "X"}])
 
-        with patch("sources.engines.search_darksearch", dark_mock), \
-             patch("sources.engines.search_onionsearch", onion_mock), \
+        with patch("sources.engines.search_onionsearch", onion_mock), \
              patch("sources.pastes.fetch_recent_pastes", paste_mock):
             result = self._run("test")
 
-        dark_mock.assert_called_once_with("test")
         onion_mock.assert_called_once_with("test")
         paste_mock.assert_called_once_with("test")
-        assert len(result["search_results"]) == 2  # dark + onion combined
+        assert len(result["search_results"]) == 1  # onion only (DarkSearch removed in P1.1)
         assert len(result["paste_results"]) == 1
 
     def test_telegram_skipped_when_flag_false(self):
         tg_mock = AsyncMock(return_value=[])
 
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])), \
              patch("sources.telegram.fetch_telegram_messages", tg_mock):
             result = self._run("test", include_telegram=False)
@@ -848,8 +730,7 @@ class TestCollectAllSources:
     def test_telegram_called_when_flag_true(self):
         tg_mock = AsyncMock(return_value=[{"channel": "c", "message_id": 1, "text": "t", "date": None, "url": "u"}])
 
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])), \
              patch("sources.telegram.fetch_telegram_messages", tg_mock):
             result = self._run("test", include_telegram=True, telegram_channels=["@chan"])
@@ -858,8 +739,7 @@ class TestCollectAllSources:
         assert len(result["telegram_results"]) == 1
 
     def test_seed_urls_populated(self):
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])):
             result = self._run("test")
 
@@ -867,16 +747,14 @@ class TestCollectAllSources:
         assert result["seed_urls"] == SEED_URLS
 
     def test_seed_category_filter_applied(self):
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])):
             result = self._run("test", seed_categories=["forum"])
 
         assert all(s["category"] == "forum" for s in result["seed_urls"])
 
     def test_multiple_seed_categories_merged(self):
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])):
             result = self._run("test", seed_categories=["forum", "search"])
 
@@ -885,8 +763,7 @@ class TestCollectAllSources:
         assert "search" in categories
 
     def test_no_duplicate_seeds_in_combined_categories(self):
-        with patch("sources.engines.search_darksearch", new=AsyncMock(return_value=[])), \
-             patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
+        with patch("sources.engines.search_onionsearch", new=AsyncMock(return_value=[])), \
              patch("sources.pastes.fetch_recent_pastes", new=AsyncMock(return_value=[])):
             result = self._run("test", seed_categories=["forum", "search", "index"])
 

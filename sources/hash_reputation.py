@@ -34,6 +34,7 @@ from typing import Any, Optional
 
 import aiohttp
 
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -108,11 +109,12 @@ async def query_hybrid_analysis(hash_value: str) -> dict[str, Any]:
             "user-agent": "Falcon Sandbox",
         }
         timeout = aiohttp.ClientTimeout(total=20)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             async with session.post(
                 f"{HA_BASE_URL}/search/hash",
                 data={"hash": hash_value},
                 headers=headers,
+                timeout=timeout,
             ) as resp:
                 if resp.status == 401:
                     logger.warning("hash_reputation: Hybrid Analysis — invalid API key")
@@ -218,10 +220,12 @@ async def query_malwarebazaar(hash_value: str) -> dict[str, Any]:
             "User-Agent": "VoidAccess-OSINT/1.1 (security research)",
             "Auth-Key": api_key,
         }
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        async with http_pool.clearnet_session() as session:
             async with session.post(
                 MALWAREBAZAAR_URL,
                 data={"query": "get_info", "hash": hash_value},
+                headers=headers,
+                timeout=timeout,
             ) as resp:
                 if resp.status != 200:
                     logger.debug(
@@ -292,10 +296,12 @@ async def query_threatfox(hash_value: str) -> dict[str, Any]:
             "User-Agent": "VoidAccess-OSINT/1.1 (security research)",
             "Auth-Key": api_key,
         }
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        async with http_pool.clearnet_session() as session:
             async with session.post(
                 THREATFOX_URL,
                 json={"query": "search_ioc", "search_term": hash_value},
+                headers=headers,
+                timeout=timeout,
             ) as resp:
                 if resp.status != 200:
                     logger.debug(
@@ -380,8 +386,8 @@ async def query_virustotal_hash(hash_value: str) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=20)
 
     try:
-        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-            async with session.get(f"{VT_BASE_URL}/files/{hash_value}") as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(f"{VT_BASE_URL}/files/{hash_value}", headers=headers, timeout=timeout) as resp:
                 if resp.status == 404:
                     return {"found": False, "source": "virustotal_not_found"}
                 if resp.status in (401, 403):

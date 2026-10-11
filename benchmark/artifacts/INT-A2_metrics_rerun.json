@@ -1,0 +1,1840 @@
+{
+  "artifact_type": "pipeline_metrics",
+  "per_query": [
+    {
+      "category": "ransomware",
+      "entities_suppressed": 29,
+      "entity_counts_by_confidence_tier": {
+        "high": 10,
+        "junk": 0,
+        "low": 10,
+        "medium": 121
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 46,
+        "ONION_URL": 8,
+        "OTHER": 74,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 10
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "a3265d84-3e37-4937-b1a8-74c0d3d9ffbc",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 13,
+          "status": "ok"
+        },
+        "github": {
+          "count": 1,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 62,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 11,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 108,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 62,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 61472.0,
+        "entity_extraction": 13280.5,
+        "finalization": 63.4,
+        "graph_build": 168.6,
+        "query_refinement": 3.7,
+        "scraping": 21975.7,
+        "source_gathering": 38923.1,
+        "summary_generation": 0.6
+      },
+      "query_id": "ransomware-01",
+      "status": "completed",
+      "total_entities": 141,
+      "visible_entity_count": 112,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "ransomware",
+      "entities_suppressed": 26,
+      "entity_counts_by_confidence_tier": {
+        "high": 7,
+        "junk": 0,
+        "low": 12,
+        "medium": 151
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 2,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 68,
+        "ONION_URL": 3,
+        "OTHER": 83,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 11
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "d5bd57c9-cbd8-4184-b160-e6bc57fb5da3",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 2,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 8,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 51,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 112,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 51,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 8,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 23723.5,
+        "entity_extraction": 15118.4,
+        "finalization": 67.7,
+        "graph_build": 322.9,
+        "query_refinement": 2.2,
+        "scraping": 30876.3,
+        "source_gathering": 36941.4,
+        "summary_generation": 0.3
+      },
+      "query_id": "ransomware-02",
+      "status": "completed",
+      "total_entities": 170,
+      "visible_entity_count": 144,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "actor_handle",
+      "entities_suppressed": 26,
+      "entity_counts_by_confidence_tier": {
+        "high": 31,
+        "junk": 0,
+        "low": 12,
+        "medium": 149
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 76,
+        "ONION_URL": 32,
+        "OTHER": 76,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 5
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 1,
+          "status": "ok"
+        },
+        "github": {
+          "count": 1,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 31,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 111,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 31,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 14070.1,
+        "entity_extraction": 33930.9,
+        "finalization": 90.4,
+        "graph_build": 222.2,
+        "query_refinement": 2.5,
+        "scraping": 53758.5,
+        "source_gathering": 26385.2,
+        "summary_generation": 0.4
+      },
+      "query_id": "actor-01",
+      "status": "completed",
+      "total_entities": 192,
+      "visible_entity_count": 166,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "actor_handle",
+      "entities_suppressed": 29,
+      "entity_counts_by_confidence_tier": {
+        "high": 11,
+        "junk": 0,
+        "low": 11,
+        "medium": 135
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 68,
+        "ONION_URL": 4,
+        "OTHER": 76,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 6
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "5dbda6c0-3f0c-41cd-aee0-0172d6564de6",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 2,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_proxy"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 49,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 145,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 49,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 12885.1,
+        "entity_extraction": 18578.4,
+        "finalization": 62.8,
+        "graph_build": 189.2,
+        "query_refinement": 2.7,
+        "scraping": 35325.6,
+        "source_gathering": 30454.3,
+        "summary_generation": 0.5
+      },
+      "query_id": "actor-02",
+      "status": "completed",
+      "total_entities": 157,
+      "visible_entity_count": 128,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "malware_family",
+      "entities_suppressed": 26,
+      "entity_counts_by_confidence_tier": {
+        "high": 86,
+        "junk": 0,
+        "low": 36,
+        "medium": 127
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 68,
+        "ONION_URL": 75,
+        "OTHER": 96,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 7
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "399dbc72-dc6f-4114-b52b-40160bcce07f",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 3,
+          "status": "ok"
+        },
+        "github": {
+          "count": 5,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 1,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 2,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 29,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 100,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 29,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 1,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 33661.4,
+        "entity_extraction": 22447.2,
+        "finalization": 79.9,
+        "graph_build": 220.5,
+        "query_refinement": 1.9,
+        "scraping": 48203.0,
+        "source_gathering": 30993.6,
+        "summary_generation": 0.3
+      },
+      "query_id": "malware-01",
+      "status": "completed",
+      "total_entities": 249,
+      "visible_entity_count": 223,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "malware_family",
+      "entities_suppressed": 32,
+      "entity_counts_by_confidence_tier": {
+        "high": 10,
+        "junk": 0,
+        "low": 16,
+        "medium": 112
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 24,
+        "ONION_URL": 2,
+        "OTHER": 98,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 11
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "8cca2898-81bd-4952-8d78-feac3d6829d3",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 3,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 70,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 104,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 70,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 38757.3,
+        "entity_extraction": 21106.3,
+        "finalization": 58.5,
+        "graph_build": 176.4,
+        "query_refinement": 2.7,
+        "scraping": 33944.2,
+        "source_gathering": 26264.2,
+        "summary_generation": 0.4
+      },
+      "query_id": "malware-02",
+      "status": "completed",
+      "total_entities": 138,
+      "visible_entity_count": 106,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "infra_indicator",
+      "entities_suppressed": 26,
+      "entity_counts_by_confidence_tier": {
+        "high": 6,
+        "junk": 0,
+        "low": 52,
+        "medium": 126
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 1,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 76,
+        "ONION_URL": 3,
+        "OTHER": 94,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 7
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "6d320ef1-e1e5-437d-b7bd-8416912d9e17",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 2,
+          "status": "ok"
+        },
+        "github": {
+          "count": 5,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "timed_out"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 63,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 56,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 63,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "timed_out"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 92834.4,
+        "entity_extraction": 20968.8,
+        "finalization": 78.2,
+        "graph_build": 220.8,
+        "query_refinement": 2.5,
+        "scraping": 26141.3,
+        "source_gathering": 44010.4,
+        "summary_generation": 0.3
+      },
+      "query_id": "infra-01",
+      "status": "completed",
+      "total_entities": 184,
+      "visible_entity_count": 158,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "infra_indicator",
+      "entities_suppressed": 29,
+      "entity_counts_by_confidence_tier": {
+        "high": 29,
+        "junk": 0,
+        "low": 8,
+        "medium": 143
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 68,
+        "ONION_URL": 24,
+        "OTHER": 76,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 9
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 8,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 76,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 6,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 201,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 76,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 61377.6,
+        "entity_extraction": 17028.8,
+        "finalization": 73.9,
+        "graph_build": 188.0,
+        "query_refinement": 3.5,
+        "scraping": 38773.8,
+        "source_gathering": 37810.2,
+        "summary_generation": 0.6
+      },
+      "query_id": "infra-02",
+      "status": "completed",
+      "total_entities": 180,
+      "visible_entity_count": 151,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "credential_breach",
+      "entities_suppressed": 26,
+      "entity_counts_by_confidence_tier": {
+        "high": 12,
+        "junk": 0,
+        "low": 10,
+        "medium": 151
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 76,
+        "ONION_URL": 6,
+        "OTHER": 81,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 7
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "a7b33776-6009-4863-95bf-4c4008abcfea",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 3,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_proxy"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 30,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 1,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 120,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 30,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 20106.5,
+        "entity_extraction": 20677.4,
+        "finalization": 68.3,
+        "graph_build": 206.8,
+        "query_refinement": 2.0,
+        "scraping": 36927.1,
+        "source_gathering": 19006.3,
+        "summary_generation": 0.4
+      },
+      "query_id": "breach-01",
+      "status": "completed",
+      "total_entities": 173,
+      "visible_entity_count": 147,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "credential_breach",
+      "entities_suppressed": 26,
+      "entity_counts_by_confidence_tier": {
+        "high": 6,
+        "junk": 0,
+        "low": 14,
+        "medium": 145
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 76,
+        "ONION_URL": 3,
+        "OTHER": 77,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 6
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "971330e3-eb84-4769-a60b-a984569eaa24",
+      "junk_ratio": 0.0,
+      "lang": "en",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 2,
+          "status": "ok"
+        },
+        "github": {
+          "count": 1,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_proxy"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 46,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 102,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 46,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 15211.5,
+        "entity_extraction": 13350.4,
+        "finalization": 72.5,
+        "graph_build": 194.6,
+        "query_refinement": 2.0,
+        "scraping": 32066.8,
+        "source_gathering": 19964.1,
+        "summary_generation": 0.3
+      },
+      "query_id": "breach-02",
+      "status": "completed",
+      "total_entities": 165,
+      "visible_entity_count": 139,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "multilingual",
+      "entities_suppressed": 24,
+      "entity_counts_by_confidence_tier": {
+        "high": 4,
+        "junk": 0,
+        "low": 6,
+        "medium": 64
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 12,
+        "ONION_URL": 0,
+        "OTHER": 56,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 3
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "f3ada502-9c6a-403c-a91b-e197bbd22eb5",
+      "junk_ratio": 0.0,
+      "lang": "ru",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 2,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "ok"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 29,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 90,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 29,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "ok"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 6337.2,
+        "entity_extraction": 12066.9,
+        "finalization": 39.6,
+        "graph_build": 70.9,
+        "query_refinement": 2.2,
+        "scraping": 66657.5,
+        "source_gathering": 23549.4,
+        "summary_generation": 0.3
+      },
+      "query_id": "multilingual-ru-01",
+      "status": "completed",
+      "total_entities": 74,
+      "visible_entity_count": 50,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    },
+    {
+      "category": "multilingual",
+      "entities_suppressed": 27,
+      "entity_counts_by_confidence_tier": {
+        "high": 75,
+        "junk": 0,
+        "low": 6,
+        "medium": 78
+      },
+      "entity_counts_by_type": {
+        "CRYPTO_WALLET": 0,
+        "CVE": 0,
+        "DOMAIN": 0,
+        "EMAIL": 0,
+        "FILE_HASH_MD5": 0,
+        "FILE_HASH_SHA1": 0,
+        "FILE_HASH_SHA256": 3,
+        "HANDLE": 0,
+        "IP_ADDRESS": 0,
+        "MALWARE": 0,
+        "MITRE_TECHNIQUE": 21,
+        "ONION_URL": 61,
+        "OTHER": 71,
+        "PGP_KEY": 0,
+        "PHONE": 0,
+        "RANSOMWARE_GROUP": 3
+      },
+      "extraction_cache_hit_rate": 0.0,
+      "extraction_cache_hits": 0,
+      "extraction_llm_pages": 0,
+      "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+      "junk_ratio": 0.0,
+      "lang": "es",
+      "page_cache_hit_rate": 0.0,
+      "pages_attempted": 15,
+      "pages_cache_hits": 0,
+      "pages_empty": 0,
+      "pages_fetched": 15,
+      "per_source_contribution": {
+        "cve_intel": {
+          "count": 1,
+          "status": "ok"
+        },
+        "enrichment": {
+          "count": 6,
+          "status": "ok"
+        },
+        "github": {
+          "count": 0,
+          "status": "ok"
+        },
+        "gitlab": {
+          "count": 0,
+          "status": "ok"
+        },
+        "haystack": {
+          "count": 0,
+          "status": "error_timeout"
+        },
+        "hibp_pwned_passwords": {
+          "count": 0,
+          "status": "ok"
+        },
+        "hudsonrock": {
+          "count": 0,
+          "status": "ok"
+        },
+        "leakcheck": {
+          "count": 0,
+          "status": "timed_out"
+        },
+        "nvd": {
+          "count": 0,
+          "status": "ok"
+        },
+        "onion_search": {
+          "count": 39,
+          "status": "ok"
+        },
+        "openphish": {
+          "count": 0,
+          "status": "ok"
+        },
+        "paste_sites": {
+          "count": 0,
+          "status": "ok"
+        },
+        "phishtank": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomlook": {
+          "count": 0,
+          "status": "ok"
+        },
+        "ransomwhere": {
+          "count": 0,
+          "status": "ok"
+        },
+        "rss": {
+          "count": 20,
+          "status": "ok"
+        },
+        "sslbl": {
+          "count": 0,
+          "status": "ok"
+        },
+        "telegram": {
+          "count": 0,
+          "status": "skipped_no_key"
+        },
+        "tor_search": {
+          "count": 93,
+          "status": "ok"
+        },
+        "torch": {
+          "count": 39,
+          "status": "ok"
+        },
+        "xposedornot": {
+          "count": 0,
+          "status": "timed_out"
+        }
+      },
+      "phase_wall_clock_ms": {
+        "enrichment": 72492.0,
+        "entity_extraction": 13813.9,
+        "finalization": 67.2,
+        "graph_build": 258.1,
+        "query_refinement": 2.5,
+        "scraping": 23347.7,
+        "source_gathering": 25249.8,
+        "summary_generation": 0.3
+      },
+      "query_id": "multilingual-es-01",
+      "status": "completed",
+      "total_entities": 159,
+      "visible_entity_count": 132,
+      "visible_junk_count": 0,
+      "visible_junk_ratio": 0.0
+    }
+  ],
+  "run": {
+    "depth": "normal",
+    "generated_at": "2026-09-05T06:18:46.316067+00:00",
+    "git_commit": "be276d12",
+    "llm_enabled": false,
+    "pace_profile": "normal",
+    "query_count": 12,
+    "query_set_version": "1.0.0",
+    "tor_source": "system_tor"
+  },
+  "schema_version": "1.0.0",
+  "totals": {
+    "entities_suppressed": 326,
+    "entity_counts_by_confidence_tier": {
+      "high": 287,
+      "junk": 0,
+      "low": 193,
+      "medium": 1502
+    },
+    "entity_counts_by_type": {
+      "CRYPTO_WALLET": 0,
+      "CVE": 0,
+      "DOMAIN": 0,
+      "EMAIL": 0,
+      "FILE_HASH_MD5": 1,
+      "FILE_HASH_SHA1": 0,
+      "FILE_HASH_SHA256": 36,
+      "HANDLE": 0,
+      "IP_ADDRESS": 2,
+      "MALWARE": 0,
+      "MITRE_TECHNIQUE": 679,
+      "ONION_URL": 221,
+      "OTHER": 958,
+      "PGP_KEY": 0,
+      "PHONE": 0,
+      "RANSOMWARE_GROUP": 85
+    },
+    "extraction_cache_hit_rate": 0.0,
+    "junk_ratio": 0.0,
+    "page_cache_hit_rate": 0.0,
+    "pages_attempted": 180,
+    "pages_empty": 0,
+    "pages_fetched": 180,
+    "per_source_contribution": {
+      "cve_intel": {
+        "count": 12,
+        "queries": 12
+      },
+      "enrichment": {
+        "count": 47,
+        "queries": 12
+      },
+      "github": {
+        "count": 13,
+        "queries": 12
+      },
+      "gitlab": {
+        "count": 0,
+        "queries": 12
+      },
+      "haystack": {
+        "count": 0,
+        "queries": 12
+      },
+      "hibp_pwned_passwords": {
+        "count": 1,
+        "queries": 12
+      },
+      "hudsonrock": {
+        "count": 0,
+        "queries": 12
+      },
+      "leakcheck": {
+        "count": 10,
+        "queries": 12
+      },
+      "nvd": {
+        "count": 0,
+        "queries": 12
+      },
+      "onion_search": {
+        "count": 575,
+        "queries": 12
+      },
+      "openphish": {
+        "count": 0,
+        "queries": 12
+      },
+      "paste_sites": {
+        "count": 0,
+        "queries": 12
+      },
+      "phishtank": {
+        "count": 0,
+        "queries": 12
+      },
+      "ransomlook": {
+        "count": 18,
+        "queries": 12
+      },
+      "ransomwhere": {
+        "count": 0,
+        "queries": 12
+      },
+      "rss": {
+        "count": 240,
+        "queries": 12
+      },
+      "sslbl": {
+        "count": 0,
+        "queries": 12
+      },
+      "telegram": {
+        "count": 0,
+        "queries": 12
+      },
+      "tor_search": {
+        "count": 1342,
+        "queries": 12
+      },
+      "torch": {
+        "count": 575,
+        "queries": 12
+      },
+      "xposedornot": {
+        "count": 9,
+        "queries": 12
+      }
+    },
+    "phase_wall_clock_ms": {
+      "enrichment": 452928.6,
+      "entity_extraction": 222367.9,
+      "finalization": 822.4,
+      "graph_build": 2439.0,
+      "query_refinement": 30.4,
+      "scraping": 447997.5,
+      "source_gathering": 359552.0,
+      "summary_generation": 4.7
+    },
+    "total_entities": 1982,
+    "visible_entity_count": 1656,
+    "visible_junk_ratio": 0.0
+  }
+}

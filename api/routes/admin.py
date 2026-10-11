@@ -53,6 +53,34 @@ async def get_enrichment_cache_stats() -> dict:
         }
 
 
+@router.get("/corpus-health", dependencies=[Depends(get_current_user)])
+async def get_corpus_health(window_seconds: int = 3600) -> dict:
+    """Corpus-health vital signs for the single maintainer (P4.4 / CC-5).
+
+    Aggregates the already-emitted counters — ingest rate, quarantine:promotion
+    ratio (the primary poisoning signal), source-reputation distribution + flagged
+    contributors, index size/freshness, and read-from-shared cache-hit rate — from
+    a single point-in-time pass over existing tables (no parallel metrics pipeline).
+    Auth-protected. On a $0/local install with no DB configured it returns an inert
+    ``available: false`` payload rather than erroring.
+    """
+    import os
+
+    if not os.getenv("DATABASE_URL"):
+        return {"available": False, "reason": "no central corpus (local/$0 install)"}
+    try:
+        from db.session import get_session
+        from observability import corpus_health
+
+        with get_session() as session:
+            data = corpus_health(session, window_seconds=window_seconds)
+        data["available"] = True
+        return data
+    except Exception as exc:
+        correlation_id = log_exception(exc, context="get_corpus_health")
+        return {"available": False, "error": "unavailable", "correlation_id": correlation_id}
+
+
 @router.post("/enrichment-cache/invalidate", dependencies=[Depends(get_current_user)])
 async def invalidate_enrichment_cache_entry(
     entity_type: str,

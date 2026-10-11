@@ -17,6 +17,7 @@ from typing import Optional
 import aiohttp
 
 import pacing
+from sources import http_pool
 from config import VT_API_KEY, VT_API_TIER
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,7 @@ async def enrich_virustotal(entities: list[dict]) -> list[dict]:
     ][:_VT_HASH_LIMIT]
 
     results: list[dict] = []
-    async with aiohttp.ClientSession() as session:
+    async with http_pool.clearnet_session() as session:
         for hash_val, hash_type in hashes_to_query:
             data, server_wait = await _fetch_hash(hash_val, session)
             if data is None:

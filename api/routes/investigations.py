@@ -457,6 +457,11 @@ async def _build_graph_phase(
     return True
 
 
+# Cap on how many (ranked, non-suppressed) entities are handed to the LLM report
+# so the summary leads with signal and is not flooded by a long low-value tail.
+SUMMARY_ENTITY_LIMIT = 50
+
+
 async def _generate_summary_phase(
     extraction_results,
     page_records,
@@ -486,6 +491,15 @@ async def _generate_summary_phase(
         if extraction_results:
             for result in extraction_results:
                 summary_entities.extend(result.entities)
+
+        # Low-noise report: feed the LLM the high-signal entities first and drop
+        # the suppressed long tail (same ranking every other surface uses). This
+        # only shapes what the summary sees — nothing is deleted from storage.
+        if summary_entities:
+            from utils.entity_priority import order_and_filter_for_summary
+            summary_entities = order_and_filter_for_summary(
+                summary_entities, limit=SUMMARY_ENTITY_LIMIT
+            )
 
         summary = await _llm_with_backoff(
             generate_summary,
@@ -577,24 +591,11 @@ async def _check_cancelled(inv_uuid: uuid.UUID, investigation_id: str) -> bool:
 # Rate limiting (shared key_func with api/main.py; enforcement via app.state.limiter)
 # ---------------------------------------------------------------------------
 
-_DISABLE_RATE_LIMIT = (os.getenv("DISABLE_RATE_LIMIT", "false") or "false").lower() == "true"
+# Per-route rate limit via the in-process ratelimit substrate (no slowapi, no
+# Redis). Applied to create_investigation as a FastAPI dependency below.
+from api.rate_limit import rate_limit as _rate_limit_dep
 
-if not _DISABLE_RATE_LIMIT:
-    try:
-        from slowapi import Limiter
-        from slowapi.util import get_remote_address
-        _limiter: "Limiter | None" = Limiter(key_func=get_remote_address)
-    except ImportError:
-        _limiter = None
-else:
-    _limiter = None
-
-
-def _rate_limit(limit_string: str):
-    """Return a slowapi rate-limit decorator, or a pass-through when disabled."""
-    if _limiter is None:
-        return lambda f: f
-    return _limiter.limit(limit_string)
+_create_investigation_limit = _rate_limit_dep(3, 60, scope="create-investigation")
 
 
 STEP_LABELS = {
@@ -1261,7 +1262,20 @@ async def _run_investigation_task(
                         seen_urls.add(normalized)
                         all_search_results.append(result)
 
-            search_results = all_search_results
+            # P3.2 — merge the owned index into the fan-out and rank the union by
+            # semantic relevance (replaces static source_weight ordering; now only
+            # a tiebreak). Shared with the CLI path via merge_and_rank for API↔CLI
+            # parity; no-ops to external-only when Meilisearch is unconfigured, and
+            # returns owned-index results even when every external engine failed.
+            try:
+                from search.ranking import merge_and_rank
+
+                search_results = await merge_and_rank(
+                    refined_query or query, all_search_results
+                )
+            except Exception as _rank_exc:
+                logger.info("[%s] Merge/semantic-rank failed (non-fatal): %s", inv_uuid, _rank_exc)
+                search_results = all_search_results
             logger.info("[%s] Total search results: %d (from %d languages)", inv_uuid, len(search_results), len(expanded_queries))
 
             if not search_results:
@@ -1644,6 +1658,15 @@ async def _run_investigation_task(
         _nvd_n = sum(1 for p in enrichment_pages if p.get("source") == "nvd")
         sources_used["nvd"] = _src_status(_nvd_n, "enrichment")
 
+        # P1.3 — unified CVE intelligence (NVD + KEV + EPSS + Exploit-DB fused).
+        _cve_intel_n = sum(1 for p in enrichment_pages if p.get("source") == "cve_intel")
+        sources_used["cve_intel"] = _src_status(_cve_intel_n, "enrichment")
+
+        # P1.4/P1.5 — blocklist matches (SSLBL / OpenPhish / PhishTank / ransomwhe.re).
+        for _feed_name in ("sslbl", "openphish", "phishtank", "ransomwhere"):
+            _feed_n = sum(1 for p in enrichment_pages if p.get("source") == _feed_name)
+            sources_used[_feed_name] = _src_status(_feed_n, "enrichment")
+
         _shodan_n = sum(1 for p in enrichment_pages if p.get("source") == "shodan_internetdb")
         sources_used["shodan"] = _src_status(_shodan_n, "enrichment")
 
@@ -1784,6 +1807,46 @@ async def _run_investigation_task(
             except Exception:
                 pass
 
+        # ===== P4.2: Read-from-shared before scraping (serve-from-cache, zero re-scrape) =====
+        # Consult the shared tier (populated by OTHER users' runs) for cached page
+        # content, query-relevant seeds, and pre-extracted entities — reading ONLY
+        # user-agnostic shared tables (never another user's investigation/query/
+        # report). Served content skips the Tor re-scrape (point 2 of the four-point
+        # standard). Consent-gated + non-fatal; a $0/no-corpus install serves nothing.
+        shared_served: dict[str, str] = {}
+        shared_entities: list[dict] = []
+        try:
+            from shared_corpus.read import read_shared_before_scrape
+
+            with get_session() as shared_session:
+                shared_bundle = await read_shared_before_scrape(
+                    shared_session, refined_query, all_urls_to_scrape,
+                )
+            shared_served = shared_bundle.served
+            shared_entities = shared_bundle.entities
+            _remaining_links = {
+                (u.get("link") if isinstance(u, dict) else u) for u in shared_bundle.remaining
+            }
+            seed_additions = [
+                s for s in shared_bundle.seeds if s.get("link") not in _remaining_links
+            ]
+            all_urls_to_scrape = shared_bundle.remaining + seed_additions
+            sources_used["shared_corpus"] = {
+                "status": "skipped_private" if shared_bundle.skipped_private else "ok",
+                "cached_served": shared_bundle.served_count,
+                "seeds_added": len(seed_additions),
+                "entities": len(shared_entities),
+            }
+            logger.info(
+                "[%s] Shared read: %d cached served (skip re-scrape), %d seeds added, "
+                "%d shared entities%s",
+                inv_uuid, shared_bundle.served_count, len(seed_additions),
+                len(shared_entities),
+                " [private-mode: skipped]" if shared_bundle.skipped_private else "",
+            )
+        except Exception as _shared_exc:
+            logger.info("[%s] Shared read failed (non-fatal): %s", inv_uuid, _shared_exc)
+
         # ===== STEP 4.5: Vector Cache Lookup (no session held) =====
         _metric_start("scraping")
         logger.info(
@@ -1857,7 +1920,8 @@ async def _run_investigation_task(
         except Exception as exc:
             logger.info("[%s] Cache store failed (non-fatal): %s", inv_uuid, exc)
 
-        scraped_pages = {**cached_dict, **freshly_scraped}
+        # Shared cached content first, then local-cache, then freshly scraped.
+        scraped_pages = {**shared_served, **cached_dict, **freshly_scraped}
 
         # ===== STEP 5.75: Content safety scan (Layer 4) =====
         from utils.content_safety import sanitize_content, log_content_safety_event
@@ -1888,9 +1952,10 @@ async def _run_investigation_task(
             )
         scraped_pages = clean_pages
         run_metrics.record_scraping(
-            attempted=len(all_urls_to_scrape),
-            fetched=len(cached_dict) + sum(1 for text in freshly_scraped.values() if text),
-            cache_hits=len(cached_dict),
+            attempted=len(all_urls_to_scrape) + len(shared_served),
+            fetched=len(shared_served) + len(cached_dict)
+            + sum(1 for text in freshly_scraped.values() if text),
+            cache_hits=len(shared_served) + len(cached_dict),
         )
         _metric_finish("scraping")
 
@@ -2064,6 +2129,29 @@ async def _run_investigation_task(
         page_records = deduplicate_page_records(safe_page_records)
         scraped_count = len(page_records)
 
+        # P3.1 — usage-seeded auto-indexing. Feed the .onion pages this
+        # investigation touched into the shared corpus (discovered_onions +
+        # snapshot store + owned index), sanitized/consent-gated/provenance-
+        # stamped at the unconfirmed tier. Non-fatal and a graceful no-op when
+        # the store/index is unconfigured or in private mode (CC-3).
+        try:
+            from index_population import index_investigation_pages
+            from db.session import get_session
+
+            with get_session() as seed_session:
+                usage_report = await index_investigation_pages(seed_session, page_records)
+                seed_session.commit()
+            logger.info(
+                "[%s] Usage-seeded index: %d onions, %d snapshots, %d indexed (of %d pages)",
+                inv_uuid,
+                usage_report.onions,
+                usage_report.snapshots,
+                usage_report.indexed,
+                usage_report.considered,
+            )
+        except Exception as _seed_exc:
+            logger.info("[%s] Usage-seeded indexing failed (non-fatal): %s", inv_uuid, _seed_exc)
+
         non_empty_records = [r for r in page_records if len((r.get("text") or "").strip()) > 100]
         logger.info("[%s] Non-empty pages (>100 chars): %s", inv_uuid, len(non_empty_records))
         if not non_empty_records:
@@ -2160,6 +2248,20 @@ async def _run_investigation_task(
 
         await _update_progress(inv_uuid, 5, entity_count=total_entities)
         _metric_finish("entity_extraction")
+
+        # HIBP Pwned Passwords (k-anonymity, presence-only) — runs on the in-memory
+        # page text after extraction; the raw credential is hashed-and-discarded and
+        # only a presence flag+count persist (as tags on the email entity).
+        try:
+            from credential_presence import scan_pages_for_pwned_credentials
+            _hibp_page, _hibp_stats = await scan_pages_for_pwned_credentials(extraction_input)
+            sources_used["hibp_pwned_passwords"] = {
+                "status": _hibp_stats.get("status", "ok"),
+                "count": _hibp_stats.get("pwned", 0),
+            }
+        except Exception as _hibp_exc:
+            logger.debug("[%s] HIBP scan skipped: %s", inv_uuid, _hibp_exc)
+
         if await _check_cancelled(inv_uuid, investigation_id):
             return
 
@@ -2188,6 +2290,33 @@ async def _run_investigation_task(
             except Exception:
                 pass
         _metric_finish("enrichment")
+
+        # ===== P4.1: Promote observed entities into the shared corpus =====
+        # Byproduct of normal use (2.3): each observed entity/IOC is run through
+        # the full P4.0 eight-step trust gate and persisted into global_entities
+        # at the gate-assigned tier (unconfirmed by default; corroborated on ≥N
+        # independent sources; feed_validated on a platform-derived trusted-feed
+        # cross-hit). Consent-gated (private mode writes nothing), collision-safe,
+        # and strictly non-fatal — like the P3.1 usage hook.
+        try:
+            from shared_corpus.promote import promote_investigation
+
+            with get_session() as promo_session:
+                promo_report = promote_investigation(promo_session, investigation_id)
+                promo_session.commit()
+            logger.info(
+                "[%s] Shared-corpus promotion: considered %d, promoted %d "
+                "(corroborated %d, feed_validated %d), rejected %d%s",
+                inv_uuid,
+                promo_report.considered,
+                promo_report.promoted,
+                promo_report.corroborated,
+                promo_report.feed_validated,
+                promo_report.rejected,
+                " [private-mode: skipped]" if promo_report.skipped_private else "",
+            )
+        except Exception as _promo_exc:
+            logger.info("[%s] Shared-corpus promotion failed (non-fatal): %s", inv_uuid, _promo_exc)
 
         # ===== STEP 6.5: Cross-reference against seed data (short-lived session) =====
         logger.info("[%s] STEP 6.5: Cross-referencing with historical data...", inv_uuid)
@@ -2470,18 +2599,21 @@ def _persist_graph_edges_sync(graph_obj, investigation_id):
 
 
 @router.post("")
-@_rate_limit("3/minute")
 async def create_investigation(
     request: Request,
     body: InvestigationRequest,
     background_tasks: BackgroundTasks,
     current_user: CurrentUser = Depends(require_password_not_reset_pending),
+    _rl: None = Depends(_create_investigation_limit),
 ) -> dict:
     """Trigger an investigation asynchronously.
 
     Creates the investigation row in the DB synchronously before returning so
     that GET /investigations/{run_id} returns a valid record immediately while
-    the background pipeline runs.
+    the pipeline runs. Dispatch goes onto the durable job queue (P2.3) so an
+    in-flight investigation survives an API restart (a worker resumes/re-queues
+    it) instead of being orphaned. Without a DB (degraded/no-persistence mode)
+    it falls back to in-process BackgroundTasks.
     """
     from utils.content_safety import is_blocked_query, log_content_safety_event
 
@@ -2509,33 +2641,54 @@ async def create_investigation(
         )
 
     run_id = str(uuid.uuid4())
+    payload = {
+        "investigation_id": None,
+        "run_id": run_id,
+        "query": body.query,
+        "model": body.model,
+        "run_crawler": body.run_crawler,
+    }
 
     if os.getenv("DATABASE_URL"):
         try:
             from db.session import get_session
             from db.queries import create_investigation as db_create
+            from jobqueue import enqueue
 
             with get_session() as session:
                 inv = db_create(session, query=body.query, user_id=current_user.user.id)
                 inv.run_id = uuid.UUID(run_id)
                 inv.status = "pending"
-                session.commit()
+                session.flush()
                 investigation_id = str(inv.id)
+                payload["investigation_id"] = investigation_id
+                # Durable dispatch: a worker (this process, or a fresh one after
+                # a restart) claims and runs it. dedup_key ties the job to the
+                # investigation so the startup sweep won't orphan it.
+                enqueue(
+                    session,
+                    task_type="investigation",
+                    payload=payload,
+                    dedup_key=investigation_id,
+                )
+                session.commit()
         except Exception as exc:
             raise internal_http_exception(
                 exc, context="create investigation record"
             )
     else:
+        # No persistence configured — fall back to in-process BackgroundTasks
+        # (single-shot, non-durable) so the tool still runs without a DB.
         investigation_id = str(uuid.uuid4())
-
-    background_tasks.add_task(
-        _run_investigation_task,
-        investigation_id=investigation_id,
-        run_id=run_id,
-        query=body.query,
-        model=body.model,
-        run_crawler=body.run_crawler,
-    )
+        payload["investigation_id"] = investigation_id
+        background_tasks.add_task(
+            _run_investigation_task,
+            investigation_id=investigation_id,
+            run_id=run_id,
+            query=body.query,
+            model=body.model,
+            run_crawler=body.run_crawler,
+        )
     return {"run_id": run_id, "status": "pending", "query": body.query}
 
 
@@ -2545,39 +2698,46 @@ async def list_investigations(
     offset: int = Query(default=0, ge=0),
     current_user: "CurrentUser" = Depends(get_current_user),
 ) -> list[dict]:
-    """Return a paginated list of investigation summaries."""
+    """Return a paginated list of the caller's own investigation summaries."""
     if not os.getenv("DATABASE_URL"):
         return []
-    try:
-        from db.session import get_session
-        from db.models import Investigation
 
-        with get_session() as session:
-            invs = (
-                session.query(Investigation)
-                .filter(Investigation.is_seed == False)
-                .filter(Investigation.user_id == current_user.id)
-                .order_by(Investigation.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            )
-            return [
-                {
-                    "id": str(inv.id),
-                    "run_id": str(inv.run_id),
-                    "query": inv.query,
-                    "status": inv.status,
-                    "model_used": inv.model_used,
-                    "created_at": inv.created_at.isoformat() if inv.created_at else None,
-                    "entity_count": inv.entity_count or 0,
-                    "page_count": inv.page_count or 0,
-                }
-                for inv in invs
-            ]
-    except Exception as exc:
-        logger.exception("list_investigations failed: %s", exc)
-        return []
+    from db.session import get_session
+    from db.models import Investigation
+    from shared_corpus import filter_investigations_for_user
+
+    # Scope to the authenticated owner. Previously this used ``current_user.id``
+    # (which does not exist on CurrentUser — the numeric id is
+    # ``current_user.user.id``); the AttributeError was swallowed by a broad
+    # except that returned [], so callers always got an empty list. Both the bad
+    # attribute reference and the swallowing except are removed; ownership is
+    # scoped through the P2.0 fail-closed helper.
+    user_id = current_user.user.id
+    with get_session() as session:
+        base = (
+            session.query(Investigation)
+            .filter(Investigation.is_seed == False)  # noqa: E712
+        )
+        invs = (
+            filter_investigations_for_user(base, user_id)
+            .order_by(Investigation.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": str(inv.id),
+                "run_id": str(inv.run_id),
+                "query": inv.query,
+                "status": inv.status,
+                "model_used": inv.model_used,
+                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+                "entity_count": inv.entity_count or 0,
+                "page_count": inv.page_count or 0,
+            }
+            for inv in invs
+        ]
 
 
 @router.post("/{investigation_id}/cancel")
@@ -2741,7 +2901,7 @@ async def get_temporal_analysis(investigation_id: str) -> dict:
         from db.models import Entity, Page
         from db.queries import get_investigation_by_id_or_run
         from collections import defaultdict
-        from analysis.temporal import detect_anomalies, detect_silence_breaks, Z_SCORE_THRESHOLD
+        from analysis.temporal import detect_anomalies, detect_silence_breaks, POISSON_ALPHA
 
         with get_session() as session:
             inv = get_investigation_by_id_or_run(session, inv_uuid)
@@ -2809,16 +2969,18 @@ async def get_temporal_analysis(investigation_id: str) -> dict:
                 {"date": d, "count": c} for d, c in sorted(daily_counts.items())
             ]
 
-            anomalies_raw = detect_anomalies(timeline, z_threshold=Z_SCORE_THRESHOLD)
+            anomalies_raw = detect_anomalies(timeline, alpha=POISSON_ALPHA)
             anomalies = [
                 {
                     "date": str(a["date"]),
                     "count": a["count"],
-                    "z_score": round(a["z_score"], 2),
+                    "poisson_p_value": round(a["poisson_p_value"], 6),
+                    "expected_rate": round(a["expected_rate"], 4),
                     "type": a["type"],
                     "description": (
-                        f"Activity {'spike' if a['z_score'] > 0 else 'drop'}: "
-                        f"z-score {a['z_score']:.1f}"
+                        f"Activity {'spike' if a['type'] == 'spike' else 'drop'}: "
+                        f"observed {a['count']} vs expected ~{a['expected_rate']:.1f}/day "
+                        f"(p={a['poisson_p_value']:.4f})"
                     ),
                 }
                 for a in anomalies_raw
@@ -2895,9 +3057,16 @@ async def get_investigation_entities(
     offset: int = Query(default=0, ge=0),
     defang: bool = Query(default=True),
     freshness_exclude: Optional[str] = Query(default=None),
+    include_suppressed: bool = Query(default=False),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict:
-    """Return paginated entities for an investigation, optionally filtered by type and confidence."""
+    """Return prioritized entities for an investigation, optionally filtered by type and confidence.
+
+    Low-noise by default: entities are ordered by ``priority_score`` (high-signal
+    first) and low-signal entities are collapsed behind ``include_suppressed`` —
+    non-destructive, they are still returned (and counted in ``suppressed_count``)
+    when the caller opts in.
+    """
     if not os.getenv("DATABASE_URL"):
         raise HTTPException(status_code=503, detail="Database not configured")
     try:
@@ -2906,7 +3075,7 @@ async def get_investigation_entities(
         from db.queries import get_investigation_by_id_or_run
         from graph.builder import _make_node_id
         from utils.ioc_freshness import get_freshness_tag, get_freshness_display
-        from utils.defang import defang_value, defang_text
+        from utils.defang import defang_value, defang_value_checked, defang_text
 
         inv_uuid = uuid.UUID(investigation_id)
         with get_session() as session:
@@ -2934,8 +3103,8 @@ async def get_investigation_entities(
                 .filter(EntityRelationship.investigation_id == inv.id)
                 .all()
             )
-            from utils.entity_priority import score_map
-            priority_by_id = score_map(score_entities, relationships)
+            from utils.entity_priority import rank_map
+            priority_by_id = rank_map(score_entities, relationships)
 
             query = scoped_query
             if entity_type:
@@ -2943,21 +3112,47 @@ async def get_investigation_entities(
             if min_confidence > 0.0:
                 query = query.filter(Entity.confidence >= min_confidence)
 
-            total = query.count()
-            entities = (
-                query.order_by(Entity.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            )
+            candidates = query.all()
 
             # Safety net: filter prohibited entity values from the response.
             # Catches values that may have been stored before FIX 2 was deployed.
             from utils.content_safety import is_blocked_entity_value as _is_blocked_ev
-            entities = [
-                e for e in entities
+            candidates = [
+                e for e in candidates
                 if not _is_blocked_ev(e.entity_type, e.value)
             ]
+
+            # Apply freshness exclusion before pagination so ``total`` and paging
+            # stay correct.
+            if freshness_exclude == "expired":
+                candidates = [
+                    e for e in candidates
+                    if get_freshness_tag(
+                        e.entity_type, e.last_seen_at, e.first_seen_at
+                    ).value != "expired"
+                ]
+
+            # Low-noise default: order by priority (high-signal first) and collapse
+            # suppressed low-signal entities behind ``include_suppressed`` — they
+            # stay reachable, never deleted.
+            def _rank_of(e):
+                return priority_by_id.get(str(e.id), {}).get("rank", 1 << 30)
+
+            candidates.sort(key=_rank_of)
+            suppressed_count = sum(
+                1 for e in candidates
+                if priority_by_id.get(str(e.id), {}).get("suppressed", False)
+            )
+            if include_suppressed:
+                visible = candidates
+            else:
+                visible = [
+                    e for e in candidates
+                    if not priority_by_id.get(str(e.id), {}).get("suppressed", False)
+                ]
+
+            total = len(visible)
+            entities = visible[offset:offset + limit]
 
             out: list[dict] = []
             for e in entities:
@@ -2974,15 +3169,15 @@ async def get_investigation_entities(
                     e.first_seen_at,
                 )
 
-                if freshness_exclude == "expired" and freshness_tag.value == "expired":
-                    continue
-
                 graph_node_id = _make_node_id(e.entity_type, e.value, source_url)
 
                 display_value = e.value
                 display_context = e.context
+                value_defanged = False
                 if defang:
-                    display_value = defang_value(e.entity_type, e.value or "")
+                    display_value, value_defanged = defang_value_checked(
+                        e.entity_type, e.value or ""
+                    )
                     if e.context:
                         display_context = defang_text(e.context)
 
@@ -3022,10 +3217,23 @@ async def get_investigation_entities(
                         "typed_relationship_degree": priority_by_id.get(
                             str(e.id), {}
                         ).get("typed_relationship_degree", 0),
-                        "defanged": defang,
+                        "rank": priority_by_id.get(str(e.id), {}).get("rank", 0),
+                        "suppressed": priority_by_id.get(str(e.id), {}).get(
+                            "suppressed", False
+                        ),
+                        "suppression_reason": priority_by_id.get(str(e.id), {}).get(
+                            "suppression_reason"
+                        ),
+                        "defanged": value_defanged,
                     }
                 )
-            return {"items": out, "total": total, "skip": offset, "limit": limit}
+            return {
+                "items": out,
+                "total": total,
+                "skip": offset,
+                "limit": limit,
+                "suppressed_count": suppressed_count,
+            }
     except HTTPException:
         raise
     except ValueError:
@@ -3056,7 +3264,7 @@ async def export_investigation_entities_csv(
         from db.session import get_session
         from db.models import Entity, EntityRelationship, InvestigationEntityLink
         from db.queries import get_investigation_by_id_or_run
-        from utils.entity_priority import score_map
+        from utils.entity_priority import rank_map
 
         with get_session() as session:
             inv = get_investigation_by_id_or_run(session, inv_uuid)
@@ -3082,7 +3290,12 @@ async def export_investigation_entities_csv(
                 .filter(EntityRelationship.investigation_id == inv.id)
                 .all()
             )
-            priority_by_id = score_map(entities, relationships)
+            priority_by_id = rank_map(entities, relationships)
+            # Export the full set (non-destructive) but ordered high-signal-first
+            # so the CSV leads with the entities that matter.
+            entities.sort(
+                key=lambda e: priority_by_id.get(str(e.id), {}).get("rank", 1 << 30)
+            )
 
             output = io.StringIO()
             writer = csv.writer(output)

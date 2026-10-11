@@ -1,0 +1,3 @@
+# Harness output dir. `benchmark metrics` writes metrics-latest.json here and
+# `benchmark probe` writes engine-health-latest.json. Commit the latest artifact
+# to get phase-over-phase `git diff`s (canonical JSON, sorted keys).

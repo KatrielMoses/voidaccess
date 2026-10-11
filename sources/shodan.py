@@ -16,6 +16,7 @@ import logging
 import aiohttp
 
 import pacing
+from sources import http_pool
 from config import MAX_IPS_PER_INVESTIGATION, SHODAN_RATE_LIMIT_DELAY
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,8 @@ async def enrich_shodan_ip(ip_address: str, extracted_cves: set[str]) -> dict | 
     """
     try:
         timeout = aiohttp.ClientTimeout(total=5)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(f"{_SHODAN_INTERNETDB}/{ip_address}") as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(f"{_SHODAN_INTERNETDB}/{ip_address}", timeout=timeout) as resp:
                 if resp.status == 404:
                     return None
                 if resp.status != 200:

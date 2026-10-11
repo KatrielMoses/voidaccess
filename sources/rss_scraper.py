@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Optional
 
 import pacing
+from sources import http_pool
 from sources.enrichment import is_onion_url
 from sources.proxy_client import clearnet_fetch
 from utils.content_safety import is_blocked_query, sanitize_content
@@ -55,6 +56,17 @@ from utils.content_safety import is_blocked_query, sanitize_content
 # Timing baselines (`normal` pacing profile); scaled at call time.
 FEED_TIMEOUT = 15    # seconds, feed fetch
 ENTRY_TIMEOUT = 10   # seconds, per-entry fetch
+
+# Request headers, passed per-request through clearnet_fetch now that the session
+# is the shared, header-less clearnet pool (P1.2). Module-level so they apply
+# even when a scraper instance is used without its `async with` context.
+_RSS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; RSS-Reader/1.0; +https://github.com/voidaccess/voidaccess)",
+    "Accept": (
+        "application/rss+xml, application/atom+xml, "
+        "application/xml, text/xml"
+    ),
+}
 
 logger = logging.getLogger(__name__)
 
@@ -314,21 +326,17 @@ class RSSFeedScraper:
         self._article_fetch_cache: dict[str, object] = {}
 
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession(
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; RSS-Reader/1.0; +https://github.com/voidaccess/voidaccess)",
-                "Accept": (
-                    "application/rss+xml, application/atom+xml, "
-                    "application/xml, text/xml"
-                ),
-            },
-            timeout=aiohttp.ClientTimeout(total=pacing.scale_timeout(FEED_TIMEOUT)),
-        )
+        # Shared clearnet pool (P1.2): borrow the pooled session (the direct
+        # transport for clearnet_fetch), never close it. Headers (_RSS_HEADERS)
+        # move onto each clearnet_fetch call; those calls already pass their own
+        # per-request timeout, so the old session-level timeout was already
+        # overridden.
+        self._session = http_pool.get_clearnet_session()
         return self
 
     async def __aexit__(self, *args):
-        if self._session:
-            await self._session.close()
+        # The shared session is owned by the pool; nothing to close here.
+        self._session = None
 
     async def fetch_relevant_articles(
         self,
@@ -471,6 +479,7 @@ class RSSFeedScraper:
             status, _content_type, body = await clearnet_fetch(
                 feed_url,
                 expect="xml",
+                headers=_RSS_HEADERS,
                 timeout=pacing.scale_timeout(FEED_TIMEOUT),
                 fallback_session=self._session,
             )
@@ -609,6 +618,7 @@ class RSSFeedScraper:
             status, _content_type, body = await clearnet_fetch(
                 url,
                 expect="html",
+                headers=_RSS_HEADERS,
                 timeout=pacing.scale_timeout(ENTRY_TIMEOUT),
                 fallback_session=self._session,
             )

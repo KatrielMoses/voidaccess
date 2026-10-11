@@ -33,6 +33,16 @@ def defang_ip(ip: str) -> str:
     return ip
 
 
+def defang_ipv6(ip: str) -> str:
+    """
+    Defang an IPv6 address so it is not clickable/resolvable.
+    2001:db8::1 -> 2001[:]db8[:][:]1
+    """
+    if not ip:
+        return ip
+    return ip.replace(":", "[:]")
+
+
 def defang_email(email: str) -> str:
     """
     Defang an email address.
@@ -48,22 +58,60 @@ def defang_email(email: str) -> str:
     return email
 
 
+# Entity types that carry a resolvable/clickable network address and MUST be
+# routed through ``defang_url`` for display. Kept as the single audited coverage
+# set so no network-IOC type can silently fall through to the identity branch
+# and be shown raw under a ``defanged:true`` label.
+#
+#   URL / PASTE_URL — generic + paste-site clearnet URLs (INT-F4: were falling
+#     through to identity, shown raw).
+#   ONION_URL       — dark-web URLs.
+#   DOMAIN / DOMAIN_NAME — bare hostnames (both spellings are emitted; see
+#     ``extractor/pipeline.py`` and ``extractor/normalizer.py``).
+#   ENS_DOMAIN      — resolvable ``.eth``-style names (folded in per the audit).
+_URL_DEFANG_TYPES = frozenset({
+    "URL",
+    "PASTE_URL",
+    "ONION_URL",
+    "DOMAIN",
+    "DOMAIN_NAME",
+    "ENS_DOMAIN",
+})
+
+
 def defang_value(entity_type: str, value: str) -> str:
     """
     Defang an entity value based on its type.
-    Returns the defanged version for display.
+    Returns the defanged version for display. This is the single dispatch
+    authority: ``hygiene.defang_ioc`` and both API entity surfaces route through
+    it, so coverage added here is coverage everywhere.
     """
-    if entity_type in (
-        "ONION_URL",
-        "DOMAIN",
-    ):
+    if entity_type in _URL_DEFANG_TYPES:
         return defang_url(value)
     elif entity_type == "IP_ADDRESS":
         return defang_ip(value)
+    elif entity_type == "IPV6_ADDRESS":
+        return defang_ipv6(value)
     elif entity_type == "EMAIL_ADDRESS":
         return defang_email(value)
     else:
         return value
+
+
+def defang_value_checked(entity_type: str, value: str) -> tuple[str, bool]:
+    """
+    Defang ``value`` and report whether it was actually transformed.
+
+    Returns ``(defanged_value, changed)`` where ``changed`` is ``True`` iff the
+    defanged form differs from the input. This is the single source of truth for
+    the API ``defanged`` flag: deriving the flag from a real transform makes it
+    structurally impossible to report ``defanged:true`` for a value that was
+    left untouched (INT-F4 flag honesty).
+    """
+    if not value:
+        return value, False
+    defanged = defang_value(entity_type, value)
+    return defanged, defanged != value
 
 
 def defang_text(text: str) -> str:

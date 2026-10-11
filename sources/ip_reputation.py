@@ -32,6 +32,7 @@ from typing import Any, Optional
 import aiohttp
 
 import pacing
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -153,8 +154,8 @@ async def load_feodo_feed() -> dict[str, str]:
     logger.info("ip_reputation: Refreshing Feodo Tracker feed")
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(FEODO_CSV_URL) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(FEODO_CSV_URL, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning("ip_reputation: Feodo returned HTTP %s", resp.status)
                     return dict(cache["ips"])
@@ -181,8 +182,8 @@ async def load_c2_feeds() -> dict[str, set[str]]:
     async def _fetch_one(framework: str, url: str) -> tuple[str, set[str]]:
         try:
             timeout = aiohttp.ClientTimeout(total=20)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as resp:
+            async with http_pool.clearnet_session() as session:
+                async with session.get(url, timeout=timeout) as resp:
                     if resp.status != 200:
                         logger.debug("ip_reputation: C2Feed %s → HTTP %s", framework, resp.status)
                         return framework, set()
@@ -214,11 +215,12 @@ async def _check_abuseipdb(ip: str, api_key: str) -> dict:
         headers = {"Key": api_key, "Accept": "application/json"}
         params = {"ipAddress": ip, "maxAgeInDays": 90}
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             async with session.get(
                 "https://api.abuseipdb.com/api/v2/check",
                 headers=headers,
                 params=params,
+                timeout=timeout,
             ) as resp:
                 if resp.status != 200:
                     logger.debug("ip_reputation: AbuseIPDB → HTTP %s for %s", resp.status, ip)
@@ -290,10 +292,11 @@ async def _check_greynoise(ip: str, api_key: str) -> dict:
     try:
         headers = {"key": api_key}
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             async with session.get(
                 f"https://api.greynoise.io/v3/community/{ip}",
                 headers=headers,
+                timeout=timeout,
             ) as resp:
                 if resp.status == 404:
                     return {"classification": "unknown"}

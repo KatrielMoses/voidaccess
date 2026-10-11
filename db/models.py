@@ -847,3 +847,39 @@ class ActorInfrastructure(Base):
     actor: Mapped["ActorProfile"] = relationship(
         "ActorProfile", back_populates="infrastructure"
     )
+
+
+class RevokedToken(Base):
+    """DB-backed JWT revocation entry (P2.3).
+
+    Lets token revocation (logout) work with **zero Redis** on a single box: a
+    revoked token's ``jti`` is recorded here with its natural expiry, and the
+    auth dependency checks membership on each request. Expired rows are pruned
+    opportunistically. See ``auth/token_blacklist.py``.
+    """
+
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, index=True
+    )
+    revoked_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared tier (P2.0) + job queue (P2.3) — register these tables on this same
+# Base so a single Base.metadata drives BOTH schema paths (create_all for
+# SQLite/CLI/tests and Alembic for PostgreSQL). These bottom-of-file imports run
+# after Base and all core models are defined, so the submodules can safely
+# ``from db.models import Base`` without a circular-import problem. Keeping the
+# imports here (rather than only in the create_all call sites) guarantees the
+# tables are on the metadata regardless of which module is imported first.
+# ---------------------------------------------------------------------------
+import shared_corpus.models  # noqa: E402,F401  (side-effect: table registration)
+import jobqueue.models  # noqa: E402,F401  (side-effect: table registration)
+import ingest.models  # noqa: E402,F401  (P4.3 ingest-key + control tables)

@@ -74,3 +74,69 @@ def test_cli_export_priority_matches_api_investigation_scope(db_engine):
         assert cli_scores[eid] == api_scores[eid], (
             f"priority_score mismatch for {eid}: CLI={cli_scores[eid]} API={api_scores[eid]}"
         )
+
+
+def test_cli_and_api_agree_on_rank_and_suppression(db_engine):
+    """P1.6: the low-noise ordering (rank) and the non-destructive ``suppressed``
+    flag must be identical across surfaces for the same investigation, because
+    both feed the one shared ``rank_entities``."""
+    import json as _json
+
+    from db.session import get_session
+    from db.models import Investigation, Page, Entity
+    from utils.entity_priority import rank_map
+    from voidaccess_cli.adapters import sqlite as sqlite_adapter
+
+    inv_id = uuid.uuid4()
+    page = uuid.uuid4()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    old = now - datetime.timedelta(days=400)
+
+    def _entity(eid, etype, value, *, confidence, source_count, seen, tags=None):
+        return Entity(
+            id=eid, page_id=page, investigation_id=inv_id,
+            entity_type=etype, value=value, canonical_value=value.lower(),
+            confidence=confidence, source_count=source_count,
+            extraction_method="regex",
+            first_seen_at=seen, last_seen_at=seen, created_at=now,
+            corroborating_sources=_json.dumps(tags) if tags else None,
+        )
+
+    e_strong = uuid.uuid4()
+    e_junk = uuid.uuid4()
+    e_kev = uuid.uuid4()
+    with get_session() as session:
+        session.add(Investigation(
+            id=inv_id, query="q", status="completed", created_at=now,
+        ))
+        session.add(Page(id=page, url="http://a.onion", cleaned_text="a",
+                         scrape_timestamp=now, created_at=now))
+        session.add(_entity(e_strong, "IP_ADDRESS", "1.2.3.4",
+                            confidence=0.96, source_count=6, seen=now))
+        session.add(_entity(e_junk, "EMAIL_ADDRESS", "junk@nowhere.test",
+                            confidence=0.05, source_count=1, seen=old))
+        session.add(_entity(e_kev, "CVE_NUMBER", "CVE-2021-44228",
+                            confidence=0.05, source_count=1, seen=old,
+                            tags=["dark_web_scrape", "kev"]))
+        session.commit()
+
+    # API-side: rank over the same scoped set both surfaces use.
+    with get_session() as session:
+        scoped = session.query(Entity).filter(
+            Entity.investigation_id == inv_id
+        ).all()
+        api_rank = rank_map(scoped, [])
+
+    # CLI-side.
+    cli = {e["id"]: e for e in sqlite_adapter.get_entities(str(inv_id))}
+    assert cli, "CLI produced no entities"
+
+    for eid, rec in cli.items():
+        assert rec["rank"] == api_rank[eid]["rank"], f"rank mismatch {eid}"
+        assert rec["suppressed"] == api_rank[eid]["suppressed"], f"suppressed mismatch {eid}"
+        assert rec["suppression_reason"] == api_rank[eid]["suppression_reason"]
+
+    # And the semantics hold: junk suppressed, KEV-flagged exempt, strong first.
+    assert cli[str(e_junk)]["suppressed"] is True
+    assert cli[str(e_kev)]["suppressed"] is False  # deterministic flag exempts it
+    assert cli[str(e_strong)]["rank"] == 1

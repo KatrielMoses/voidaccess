@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import pacing
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 from extractor.identity import entity_canonical_id
 
@@ -76,19 +77,19 @@ class DNSEnrichment:
         self._st_key = os.getenv("SECURITYTRAILS_API_KEY", "").strip()
 
     async def __aenter__(self):
-        headers = {
+        # Shared clearnet pool (P1.2): borrow the pooled session; do NOT close it
+        # in __aexit__. Headers move to each request since the shared session
+        # carries none (each per-request call already supplies its own timeout).
+        self._headers = {
             "User-Agent": "VoidAccess-OSINT/1.1 (security research)",
             "Accept": "application/json",
         }
-        self._session = aiohttp.ClientSession(
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=20),
-        )
+        self._session = http_pool.get_clearnet_session()
         return self
 
     async def __aexit__(self, *args):
-        if self._session:
-            await self._session.close()
+        # The shared session is owned by the pool; nothing to close here.
+        self._session = None
 
     async def enrich_entities(self, entities: list[dict]) -> dict:
         """
@@ -331,6 +332,7 @@ class DNSEnrichment:
         try:
             async with self._session.get(
                 f"{CIRCL_PDNS_URL}/{ip}",
+                headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=CIRCL_TIMEOUT),
             ) as resp:
                 if resp.status != 200:
@@ -371,6 +373,7 @@ class DNSEnrichment:
         try:
             async with self._session.get(
                 f"{CIRCL_PDNS_URL}/{domain}",
+                headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=CIRCL_TIMEOUT),
             ) as resp:
                 if resp.status != 200:
@@ -411,6 +414,7 @@ class DNSEnrichment:
         try:
             async with self._session.get(
                 f"{CIRCL_PSSL_URL}/{ip}",
+                headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=CIRCL_TIMEOUT),
             ) as resp:
                 if resp.status != 200:
@@ -450,6 +454,7 @@ class DNSEnrichment:
         try:
             async with self._session.get(
                 RDAP_IP_URL.format(ip=ip),
+                headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=WHOIS_TIMEOUT),
             ) as resp:
                 if resp.status != 200:
@@ -508,6 +513,7 @@ class DNSEnrichment:
         try:
             async with self._session.get(
                 RDAP_DOMAIN_URL.format(domain=domain),
+                headers=self._headers,
                 timeout=aiohttp.ClientTimeout(total=WHOIS_TIMEOUT),
             ) as resp:
                 if resp.status != 200:

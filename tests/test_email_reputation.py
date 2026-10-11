@@ -56,10 +56,11 @@ def _mock_aiohttp_get(status: int, json_data=None, text_data: str | None = None)
     """Build an aiohttp session mock that returns a fixed response for GET calls."""
     mock_resp = AsyncMock()
     mock_resp.status = status
-    if json_data is not None:
-        mock_resp.json = AsyncMock(return_value=json_data)
-    if text_data is not None:
-        mock_resp.text = AsyncMock(return_value=text_data)
+    # Define BOTH response readers so whichever the code path calls is a real
+    # awaitable (some tests reuse one mock across a JSON call and the disposable
+    # -list text fetch, which forces a fetch when its cache is empty).
+    mock_resp.json = AsyncMock(return_value=json_data)
+    mock_resp.text = AsyncMock(return_value=text_data if text_data is not None else "")
 
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=mock_resp)
@@ -85,7 +86,7 @@ async def test_hibp_parses_breach_names_and_dates():
     with (
         patch.dict(os.environ, {"HIBP_API_KEY": "testkey"}),
         patch.object(er, "_hibp_cache", {}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=hibp_data)),
     ):
         result = await query_hibp("test@example.com")
@@ -114,7 +115,7 @@ async def test_hibp_password_class_sets_flag():
     with (
         patch.dict(os.environ, {"HIBP_API_KEY": "testkey"}),
         patch.object(er, "_hibp_cache", {}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=hibp_data)),
     ):
         result = await query_hibp("victim@example.com")
@@ -137,7 +138,7 @@ async def test_hibp_hit_boosts_confidence():
         patch.object(er, "_emailrep_cache", {}),
         patch.object(er, "_disposable_cache", {"domains": frozenset(), "loaded_at": time.time()}),
         patch.object(er, "query_emailrep", AsyncMock(return_value={})),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=hibp_data)),
     ):
         result = await check_email_reputation("actor@example.com", base_confidence=0.80)
@@ -161,7 +162,7 @@ async def test_hibp_recent_breach_tag():
     with (
         patch.dict(os.environ, {"HIBP_API_KEY": "testkey"}),
         patch.object(er, "_hibp_cache", {}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=hibp_data)),
     ):
         result = await query_hibp("recent@example.com")
@@ -193,7 +194,7 @@ async def test_emailrep_disposable_lowers_confidence():
         patch.object(er, "_emailrep_cache", {}),
         patch.object(er, "_hibp_cache", {}),
         patch.object(er, "_disposable_cache", {"domains": frozenset(), "loaded_at": time.time()}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=emailrep_data)),
     ):
         result = await check_email_reputation("throwaway@mailinator.com", base_confidence=0.85)
@@ -227,7 +228,7 @@ async def test_emailrep_malicious_boosts_confidence():
         patch.object(er, "_emailrep_cache", {}),
         patch.object(er, "_hibp_cache", {}),
         patch.object(er, "_disposable_cache", {"domains": frozenset(), "loaded_at": time.time()}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=emailrep_data)),
     ):
         result = await check_email_reputation("bad@actor-domain.net", base_confidence=0.75)
@@ -258,7 +259,7 @@ async def test_emailrep_platforms_extracted():
     }
     with (
         patch.object(er, "_emailrep_cache", {}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=emailrep_data)),
     ):
         result = await query_emailrep("user@example.com")
@@ -277,7 +278,7 @@ async def test_disposable_domain_list_check():
     blocklist_text = "mailinator.com\ntrashmail.com\nguerrillamail.com\n"
     with (
         patch.object(er, "_disposable_cache", {"domains": frozenset(), "loaded_at": 0.0}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, text_data=blocklist_text)),
     ):
         assert await is_disposable_domain("mailinator.com") is True
@@ -366,7 +367,7 @@ async def test_no_hibp_key_emailrep_still_runs():
         patch.dict(os.environ, {"HIBP_API_KEY": ""}),
         patch.object(er, "_emailrep_cache", {}),
         patch.object(er, "_disposable_cache", {"domains": frozenset(), "loaded_at": time.time()}),
-        patch("sources.email_reputation.aiohttp.ClientSession",
+        patch("aiohttp.ClientSession",
               return_value=_mock_aiohttp_get(200, json_data=emailrep_data)),
     ):
         result = await check_email_reputation("test@somedomain.com", base_confidence=0.80)

@@ -11,6 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from config import TOR_PROXY_HOST, TOR_PROXY_PORT
+from scraper import tor_pool
 from search import tor_isolation
 from db.search_engine_stats import (
     engine_priority_score,
@@ -27,7 +28,6 @@ from search import config as search_config
 logger = logging.getLogger(__name__)
 
 ENGINE_WEIGHTS = {
-    "darksearch": 1.0,
     "ahmia": 0.9,
     "torch": 0.7,
 }
@@ -81,6 +81,36 @@ def _get_tor_session():
     return session
 
 
+# Public alias used by scripts/health_check.py.  Kept here (the canonical module)
+# so `from search.search import get_tor_session` resolves — before P1.1
+# consolidation this alias existed only in search/__init__.py, so that submodule
+# import was silently broken.
+get_tor_session = _get_tor_session
+
+
+def get_search_session() -> aiohttp.ClientSession:
+    """Return a Tor-proxied session for search use.
+
+    Kept for backward compatibility.  This is the pool's *shared un-isolated*
+    bucket, because it names no target and so has no isolation key to derive
+    one from.  Per-engine isolation happens in `_search_async`, which acquires a
+    session keyed on each engine's hostname — prefer
+    `search.tor_isolation.acquire_engine_session` in new code.
+    """
+    return tor_pool.get_tor_session_cached()
+
+
+async def close_search_session() -> None:
+    """Close search's Tor sessions — call on shutdown.
+
+    Search no longer owns a session of its own; it borrows from the shared pool,
+    so this drains that pool.  Safe to call alongside
+    `scraper.scrape.close_cached_sessions()` (which drains the same pool) — the
+    second call simply finds it empty.
+    """
+    await tor_pool.close_pool()
+
+
 def _is_onion_url(url: str) -> bool:
     return bool(_ONION_URL_RE.search(url))
 
@@ -120,20 +150,7 @@ async def _fetch_engine(
                         )
                     
                     text = await resp.text()
-                    
-                    if "darksearch.io/api" in url:
-                        try:
-                            import json
-                            data = json.loads(text)
-                            links = [
-                                {"title": hit.get("title", "No Title"), "link": hit.get("onion")}
-                                for hit in data.get("data", [])
-                                if hit.get("onion")
-                            ]
-                            return EngineResult(name=name, links=links)
-                        except Exception as e:
-                            return EngineResult(name=name, links=[], error=f"JSON parse: {e}")
-                    
+
                     links = _parse_html_links(text, url)
                     return EngineResult(name=name, links=links)
 
@@ -236,7 +253,14 @@ async def _search_async(
 ) -> list[EngineResult]:
     global _LAST_SEARCH_SUMMARY
     semaphore = asyncio.Semaphore(max_workers)
-    engine_list = list(engines or SEARCH_ENGINES)
+    # Static catalog lifecycle (P1.1): only `active` engines enter the fan-out.
+    # This is distinct from — and runs before — the dynamic circuit-breaker skip
+    # below: a `quarantined`/`removed` engine is never dispatched at all, so a
+    # permanently-dead engine stops burning a Tor circuit every breaker cycle.
+    engine_list = [
+        e for e in (engines or SEARCH_ENGINES)
+        if e.get("status", "active") == "active"
+    ]
     try:
         stats_rows = await get_all_engine_stats_async()
     except Exception:
@@ -375,7 +399,14 @@ def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_
         logger.debug(f"Engine {result.name}: {len(result.links)} links ({status})")
 
     unique = _dedupe_links(all_links)
-    unique.sort(key=lambda r: r.get("source_weight", 0.5), reverse=True)
+
+    # P3.2 — merge the owned index into the fan-out and rank the union by semantic
+    # relevance (replaces the static source_weight ordering, which is now only a
+    # tiebreak). No-ops to external-only when Meilisearch is unconfigured. Shared
+    # with the API path via search.ranking.merge_and_rank for API↔CLI parity.
+    from search.ranking import merge_and_rank
+
+    unique = run_async(merge_and_rank(query, unique))
 
     elapsed = (time.monotonic() - start) * 1000
     logger.info(f"Search completed: {len(unique)} unique links in {elapsed:.0f}ms")

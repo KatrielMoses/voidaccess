@@ -1,456 +1,8 @@
 {
   "version": "1.0.0",
-  "last_updated": "2026-07-25",
+  "last_updated": "2026-09-05",
   "description": "Curated list of known dark web addresses for VoidAccess intelligence seeding",
   "categories": {
-    "ransomware_leak_sites": {
-      "description": "Ransomware group data leak and negotiation sites",
-      "tags": [
-        "ransomware",
-        "leak",
-        "extortion",
-        "RaaS",
-        "victim"
-      ],
-      "seeds": [
-        {
-          "name": "LockBit 3.0 Leak Site",
-          "url": "http://lockbit7z2jwcskxpbokpemdxmltipntwlkmidcll2qirbu7ykg46eyd.onion",
-          "tags": [
-            "lockbit",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "ALPHV/BlackCat Leak Site",
-          "url": "http://alphvmmm27o3abo3r2mlmjrpdmzle3rykajqc5xsj7j7ejksbpsa36ad.onion",
-          "tags": [
-            "alphv",
-            "blackcat",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "RansomHub Leak Site",
-          "url": "http://ransomxifxwc5eteopdobynonjctkxxvap77yqifu2emfbecgbqdw6qd.onion",
-          "tags": [
-            "ransomhub",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Play Ransomware Leak Site",
-          "url": "http://mbrlkbtq5jonaqkuruhxxnczkewspki7l2zih2cizaejt7uplyxelsad.onion",
-          "tags": [
-            "play",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Cl0p Leak Site",
-          "url": "http://ekbgzchl6x2ias37.onion",
-          "tags": [
-            "clop",
-            "cl0p",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "BlackBasta Leak Site",
-          "url": "http://stniiou4x4n7vkst.onion",
-          "tags": [
-            "blackbasta",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Akira Ransomware Leak Site",
-          "url": "http://akiral2iz6a7qgd3ayp3l6yub7xx7erostar5fk3mmfhq4jrm5sgv3id.onion",
-          "tags": [
-            "akira",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "8Base Ransomware",
-          "url": "http://basemmnnq4ndtbzn.onion",
-          "tags": [
-            "8base",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Hunters International",
-          "url": "http://hunters55rdxciehoqzwv7vgyv6nt37tbwax2reroyzxhou7my5ejyid.onion",
-          "tags": [
-            "hunters",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "NoEscape Ransomware",
-          "url": "http://noescape4yxmdn4nliuzrquf5k2mhddyxl2d2mhwwl7mv5kiqnxwuad.onion",
-          "tags": [
-            "noescape",
-            "ransomware",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "hacker_forums": {
-      "description": "Underground hacking and cybercrime forums",
-      "tags": [
-        "forum",
-        "hacking",
-        "cybercrime",
-        "exploit",
-        "malware",
-        "tools"
-      ],
-      "seeds": [
-        {
-          "name": "Exploit.in Mirror",
-          "url": "http://exploitivzcm5dawzhe6c32nrekcdcrjnisambwggfm26sf7bxkaicad.onion",
-          "tags": [
-            "exploit",
-            "forum",
-            "russian"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "XSS.is Mirror",
-          "url": "http://xss4ctmechkr6gzm.onion",
-          "tags": [
-            "xss",
-            "forum",
-            "russian",
-            "exploit"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Ramp Forum",
-          "url": "http://ramp4u7vomefwf3n.onion",
-          "tags": [
-            "ramp",
-            "forum",
-            "russian",
-            "darknet"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "HackTown",
-          "url": "http://hacktownpagdenbbi.onion",
-          "tags": [
-            "hacktown",
-            "forum",
-            "hacking"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Nulled Mirror",
-          "url": "http://nulledkp4oyc3p6j.onion",
-          "tags": [
-            "nulled",
-            "forum",
-            "cracking",
-            "leak"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "carding_fraud": {
-      "description": "Carding, fraud, and financial crime forums and markets",
-      "tags": [
-        "carding",
-        "fraud",
-        "cc",
-        "dumps",
-        "financial",
-        "stolen"
-      ],
-      "seeds": [
-        {
-          "name": "Rescator Mirror",
-          "url": "http://rescatorzofpmygeex.onion",
-          "tags": [
-            "rescator",
-            "carding",
-            "dumps"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Joker's Stash Archive",
-          "url": "http://jstash4ys65773kw.onion",
-          "tags": [
-            "jokers",
-            "stash",
-            "carding"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "BriansClub Mirror",
-          "url": "http://briansclubm3ld.onion",
-          "tags": [
-            "briansclub",
-            "carding",
-            "cc"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "initial_access_brokers": {
-      "description": "Initial access broker marketplaces and shops",
-      "tags": [
-        "IAB",
-        "access",
-        "rdp",
-        "vpn",
-        "shell",
-        "initial access"
-      ],
-      "seeds": [
-        {
-          "name": "Genesis Market Archive",
-          "url": "http://genesiswyjnvzkmf.onion",
-          "tags": [
-            "genesis",
-            "stealer",
-            "logs",
-            "IAB"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Russian Market Mirror",
-          "url": "http://rsnmktfxigejvfk6.onion",
-          "tags": [
-            "russian market",
-            "logs",
-            "stealer",
-            "credentials"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "malware_tools": {
-      "description": "Malware, exploit kits, and hacking tools markets",
-      "tags": [
-        "malware",
-        "rat",
-        "stealer",
-        "botnet",
-        "exploit kit",
-        "c2",
-        "cobalt strike"
-      ],
-      "seeds": [
-        {
-          "name": "MalwareBazaar Onion",
-          "url": "http://bazaar.abuse.ch.onion",
-          "tags": [
-            "malware",
-            "samples",
-            "abuse.ch"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "VX Underground Mirror",
-          "url": "http://vxug7ouqq5lnh3am.onion",
-          "tags": [
-            "vxug",
-            "malware",
-            "samples",
-            "research"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "search_and_indexes": {
-      "description": "Dark web search engines and directory indexes",
-      "tags": [
-        "search",
-        "index",
-        "directory"
-      ],
-      "seeds": [
-        {
-          "name": "Ahmia Search",
-          "url": "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion",
-          "tags": [
-            "search",
-            "ahmia",
-            "index"
-          ],
-          "status": "active",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Torch Search",
-          "url": "http://xmh57jrknzkhv6y3ls3ubitzfqnkrwxhopf5aygthi7d6rplyvk3noyd.onion",
-          "tags": [
-            "search",
-            "torch",
-            "index"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Haystack",
-          "url": "http://haystak5njsmn2hqkewecpaxetahtwhsbsa64jom2k22z5afxhnpxfid.onion",
-          "tags": [
-            "search",
-            "haystack",
-            "index"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "OnionLand Search",
-          "url": "http://3bbad7fauom4d6sgppalyqddsqbf5u5p56b5k5uk2zxsy3d6ey2jobad.onion",
-          "tags": [
-            "search",
-            "onionland",
-            "index"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Dark.fail Directory",
-          "url": "http://darkfailenbsdla5mal2mxn2uz66od5vtzd5qozslagrfzachha3f3id.onion",
-          "tags": [
-            "directory",
-            "verified",
-            "links"
-          ],
-          "status": "active",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "paste_and_leaks": {
-      "description": "Dark web paste sites and data leak repositories",
-      "tags": [
-        "paste",
-        "leak",
-        "dump",
-        "credentials",
-        "data"
-      ],
-      "seeds": [
-        {
-          "name": "ZeroBin Onion",
-          "url": "http://zerobinftagjpeeebbvyzalcnagdzqp4mn7dvlsb5bkfp775j4g7gkqd.onion",
-          "tags": [
-            "paste",
-            "zerobin",
-            "anonymous"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Stronghold Paste",
-          "url": "http://stronghold4ljtntyuoqr6kwkmlrjq57ldldwkdav4mm3kdfzqkmg3qd.onion",
-          "tags": [
-            "paste",
-            "leak",
-            "dump"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
-    "threat_intelligence": {
-      "description": "Dark web threat intelligence and security research resources",
-      "tags": [
-        "intel",
-        "security",
-        "research",
-        "CTI",
-        "IOC"
-      ],
-      "seeds": [
-        {
-          "name": "Intel Exchange",
-          "url": "http://rrcc5uuudhh4ez3c.onion",
-          "tags": [
-            "intel",
-            "exchange",
-            "CTI"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        },
-        {
-          "name": "Onion Share",
-          "url": "http://lldan5gahapx5k7iafb3s4ikijc4ni7gx5iywdflkba5y2ezyg6sjgyd.onion",
-          "tags": [
-            "share",
-            "files",
-            "anonymous"
-          ],
-          "status": "unknown",
-          "added": "2024-01-01"
-        }
-      ]
-    },
     "discovered": {
       "description": "Auto-discovered during investigations",
       "tags": [
@@ -516,6 +68,2136 @@
           "source_url": "http://tornetupfu7gcgidt33ftnungxzyfq2pygui5qdoyss34xbgx2qruzid.onion",
           "investigation_id": "94488e9f-236e-4cdd-a55e-285219f59dc0",
           "added_at": "2026-07-25T17:08:29.364410+00:00"
+        },
+        {
+          "name": "lockbit24pegjquuwbmwjlvyivmyaujf",
+          "url": "http://lockbit24pegjquuwbmwjlvyivmyaujf33kvlepcxyncnugm3zw73myd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://lockbit24pegjquuwbmwjlvyivmyaujf33kvlepcxyncnugm3zw73myd.onion/bot2.html",
+          "investigation_id": "019027d5-b552-4cca-869b-dc0587fd4dd9",
+          "added_at": "2026-09-05T05:20:56.749523+00:00"
+        },
+        {
+          "name": "4hb2s56xkkzwqkltysrdtbb4iy7u3wha",
+          "url": "http://4hb2s56xkkzwqkltysrdtbb4iy7u3whalyt2b6hme64wf7uqxm5kbtyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://4hb2s56xkkzwqkltysrdtbb4iy7u3whalyt2b6hme64wf7uqxm5kbtyd.onion/8018/myanmar-government-data-leak",
+          "investigation_id": "5875b69d-1924-4231-a4e2-3f271ac1e50a",
+          "added_at": "2026-09-05T05:24:20.258730+00:00"
+        },
+        {
+          "name": "clzuhx25lnkadj5ulir7iqhanakafwhn",
+          "url": "http://clzuhx25lnkadj5ulir7iqhanakafwhn24zzi2fvfyml7dtoi6fkxmad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://66fkyredrjkrpsfc75ct2jez5na5mofxcdeb4lipchtxsudyyzzdujid.onion/phone-data-hackers-115/",
+          "investigation_id": "5875b69d-1924-4231-a4e2-3f271ac1e50a",
+          "added_at": "2026-09-05T05:24:20.258730+00:00"
+        },
+        {
+          "name": "breached4wtyw5fb45zj7sggnoazgv3a",
+          "url": "http://breached4wtyw5fb45zj7sggnoazgv3aohme2zftkrndhvo76d5q5uad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://breached4wtyw5fb45zj7sggnoazgv3aohme2zftkrndhvo76d5q5uad.onion",
+          "investigation_id": "5875b69d-1924-4231-a4e2-3f271ac1e50a",
+          "added_at": "2026-09-05T05:24:20.265917+00:00"
+        },
+        {
+          "name": "cashkxxqpzbgggg7",
+          "url": "http://cashkxxqpzbgggg7.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://forumwlbrrudypm63eh347bafnsptzkmcyjy5sp5tnxut226qqtltxyd.onion/",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:04.950872+00:00"
+        },
+        {
+          "name": "atlasf35nmxs7734sfd2uv7oeuynekmj",
+          "url": "http://atlasf35nmxs7734sfd2uv7oeuynekmj2mvs3uqk3p4mbfzbumwsk5qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://hellfor6lms7ymehau66mojeg7wom2mjkua6zked7l2t6vhtjhgzinid.onion",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:04.950872+00:00"
+        },
+        {
+          "name": "3ug6mfk3yeumvqnv",
+          "url": "http://3ug6mfk3yeumvqnv.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://forumwlbrrudypm63eh347bafnsptzkmcyjy5sp5tnxut226qqtltxyd.onion/",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:04.975883+00:00"
+        },
+        {
+          "name": "3wrli3wgvopj37az6ifusjad47wpqwtx",
+          "url": "http://3wrli3wgvopj37az6ifusjad47wpqwtx3uk7uou5t2qpz2sgv4fcqhqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://forumwlbrrudypm63eh347bafnsptzkmcyjy5sp5tnxut226qqtltxyd.onion/",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:04.998849+00:00"
+        },
+        {
+          "name": "forumdpncpfgtjgdt2qmng74i4qpjhaa",
+          "url": "http://forumdpncpfgtjgdt2qmng74i4qpjhaa2xudvezdei5wj7on6okrbkad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://forumdpncpfgtjgdt2qmng74i4qpjhaa2xudvezdei5wj7on6okrbkad.onion/users/neonh4zE",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:05.028559+00:00"
+        },
+        {
+          "name": "tormarkbdgfxbxzkoqy777q5br3uuxuq",
+          "url": "http://tormarkbdgfxbxzkoqy777q5br3uuxuqmaivhfqxx7xf5uyarjs562ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tormarkbdgfxbxzkoqy777q5br3uuxuqmaivhfqxx7xf5uyarjs562ad.onion/keyword/forum",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:05.028559+00:00"
+        },
+        {
+          "name": "suprbahmoygnce6vqngpojkpvciq5oa4",
+          "url": "http://suprbahmoygnce6vqngpojkpvciq5oa4pqzvlxtob53jg7wchhdyo6yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suprbahmoygnce6vqngpojkpvciq5oa4pqzvlxtob53jg7wchhdyo6yd.onion/Forum-Site-Issues",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:05.028559+00:00"
+        },
+        {
+          "name": "darkhubevczmxyljfv2p422p4xjr2npb",
+          "url": "http://darkhubevczmxyljfv2p422p4xjr2npb2t7rxcfcz45l2oeq3bhoxbqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkhubevczmxyljfv2p422p4xjr2npb2t7rxcfcz45l2oeq3bhoxbqd.onion/posts/fbi-seizes-notorious-ramp-cybercrime-forum",
+          "investigation_id": "e6ccf24b-119e-4312-87be-bb06c83833e7",
+          "added_at": "2026-09-05T05:27:05.028889+00:00"
+        },
+        {
+          "name": "cardingoxnrd24kp4f4avlwu2jsvz2wk",
+          "url": "http://cardingoxnrd24kp4f4avlwu2jsvz2wkyalzmhqljaxjk4ef5xh2axid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://cardingoxnrd24kp4f4avlwu2jsvz2wkyalzmhqljaxjk4ef5xh2axid.onion/cards",
+          "investigation_id": "80109e3d-5312-4ac5-9a21-01670f6f69db",
+          "added_at": "2026-09-05T05:28:59.793646+00:00"
+        },
+        {
+          "name": "iqualowxvgqaijkrxy2xrl4peewievvv",
+          "url": "http://iqualowxvgqaijkrxy2xrl4peewievvvocenmt2qfbkxcto6cqt2anyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://iqualowxvgqaijkrxy2xrl4peewievvvocenmt2qfbkxcto6cqt2anyd.onion",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.896715+00:00"
+        },
+        {
+          "name": "ajwccz5y5jn33bwt2jiibcytg2pk4gdl",
+          "url": "http://ajwccz5y5jn33bwt2jiibcytg2pk4gdluwmij5i4qse3oahykq4fj7id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://dwebc5kntr3tmndibeyl2yqr5edgws2tmjshkkh3ibs5vulmu7ylnbid.onion/",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.896715+00:00"
+        },
+        {
+          "name": "dwebc5kntr3tmndibeyl2yqr5edgws2t",
+          "url": "http://dwebc5kntr3tmndibeyl2yqr5edgws2tmjshkkh3ibs5vulmu7ylnbid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ajwccz5y5jn33bwt2jiibcytg2pk4gdluwmij5i4qse3oahykq4fj7id.onion/",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.897715+00:00"
+        },
+        {
+          "name": "dweb5sm34uzajabrjtl2jvznaaeop526",
+          "url": "http://dweb5sm34uzajabrjtl2jvznaaeop526p3sqi73hw4gur5ggkadqa3ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://dwebc5kntr3tmndibeyl2yqr5edgws2tmjshkkh3ibs5vulmu7ylnbid.onion/",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.900948+00:00"
+        },
+        {
+          "name": "darkbipq37ucoawwnvihahpvj4h7qymv",
+          "url": "http://darkbipq37ucoawwnvihahpvj4h7qymvgsgofbanb7h5leufobngqiqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkbipq37ucoawwnvihahpvj4h7qymvgsgofbanb7h5leufobngqiqd.onion/category/bank-logs",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.944001+00:00"
+        },
+        {
+          "name": "zqmmvturif3doffewsarxyaeg6nh5xdw",
+          "url": "http://zqmmvturif3doffewsarxyaeg6nh5xdw6kebqqnu7urdupifcq2lkhid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://zqmmvturif3doffewsarxyaeg6nh5xdw6kebqqnu7urdupifcq2lkhid.onion/banklogs",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.944001+00:00"
+        },
+        {
+          "name": "logswfj27vp27c3i5dhpnrsy3cer7ds6",
+          "url": "http://logswfj27vp27c3i5dhpnrsy3cer7ds6jybta7cyo4crjjnmtvh6hqqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://logswfj27vp27c3i5dhpnrsy3cer7ds6jybta7cyo4crjjnmtvh6hqqd.onion/index.php",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.945004+00:00"
+        },
+        {
+          "name": "logsapz5xt33fdq34myigorladipiqe3",
+          "url": "http://logsapz5xt33fdq34myigorladipiqe34mvb2smffza62xrfceaitxqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://logsapz5xt33fdq34myigorladipiqe34mvb2smffza62xrfceaitxqd.onion",
+          "investigation_id": "b1e35518-2aa7-4c51-993b-13db8b56b3ae",
+          "added_at": "2026-09-05T05:31:23.945004+00:00"
+        },
+        {
+          "name": "zqktlwkvmv5ipqnik77wyxtb74bg6gtl",
+          "url": "http://zqktlwkvmv5ipqnik77wyxtb74bg6gtlwifjntdbanvprue7qqzaqlid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://zqktlwkvmv5ipqnik77wyxtb74bg6gtlwifjntdbanvprue7qqzaqlid.onion",
+          "investigation_id": "12a0cea7-7442-4d3e-bd72-141c6b27d150",
+          "added_at": "2026-09-05T05:33:40.187032+00:00"
+        },
+        {
+          "name": "bitcc24twqhkzkqhjs6kwvsxkrvkxlvb",
+          "url": "http://bitcc24twqhkzkqhjs6kwvsxkrvkxlvb46cm45ff67dyxnp3fkr6xqqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://bitcc24twqhkzkqhjs6kwvsxkrvkxlvb46cm45ff67dyxnp3fkr6xqqd.onion",
+          "investigation_id": "e3810222-be18-45ca-bef8-8585e41d1eaa",
+          "added_at": "2026-09-05T05:36:25.294764+00:00"
+        },
+        {
+          "name": "goodgamell762ckqk376pqtg7ltdhgtv",
+          "url": "http://goodgamell762ckqk376pqtg7ltdhgtvsvk32m7im2v5ntd3o33ylbqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://www.goodgamell762ckqk376pqtg7ltdhgtvsvk32m7im2v5ntd3o33ylbqd.onion/en/game-hosters/gameservers-com-hosting",
+          "investigation_id": "e3810222-be18-45ca-bef8-8585e41d1eaa",
+          "added_at": "2026-09-05T05:36:25.294764+00:00"
+        },
+        {
+          "name": "kikurizs5iqotdsrplso4wrdcgrgoiv7",
+          "url": "http://kikurizs5iqotdsrplso4wrdcgrgoiv7y4wmpzu4ni2ho6egvdw3mxad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://kikurizs5iqotdsrplso4wrdcgrgoiv7y4wmpzu4ni2ho6egvdw3mxad.onion/books/serverip-stressing",
+          "investigation_id": "e3810222-be18-45ca-bef8-8585e41d1eaa",
+          "added_at": "2026-09-05T05:36:25.294764+00:00"
+        },
+        {
+          "name": "torbox3uiot6wchz",
+          "url": "http://torbox3uiot6wchz.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://hosting32emwoz7nsehecew2cb7alcxu6bqqkihk77rccsrkyknm5jqd.onion",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.275736+00:00"
+        },
+        {
+          "name": "danielas3rtn54uwmofdo3x2bsdifr47",
+          "url": "http://danielas3rtn54uwmofdo3x2bsdifr47huasnmbgqzfrec5ubupvtpid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://torlisthsxo7h65pd2po7kevpzkk4wwf3czylz3izcmsx4jzwabbopyd.onion/dark-web-hosting-providers/",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.275736+00:00"
+        },
+        {
+          "name": "anonhost7sxxfhijy6a6wkarjedvh4yj",
+          "url": "http://anonhost7sxxfhijy6a6wkarjedvh4yj2ndorqdrm5qy5dhdfbkdq6qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://torlisthsxo7h65pd2po7kevpzkk4wwf3czylz3izcmsx4jzwabbopyd.onion/dark-web-hosting-providers/",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.304432+00:00"
+        },
+        {
+          "name": "spore64i5sofqlfz5gq2ju4msgzojjwi",
+          "url": "http://spore64i5sofqlfz5gq2ju4msgzojjwifls7rok2cti624zyq3fcelad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://torlisthsxo7h65pd2po7kevpzkk4wwf3czylz3izcmsx4jzwabbopyd.onion/dark-web-hosting-providers/",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.337824+00:00"
+        },
+        {
+          "name": "njallalafimoej5i4eg7vlnqjvmb6zhd",
+          "url": "http://njallalafimoej5i4eg7vlnqjvmb6zhdh27qxcatdn647jtwwwui3nad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://torlisthsxo7h65pd2po7kevpzkk4wwf3czylz3izcmsx4jzwabbopyd.onion/dark-web-hosting-providers/",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.359683+00:00"
+        },
+        {
+          "name": "hostmate2s6cudoclklceo6u2jjjilgd",
+          "url": "http://hostmate2s6cudoclklceo6u2jjjilgdz2rfx5r2xuezr26kx2jgl5ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://torlisthsxo7h65pd2po7kevpzkk4wwf3czylz3izcmsx4jzwabbopyd.onion/dark-web-hosting-providers/",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.378163+00:00"
+        },
+        {
+          "name": "rpso3vbrwnj3iupjdfoywx6ctsudwtd6",
+          "url": "http://rpso3vbrwnj3iupjdfoywx6ctsudwtd6wpte5namrsw2t5uyysyb2qyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://rpso3vbrwnj3iupjdfoywx6ctsudwtd6wpte5namrsw2t5uyysyb2qyd.onion/hosting-services.html",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.406002+00:00"
+        },
+        {
+          "name": "boom222jd42vaw7hiv3ntkloe4nanabi",
+          "url": "http://boom222jd42vaw7hiv3ntkloe4nanabilvziqk73wx46xwdjs6xeqsid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://boom222jd42vaw7hiv3ntkloe4nanabilvziqk73wx46xwdjs6xeqsid.onion/blockchain_com_phishing_pages_tutorial.php",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.406002+00:00"
+        },
+        {
+          "name": "suwial2klqv2r6k3lf3fafmc2umdi6p7",
+          "url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.406002+00:00"
+        },
+        {
+          "name": "verunixrtjfqfx2voyxva7tlfzrxebuu",
+          "url": "http://verunixrtjfqfx2voyxva7tlfzrxebuu24kz57gvxknmf4fl4iyvr6ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://verunixrtjfqfx2voyxva7tlfzrxebuu24kz57gvxknmf4fl4iyvr6ad.onion/linux-hosting",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.406002+00:00"
+        },
+        {
+          "name": "hosting32emwoz7nsehecew2cb7alcxu",
+          "url": "http://hosting32emwoz7nsehecew2cb7alcxu6bqqkihk77rccsrkyknm5jqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://hosting32emwoz7nsehecew2cb7alcxu6bqqkihk77rccsrkyknm5jqd.onion",
+          "investigation_id": "0871b16a-cc9c-4cb3-a9fa-0585ec6a47f8",
+          "added_at": "2026-09-05T05:38:50.407004+00:00"
+        },
+        {
+          "name": "passwordk7voqor6sskdab2doa4rm65f",
+          "url": "http://passwordk7voqor6sskdab2doa4rm65fnswxmrewwejpp3t5qjuaoiad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://passwordk7voqor6sskdab2doa4rm65fnswxmrewwejpp3t5qjuaoiad.onion",
+          "investigation_id": "ba570865-bb2f-4066-8383-ab733bea3b1b",
+          "added_at": "2026-09-05T05:41:53.707280+00:00"
+        },
+        {
+          "name": "torcatjz2hclyc53rfsmer42etbxtxhh",
+          "url": "http://torcatjz2hclyc53rfsmer42etbxtxhhsjrb56lt7oubhi5cqms4ilqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://torcatjz2hclyc53rfsmer42etbxtxhhsjrb56lt7oubhi5cqms4ilqd.onion/category/email_services",
+          "investigation_id": "ba570865-bb2f-4066-8383-ab733bea3b1b",
+          "added_at": "2026-09-05T05:41:53.708672+00:00"
+        },
+        {
+          "name": "le2f3hmqbfpec6h7ixxxrhh3oowz4ykk",
+          "url": "http://le2f3hmqbfpec6h7ixxxrhh3oowz4ykktbm2dsg4teess2aqmxozhpyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://le2f3hmqbfpec6h7ixxxrhh3oowz4ykktbm2dsg4teess2aqmxozhpyd.onion/service/email-hacking.html",
+          "investigation_id": "ba570865-bb2f-4066-8383-ab733bea3b1b",
+          "added_at": "2026-09-05T05:41:53.708672+00:00"
+        },
+        {
+          "name": "3zpgcgtjr7bbbhg5n4qptrskxd3jy6zv",
+          "url": "http://3zpgcgtjr7bbbhg5n4qptrskxd3jy6zvulwcqqjzfzedmbtxmb7wmvqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://3zpgcgtjr7bbbhg5n4qptrskxd3jy6zvulwcqqjzfzedmbtxmb7wmvqd.onion/password",
+          "investigation_id": "ba570865-bb2f-4066-8383-ab733bea3b1b",
+          "added_at": "2026-09-05T05:41:53.708672+00:00"
+        },
+        {
+          "name": "dumpju4npb66k7rihmn75p3hgzcpwvpx",
+          "url": "http://dumpju4npb66k7rihmn75p3hgzcpwvpxvunrtd3wpfghyeucldkhq7yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://dumpju4npb66k7rihmn75p3hgzcpwvpxvunrtd3wpfghyeucldkhq7yd.onion",
+          "investigation_id": "ba570865-bb2f-4066-8383-ab733bea3b1b",
+          "added_at": "2026-09-05T05:41:53.709686+00:00"
+        },
+        {
+          "name": "emailctvauubmkig2i5qsawxjnoxoabg",
+          "url": "http://emailctvauubmkig2i5qsawxjnoxoabgozxiix2h24fuvzkpjfbv6hyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://emailctvauubmkig2i5qsawxjnoxoabgozxiix2h24fuvzkpjfbv6hyd.onion",
+          "investigation_id": "ba570865-bb2f-4066-8383-ab733bea3b1b",
+          "added_at": "2026-09-05T05:41:53.709686+00:00"
+        },
+        {
+          "name": "tylhvafs6i24qv6gfvc5byqzgagyxx6q",
+          "url": "http://tylhvafs6i24qv6gfvc5byqzgagyxx6qmuyilthgk4xzf3gzii3edyid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tylhvafs6i24qv6gfvc5byqzgagyxx6qmuyilthgk4xzf3gzii3edyid.onion/leaked-information",
+          "investigation_id": "1e9a6674-6e45-4bd5-bc79-f7e2754871f5",
+          "added_at": "2026-09-05T05:44:05.326773+00:00"
+        },
+        {
+          "name": "2nppw77ejbql5xyflkmu4awrxze2gfl5",
+          "url": "http://2nppw77ejbql5xyflkmu4awrxze2gfl57wj5l3sqzuecsa7lwra7i4ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://2nppw77ejbql5xyflkmu4awrxze2gfl57wj5l3sqzuecsa7lwra7i4ad.onion/questions/leaked-information",
+          "investigation_id": "1e9a6674-6e45-4bd5-bc79-f7e2754871f5",
+          "added_at": "2026-09-05T05:44:05.326773+00:00"
+        },
+        {
+          "name": "bit2djb4vqo62uh7v7dqrbyql4pzwor3",
+          "url": "http://bit2djb4vqo62uh7v7dqrbyql4pzwor3zmb7wrxifqffwbizc5dnahid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.083783+00:00"
+        },
+        {
+          "name": "csucvxctynkiuv6reurncooigo3yzfyq",
+          "url": "http://csucvxctynkiuv6reurncooigo3yzfyq5crixov2cqkhqiwcn3mzzvyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.083783+00:00"
+        },
+        {
+          "name": "vpa5kuzaqojfohhuxrldq2tyliv3jpq3",
+          "url": "http://vpa5kuzaqojfohhuxrldq2tyliv3jpq3372wacncz2h34yrvrdbs3ayd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.121273+00:00"
+        },
+        {
+          "name": "darkzzx4avcsuofgfez5zq75cqc4mprj",
+          "url": "http://darkzzx4avcsuofgfez5zq75cqc4mprjvfqywo45dfcaxrwqg6qrlfid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.122267+00:00"
+        },
+        {
+          "name": "2dlfppn225lr755dypzwzv7ecofsx7mp",
+          "url": "http://2dlfppn225lr755dypzwzv7ecofsx7mpllhci3wx4lhbubero6xzv2qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.157196+00:00"
+        },
+        {
+          "name": "venusoseaqnafjvzfmrcpcq6g47rhd7s",
+          "url": "http://venusoseaqnafjvzfmrcpcq6g47rhd7sa6nmzvaa4bj5rp6nm5jl7gad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.158195+00:00"
+        },
+        {
+          "name": "ntpzl7laqr7yusah676pjm4yaepansg7",
+          "url": "http://ntpzl7laqr7yusah676pjm4yaepansg7avzpgvuuyfny3carfboybgyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.188012+00:00"
+        },
+        {
+          "name": "bible4u2lvhacg4b3to2e2veqpwmrc2c",
+          "url": "http://bible4u2lvhacg4b3to2e2veqpwmrc2c3tjf2wuuqiz332vlwmr4xbad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.188012+00:00"
+        },
+        {
+          "name": "trfrrztr2ho6e6k5tcc44krye2fkriwk",
+          "url": "http://trfrrztr2ho6e6k5tcc44krye2fkriwk4lugzguk7xttaniny5pclwyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.221425+00:00"
+        },
+        {
+          "name": "torbox36ijlcevujx7mjb4oiusvwgvmu",
+          "url": "http://torbox36ijlcevujx7mjb4oiusvwgvmue7jfn2cvutwa6kl6to3uyqad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.221929+00:00"
+        },
+        {
+          "name": "cwwy6m3zyjecd4uk4c6nzqyzlygzbhgb",
+          "url": "http://cwwy6m3zyjecd4uk4c6nzqyzlygzbhgbxpjd6b3cqkverfvwhdwddpqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.250750+00:00"
+        },
+        {
+          "name": "csalryx3xenotyljyttsju6jfthrjyt6",
+          "url": "http://csalryx3xenotyljyttsju6jfthrjyt6ijwd3zzykhkpyfoeao2nxaqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.250750+00:00"
+        },
+        {
+          "name": "btca47siokklhswjppftiq3egdhkosnh",
+          "url": "http://btca47siokklhswjppftiq3egdhkosnhw77cmanybgw6baan2xj72oid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.281191+00:00"
+        },
+        {
+          "name": "evyvy7aj3ijfhtdippzk4wqe5xic3w6y",
+          "url": "http://evyvy7aj3ijfhtdippzk4wqe5xic3w6yebng4febmtufsbvrp3kwseid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.282199+00:00"
+        },
+        {
+          "name": "btcqzgkgnku5trg46afd5famwibdt5lb",
+          "url": "http://btcqzgkgnku5trg46afd5famwibdt5lb4asypm2wjlsvmotcijd3iyqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.310306+00:00"
+        },
+        {
+          "name": "orixnbvg4aevf4vzg2wrgujqs2xar2dq",
+          "url": "http://orixnbvg4aevf4vzg2wrgujqs2xar2dqk4essvzmzewikoaqsy7apnyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.310306+00:00"
+        },
+        {
+          "name": "vhdvcsghrs65vzqwagcq6erhky5khkzo",
+          "url": "http://vhdvcsghrs65vzqwagcq6erhky5khkzofd6wu3lbbvlodx4b5n7554yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.335563+00:00"
+        },
+        {
+          "name": "forbqkfvplnjldq5v5v6kmub6yl63js5",
+          "url": "http://forbqkfvplnjldq5v5v6kmub6yl63js5pju7lcy3hldje4qnbsib2mad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.335563+00:00"
+        },
+        {
+          "name": "deepgcb2qcbbfzgtpii3ltzkuefc2kwj",
+          "url": "http://deepgcb2qcbbfzgtpii3ltzkuefc2kwj4y6fyhrrzjnojgstkrcuk5id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.361591+00:00"
+        },
+        {
+          "name": "uceneqh2jvrgbc2xwmg7ioyoqedx7ghx",
+          "url": "http://uceneqh2jvrgbc2xwmg7ioyoqedx7ghxpkijqopkm7lak2zbszlgviyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.394326+00:00"
+        },
+        {
+          "name": "kowloon5ddwuqwlqckuibv4fxw6m3a6y",
+          "url": "http://kowloon5ddwuqwlqckuibv4fxw6m3a6ymk5kinigbjsgjcly346dh7qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.427470+00:00"
+        },
+        {
+          "name": "blac3rgsummterbkxkfat67ttzhxz3wx",
+          "url": "http://blac3rgsummterbkxkfat67ttzhxz3wxcc6euwtdct4ksddqkx6onoad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.451404+00:00"
+        },
+        {
+          "name": "hxuzjtocnzvv5g2rtg2bhwkcbupmk7rc",
+          "url": "http://hxuzjtocnzvv5g2rtg2bhwkcbupmk7rclb6lly3fo4tvqkk5oyrv3nid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.482515+00:00"
+        },
+        {
+          "name": "cardpl74ltmwe4o7pgpefljcng6qr36c",
+          "url": "http://cardpl74ltmwe4o7pgpefljcng6qr36cnn7gzer2wermedxz3volxkqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.504332+00:00"
+        },
+        {
+          "name": "kaizushih5iec2mxohpvbt5uaapqdnbl",
+          "url": "http://kaizushih5iec2mxohpvbt5uaapqdnbluaasa2cmsrrjtwrbx46cnaid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.534341+00:00"
+        },
+        {
+          "name": "btcgnu6zhrpsxdthaxpzbpsciipczigw",
+          "url": "http://btcgnu6zhrpsxdthaxpzbpsciipczigwcskk5hjmq3zja5zrp6ejbiyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.563479+00:00"
+        },
+        {
+          "name": "armsgzww4xbejoowm2y2kekis3zwuozg",
+          "url": "http://armsgzww4xbejoowm2y2kekis3zwuozgvqyacjkpmj5xwojewsdhryyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.598492+00:00"
+        },
+        {
+          "name": "tortuga275dwohnqxpdnr4xfjzmbxa7e",
+          "url": "http://tortuga275dwohnqxpdnr4xfjzmbxa7etdw5ciis4agkyljxrzbtr7yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.628939+00:00"
+        },
+        {
+          "name": "guideeedvgbpkthetphncab5aqj7dp5t",
+          "url": "http://guideeedvgbpkthetphncab5aqj7dp5t74y7vxsoonnvmaeamq74vuqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.658266+00:00"
+        },
+        {
+          "name": "ensaiossomdexhmlxrsnq2vmzp3y3ikn",
+          "url": "http://ensaiossomdexhmlxrsnq2vmzp3y3iknxkughxz7g6kczbq4jcb27kid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ensaiossomdexhmlxrsnq2vmzp3y3iknxkughxz7g6kczbq4jcb27kid.onion/notes/agouritmo.html",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.689135+00:00"
+        },
+        {
+          "name": "ihbmldq3qq7nydln4icmrbmjwubyexw2",
+          "url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://ihbmldq3qq7nydln4icmrbmjwubyexw2abr4zjxbde5h4hdxgwbeo2id.onion",
+          "investigation_id": "6362bca5-80cf-4978-8e36-88bea2966d39",
+          "added_at": "2026-09-05T05:48:00.690137+00:00"
+        },
+        {
+          "name": "xmh57jrknzkhv6y3ls3ubitzfqnkrwxh",
+          "url": "http://xmh57jrknzkhv6y3ls3ubitzfqnkrwxhopf5aygthi7d6rplyvk3noyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.258760+00:00"
+        },
+        {
+          "name": "sz5h6tiqkdkfl55qa3kcxgzck3xeffo6",
+          "url": "http://sz5h6tiqkdkfl55qa3kcxgzck3xeffo6cso7sjpc7hc7sr3vghdyicqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.261770+00:00"
+        },
+        {
+          "name": "protonmailrmez3lotccipshtkleeget",
+          "url": "http://protonmailrmez3lotccipshtkleegetolb73fuirgj7r4o4vfu7ozyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.296315+00:00"
+        },
+        {
+          "name": "shadowm4vpk2xffxqx5ngu5ckrq63ora",
+          "url": "http://shadowm4vpk2xffxqx5ngu5ckrq63oraoyb6hs7w23ypzckmgnqyeaad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.323313+00:00"
+        },
+        {
+          "name": "imperialmotfkjvmdgpmsbmvla4jxes2",
+          "url": "http://imperialmotfkjvmdgpmsbmvla4jxes23iihzvczjtncjmj6dm6v4nid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.356880+00:00"
+        },
+        {
+          "name": "oniwayzz74cv2puhsgx4dpjwieww4wdp",
+          "url": "http://oniwayzz74cv2puhsgx4dpjwieww4wdphsydqvf5q7eyz4myjvyw26ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.387425+00:00"
+        },
+        {
+          "name": "deeeepv4bfndyatwkdzeciebqcwwlvgq",
+          "url": "http://deeeepv4bfndyatwkdzeciebqcwwlvgqa6mofdtsvwpon4elfut7lfqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.410410+00:00"
+        },
+        {
+          "name": "goldm6qrdsaw6jk6bixvhsikhpydthdc",
+          "url": "http://goldm6qrdsaw6jk6bixvhsikhpydthdcy7arwailr6yjuakqa6m7hsid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.437683+00:00"
+        },
+        {
+          "name": "dreadytofatroptsdj6io7l3xptbet6o",
+          "url": "http://dreadytofatroptsdj6io7l3xptbet6onoyno2yv7jicoxknyazubrad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.467687+00:00"
+        },
+        {
+          "name": "whje5cahjivo6s4ox36xrpea5gavgd45",
+          "url": "http://whje5cahjivo6s4ox36xrpea5gavgd45uekgaxlkocjlcxcwkedn2lad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.492685+00:00"
+        },
+        {
+          "name": "juhanurmihxlp77nkq76byazcldy2hlm",
+          "url": "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.521628+00:00"
+        },
+        {
+          "name": "deepa2kol4ur4wkzpmjf5rf7lvsflzis",
+          "url": "http://deepa2kol4ur4wkzpmjf5rf7lvsflzisslnrnr2n7goaebav4j6w7zyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.546616+00:00"
+        },
+        {
+          "name": "tordexu73joywapk2txdr54jed4imqle",
+          "url": "http://tordexu73joywapk2txdr54jed4imqledpcvcuf75qsas2gwdgksvnyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.567625+00:00"
+        },
+        {
+          "name": "strongerw2ise74v3duebgsvug4mehyh",
+          "url": "http://strongerw2ise74v3duebgsvug4mehyhlpa7f6kfwnas7zofs3kov7yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.587769+00:00"
+        },
+        {
+          "name": "orealmvxooetglfeguv2vp65a3rig2ba",
+          "url": "http://orealmvxooetglfeguv2vp65a3rig2baq2ljc7jxxs4hsqsrcemkxcad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.618967+00:00"
+        },
+        {
+          "name": "tor66sewebgixwhcqfnp5inzp5x5uohh",
+          "url": "http://tor66sewebgixwhcqfnp5inzp5x5uohhdy3kvtnyfxc2e5mxiuh34iid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.644376+00:00"
+        },
+        {
+          "name": "kx5thpx2olielkihfyo4jgjqfb7zx7wx",
+          "url": "http://kx5thpx2olielkihfyo4jgjqfb7zx7wxr3sd4xzt26ochei4m6f7tayd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.673919+00:00"
+        },
+        {
+          "name": "tdeeplzeeatosawhgis63gxvrpv2cotg",
+          "url": "http://tdeeplzeeatosawhgis63gxvrpv2cotglhmmdj32mhkbxj7svxtxj3id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://toponiibv4eo4pctlszgavni5ajzg7uvkd7e2xslkjmtcfqesjlsqpid.onion/",
+          "investigation_id": "6976ced2-eb09-4b2c-8859-7f39332b2a34",
+          "added_at": "2026-09-05T05:56:35.698923+00:00"
+        },
+        {
+          "name": "afajj7x4zfl2d3fc2u7uzxp4iwf4r2ku",
+          "url": "http://afajj7x4zfl2d3fc2u7uzxp4iwf4r2kucr5on24xk2hwrssoj7yivhid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://afajj7x4zfl2d3fc2u7uzxp4iwf4r2kucr5on24xk2hwrssoj7yivhid.onion",
+          "investigation_id": "6d320ef1-e1e5-437d-b7bd-8416912d9e17",
+          "added_at": "2026-09-05T06:05:42.055255+00:00"
+        },
+        {
+          "name": "njallala5d3d4eu3cqy2kipahevwsmck",
+          "url": "http://njallala5d3d4eu3cqy2kipahevwsmcklaytcoayi5zihzt6dlofwhad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.135075+00:00"
+        },
+        {
+          "name": "hzwjmjimqmrejzg7qnaur3crkvszla2t",
+          "url": "http://hzwjmjimqmrejzg7qnaur3crkvszla2tbsgrs7zyrd7lhqzqrvqh2uad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.164369+00:00"
+        },
+        {
+          "name": "swonderstzr43aczpcwdoyc25vwxngyr",
+          "url": "http://swonderstzr43aczpcwdoyc25vwxngyromja7pyb5sf26ap3v535sxqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.200946+00:00"
+        },
+        {
+          "name": "imprezareshna326gqgmbdzwmnad2wnj",
+          "url": "http://imprezareshna326gqgmbdzwmnad2wnjmeowh45bs2buxarh5qummjad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.222292+00:00"
+        },
+        {
+          "name": "bcloudwenjxgcxjh6uheyt72a5isimzg",
+          "url": "http://bcloudwenjxgcxjh6uheyt72a5isimzgg4kv5u74jb2s22y3hzpwh6id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.243720+00:00"
+        },
+        {
+          "name": "fhosting7tb3dhehn3drkmphfdlwv2s4",
+          "url": "http://fhosting7tb3dhehn3drkmphfdlwv2s4njvd2egdgtln7lbgywc2dgyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.262991+00:00"
+        },
+        {
+          "name": "dwebkjko4g3dg66vqdd3afhgwy2gbnwm",
+          "url": "http://dwebkjko4g3dg66vqdd3afhgwy2gbnwm7u7ealx7cwg5jrh33fjuc4id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://suwial2klqv2r6k3lf3fafmc2umdi6p7w775dida5r4c57shmfye2qid.onion/hosting-tor-dark-web.html",
+          "investigation_id": "3b44b9cd-c0e8-420f-9a43-d02b0e0d124d",
+          "added_at": "2026-09-05T06:09:14.291226+00:00"
+        },
+        {
+          "name": "btcwxfgeyhsb4ng6p7dhz65todetcvp6",
+          "url": "http://btcwxfgeyhsb4ng6p7dhz65todetcvp66nohcgw4spwjsaibocw4duad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:10.972569+00:00"
+        },
+        {
+          "name": "realrozxkkgg2vubqvxjljogwhtvpdlf",
+          "url": "http://realrozxkkgg2vubqvxjljogwhtvpdlfimriiolw6m3fvqijohh7zaid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.001249+00:00"
+        },
+        {
+          "name": "crqkllx7afomrokwx6f2sjcnl2do2i3i",
+          "url": "http://crqkllx7afomrokwx6f2sjcnl2do2i3i77hjjb4eqetlgq3cths3o6ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.024703+00:00"
+        },
+        {
+          "name": "vorodtm2plbuobna3wmkifs53saq4mlv",
+          "url": "http://vorodtm2plbuobna3wmkifs53saq4mlv5v7ye5ltj25puxsbt7hdrwqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.048617+00:00"
+        },
+        {
+          "name": "hzwjmjimhr7bdmfv2doll4upibt5ojjm",
+          "url": "http://hzwjmjimhr7bdmfv2doll4upibt5ojjmpo3pbp5ctwcg37n3hyk7qzid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.070236+00:00"
+        },
+        {
+          "name": "btcxsukufoazlrgaqyhccmacl4ibr3uy",
+          "url": "http://btcxsukufoazlrgaqyhccmacl4ibr3uy4qvbj7ovcxread7hnu4vvpid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.099474+00:00"
+        },
+        {
+          "name": "libraryfyuybp7oyidyya3ah5xvwgyx6",
+          "url": "http://libraryfyuybp7oyidyya3ah5xvwgyx6weauoini7zyz555litmmumad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.128687+00:00"
+        },
+        {
+          "name": "3bbad7fauom4d6sgppalyqddsqbf5u5p",
+          "url": "http://3bbad7fauom4d6sgppalyqddsqbf5u5p56b5k5uk2zxsy3d6ey2jobad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.157517+00:00"
+        },
+        {
+          "name": "darkhuo35yiohrsdlbdhhrtl5ds7jtv5",
+          "url": "http://darkhuo35yiohrsdlbdhhrtl5ds7jtv5x2cjusqqebalj5vtrdqgqoid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.194088+00:00"
+        },
+        {
+          "name": "flasypupvqkpulm7j227qrq4wdwtfxrt",
+          "url": "http://flasypupvqkpulm7j227qrq4wdwtfxrtd2vkkt6qtnfdiafgm2mswwyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.223690+00:00"
+        },
+        {
+          "name": "cdumhlyjn3q6rzed5jtqzramrtznaahi",
+          "url": "http://cdumhlyjn3q6rzed5jtqzramrtznaahics5d2zhpspstw5stfkew3qqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.255249+00:00"
+        },
+        {
+          "name": "mail2torjgmxgexntbrmhvgluavhj7ou",
+          "url": "http://mail2torjgmxgexntbrmhvgluavhj7ouul5yar6ylbvjkxwqf6ixkwyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://deepmlzxkh7tpnuiv32nzzg6oxza4nvpd6b7ukujwxzgxj2f33johuqd.onion",
+          "investigation_id": "f2e2b317-1060-4542-8976-d71b116fbe4a",
+          "added_at": "2026-09-05T06:17:11.287149+00:00"
+        },
+        {
+          "name": "scamlis7kfrslnccoddn6qrq4mkalul2",
+          "url": "http://scamlis7kfrslnccoddn6qrq4mkalul2lii522te7l5nyfihe7bwyead.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "ru7qxkdg6ne5knoxxplgvhrc4l3zdl4f",
+          "url": "http://ru7qxkdg6ne5knoxxplgvhrc4l3zdl4f3sl2uibejzjt5zwmqxi5ckyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://btzejg3cc2grm7rzslykybdu7rfvzbentzhbsh2s2iygdg3j5ryzqaqd.onion/47/does-anyone-have-any-interesting-onion-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "xmatches2hpmke6nxki6cllkfwlrlhfw",
+          "url": "http://xmatches2hpmke6nxki6cllkfwlrlhfw3uax4ibths57dznorlwj7uid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "spygame5awoookfmfhda7jfqimwyfxic",
+          "url": "http://spygame5awoookfmfhda7jfqimwyfxicjkn3wc4v3oozyno7sqv2axid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/porn",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "darkwebp7lyr44rpgqdtevalty2pk5oq",
+          "url": "http://darkwebp7lyr44rpgqdtevalty2pk5oqmc6m2cnicnix7itelt3lp3id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "premius6anbv4mxe6gt7npqbr3npi5il",
+          "url": "http://premius6anbv4mxe6gt7npqbr3npi5ilb454ajzy4ossmjdz6a4vp7qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://premius6anbv4mxe6gt7npqbr3npi5ilb454ajzy4ossmjdz6a4vp7qd.onion",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "rocco7hjqtv5adbugdr34jh25jhao7tr",
+          "url": "http://rocco7hjqtv5adbugdr34jh25jhao7tryqkxgdvc5kisp753q5iomgad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.647762+00:00"
+        },
+        {
+          "name": "wikiopwkwkxnql6patyiyvutif5tferu",
+          "url": "http://wikiopwkwkxnql6patyiyvutif5tferumjj6q2ytweneupfk3qtfvxid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/email-services",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.649267+00:00"
+        },
+        {
+          "name": "drugsednqhasbyoyg2oekzbnllbujro5",
+          "url": "http://drugsednqhasbyoyg2oekzbnllbujro54zrogqbf3p6e7qflxti5eeqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=1",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.649267+00:00"
+        },
+        {
+          "name": "wclekwrf2aclunlmuikf2bopusjfv66j",
+          "url": "http://wclekwrf2aclunlmuikf2bopusjfv66jlhwtgbiycy5nw524r6ngioid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=2",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.650439+00:00"
+        },
+        {
+          "name": "hackltxlmapssd5u6wro4ms7cn3tjbty",
+          "url": "http://hackltxlmapssd5u6wro4ms7cn3tjbtyij5iuhfgaoxjmpwcc224ibyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=3",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.650439+00:00"
+        },
+        {
+          "name": "majestictfvnfjgo5hqvmuzynak4kjl5",
+          "url": "http://majestictfvnfjgo5hqvmuzynak4kjl5tjs3j5zdabawe6n2aaebldad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=5",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.650439+00:00"
+        },
+        {
+          "name": "iykpqm7jiradoeezzkhj7c4b33g4hbgf",
+          "url": "http://iykpqm7jiradoeezzkhj7c4b33g4hbgfwelht2evxxeicbpjy44c7ead.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=12",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.652752+00:00"
+        },
+        {
+          "name": "nytimesn7cgmftshazwhfgzm37qxb44r",
+          "url": "http://nytimesn7cgmftshazwhfgzm37qxb44r64ytbb2dj3x62d2lljsciiyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=13",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.654736+00:00"
+        },
+        {
+          "name": "notevil2ebbr5xjww6nryjta7bycbriy",
+          "url": "http://notevil2ebbr5xjww6nryjta7bycbriyi2vh7an3wcuovlznvobykmad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=6",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.661518+00:00"
+        },
+        {
+          "name": "tp7mtouwvggdlm73vimqkuq7727a4ebr",
+          "url": "http://tp7mtouwvggdlm73vimqkuq7727a4ebrv4vf4cnk6lfg4fatxa6p2ryd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=7",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.666849+00:00"
+        },
+        {
+          "name": "caricard3kdttdyrc65ssgkhr3ikbtd5",
+          "url": "http://caricard3kdttdyrc65ssgkhr3ikbtd5e27nx2ylcufk55dswxozebqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.669665+00:00"
+        },
+        {
+          "name": "czoomdexstp363nde3kf7hp46ptfv7lt",
+          "url": "http://czoomdexstp363nde3kf7hp46ptfv7ltgbwjglbd2d3f2ynolc2fpwqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/porn",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.670652+00:00"
+        },
+        {
+          "name": "qsw7iurcrdwyml5kg4oxbmtqrcnpxiag",
+          "url": "http://qsw7iurcrdwyml5kg4oxbmtqrcnpxiag3iumdarefzeunnyc2dnyljad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.670652+00:00"
+        },
+        {
+          "name": "catalogpwwlccc5nyp3m3xng6pdx3rdc",
+          "url": "http://catalogpwwlccc5nyp3m3xng6pdx3rdcknul57x6raxwf4enpw3nymqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=2",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.684976+00:00"
+        },
+        {
+          "name": "btcmix6eu7avrvyy5t2t6y2aofp3ih5i",
+          "url": "http://btcmix6eu7avrvyy5t2t6y2aofp3ih5ioimtqb3vdw2vtl435hcuocyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=5",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.685952+00:00"
+        },
+        {
+          "name": "q7jv7lv6m26q2f3lzce6vc3rbmw7bbcu",
+          "url": "http://q7jv7lv6m26q2f3lzce6vc3rbmw7bbcuh6sr53wuffqyirh5hzs7oaid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=1",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.685952+00:00"
+        },
+        {
+          "name": "nexus555cee4hmu5yimuzlvx3cjr2b7w",
+          "url": "http://nexus555cee4hmu5yimuzlvx3cjr2b7wacvzfv5bj4ht53i2jeegxlyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.685952+00:00"
+        },
+        {
+          "name": "snaphkdc3tru6v7g4u6kxhqw5swokp6r",
+          "url": "http://snaphkdc3tru6v7g4u6kxhqw5swokp6rjta7iysbt6la7nkpsskp3lyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=3",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.685952+00:00"
+        },
+        {
+          "name": "privao7wfgfbpf46lytcgla7fn7dcjpo",
+          "url": "http://privao7wfgfbpf46lytcgla7fn7dcjpomp2djzm3lk3yy3i7zocvn5id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/email-services",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.685952+00:00"
+        },
+        {
+          "name": "or4xklmrk3l7cti3imazmx6lh2x46ly6",
+          "url": "http://or4xklmrk3l7cti3imazmx6lh2x46ly6de7rwf3cet7cd4kv2exhp6yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.685952+00:00"
+        },
+        {
+          "name": "2gzyxa5ihm7nsggfxnu52rck2vv4rvmd",
+          "url": "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=12",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.719008+00:00"
+        },
+        {
+          "name": "dark2tjwcsdwjzqmbetuqgneizqmu4zr",
+          "url": "http://dark2tjwcsdwjzqmbetuqgneizqmu4zr2zf5e2vn7vicl3m2oixzikqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=3",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.728074+00:00"
+        },
+        {
+          "name": "chatorcvcl25nskltysozugy36pplnrw",
+          "url": "http://chatorcvcl25nskltysozugy36pplnrwpbgwovh6mbwwzy2bzgq2hkyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/email-services",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.738859+00:00"
+        },
+        {
+          "name": "buyrealjirb76hmums3opfpwep7tu33d",
+          "url": "http://buyrealjirb76hmums3opfpwep7tu33dcgjhzrhukczpbwwreejeq4ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.740058+00:00"
+        },
+        {
+          "name": "darkzqtmbdeauwq5mzcmgeeuhet42fhf",
+          "url": "http://darkzqtmbdeauwq5mzcmgeeuhet42fhfjj4p5wbak3ofx2yqgecoeqyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=6",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.740058+00:00"
+        },
+        {
+          "name": "goldentgwgtrmxxfopbfxwl7enamd2zv",
+          "url": "http://goldentgwgtrmxxfopbfxwl7enamd2zvray7jl3p46l6igrdpsbs27qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.740058+00:00"
+        },
+        {
+          "name": "v5da635flli64fb4ekzgmm2iyajx3zfq",
+          "url": "http://v5da635flli64fb4ekzgmm2iyajx3zfqhvnnli7pnr7ekuipoasvhuad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=5",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.740058+00:00"
+        },
+        {
+          "name": "deepmexzsejpzqid3k7knaas2p73dko6",
+          "url": "http://deepmexzsejpzqid3k7knaas2p73dko6kxgpou7oey7vqtmrhopjyqyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.740058+00:00"
+        },
+        {
+          "name": "verifiedxsnrtudwbixrlyslghypa7jo",
+          "url": "http://verifiedxsnrtudwbixrlyslghypa7jo2zydnubi24h7sjrijgoj73yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.740058+00:00"
+        },
+        {
+          "name": "guardian2zotagl6tmjucg3lrhxdk4dw",
+          "url": "http://guardian2zotagl6tmjucg3lrhxdk4dw3lhbqnkvvkywawy3oqfoprid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=13",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.762609+00:00"
+        },
+        {
+          "name": "porntes5d4cewfyscczkfrdbkysx3kfa",
+          "url": "http://porntes5d4cewfyscczkfrdbkysx3kfalkfk2dwontz6qlyovaatqxyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/porn",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.762609+00:00"
+        },
+        {
+          "name": "brave4u7jddbv7cyviptqjc7jusxh72u",
+          "url": "http://brave4u7jddbv7cyviptqjc7jusxh72uik7zt6adtckl5f4nwy2v72qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=6",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.762609+00:00"
+        },
+        {
+          "name": "su4opotxp67mgd5jfzajzbg2nvrk7fvl",
+          "url": "http://su4opotxp67mgd5jfzajzbg2nvrk7fvlbsphxu6euv3cnbs2xyj7giid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/email-services",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.764593+00:00"
+        },
+        {
+          "name": "torbuyxpe6auueywlctu4wz6ur3o5n2m",
+          "url": "http://torbuyxpe6auueywlctu4wz6ur3o5n2meybt6tyi4rmeudtjsysayqyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.767594+00:00"
+        },
+        {
+          "name": "577cbowntu2heyqirub5fyz7x6jj6owd",
+          "url": "http://577cbowntu2heyqirub5fyz7x6jj6owday3zkgfrq5zdsgvb4keswoad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.767594+00:00"
+        },
+        {
+          "name": "fwrgiihsuqivvykxpottouraa54yhgtb",
+          "url": "http://fwrgiihsuqivvykxpottouraa54yhgtbvyqco3gww4e6mjatnm43ozad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.767594+00:00"
+        },
+        {
+          "name": "h4ck3rxfmolbaue7vnkhzqvuzfo6lb2t",
+          "url": "http://h4ck3rxfmolbaue7vnkhzqvuzfo6lb2tlnbxik2wfooucdwtnh3o3xyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://amndir7jfxnt5glt2tsevwjlnwdvknttxygubw27ulq5c433en75piyd.onion/?cat=3",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.768740+00:00"
+        },
+        {
+          "name": "wiki6dtqpuvwtc5hopuj33eeavwa6sik",
+          "url": "http://wiki6dtqpuvwtc5hopuj33eeavwa6sik7sy57cor35chkx5nrbmmolqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.770738+00:00"
+        },
+        {
+          "name": "hitman3cnqniykovbwbgdkegmzppoa2w",
+          "url": "http://hitman3cnqniykovbwbgdkegmzppoa2w6vesvymgpst45yy7scb5dxid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/email-services",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.785274+00:00"
+        },
+        {
+          "name": "chemica6ctvnblxew7fqwl7xdbxldy7o",
+          "url": "http://chemica6ctvnblxew7fqwl7xdbxldy7opdiv3bhfnu6fmlz6nhmsrrad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.814715+00:00"
+        },
+        {
+          "name": "darkodtb4jysw55sjrm3lrzqzrzvbucx",
+          "url": "http://darkodtb4jysw55sjrm3lrzqzrzvbucx3c76eisyevlfosqxghzjd3yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.834306+00:00"
+        },
+        {
+          "name": "u57rkdgv4aju4j5jpqvzx73fkud6qzp5",
+          "url": "http://u57rkdgv4aju4j5jpqvzx73fkud6qzp5nacw2sb33oyhaljqjgnoo4qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.861258+00:00"
+        },
+        {
+          "name": "hitmanmxbn7dwgbpjzj24fvhkvrdpxc6",
+          "url": "http://hitmanmxbn7dwgbpjzj24fvhkvrdpxc67y55663bniuwump2vtxiiqqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/email-services",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.862258+00:00"
+        },
+        {
+          "name": "tormartcpk4pcttuxcppgj5c433yi7ot",
+          "url": "http://tormartcpk4pcttuxcppgj5c433yi7ot6pznpdzrgvxpb4ot3f3phwqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/porn",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.862258+00:00"
+        },
+        {
+          "name": "vrnqpnuau6c7dkocv3ogbedo4sc26dfl",
+          "url": "http://vrnqpnuau6c7dkocv3ogbedo4sc26dflqidhqldf3h4zbhrglno2wuad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.873747+00:00"
+        },
+        {
+          "name": "tormartsnoiijbhwldvmylat34coyja3",
+          "url": "http://tormartsnoiijbhwldvmylat34coyja3jsto3djoaqyytchzis2u3oad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.875747+00:00"
+        },
+        {
+          "name": "scoobyzz6hl76y3q3fqb6tlosn7xvtqt",
+          "url": "http://scoobyzz6hl76y3q3fqb6tlosn7xvtqt7krnqqbdpuqpcevi6kvttmyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.893720+00:00"
+        },
+        {
+          "name": "i4yfkavtcnhyfazmlhmzp5wmszvlvtac",
+          "url": "http://i4yfkavtcnhyfazmlhmzp5wmszvlvtacaailnnmg7wvinnf3jwhyigyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.906212+00:00"
+        },
+        {
+          "name": "prime2auevipph4hq2twlklzb4mwmfuv",
+          "url": "http://prime2auevipph4hq2twlklzb4mwmfuvi6qdnxu7vy5zyhgr6durhyqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.929193+00:00"
+        },
+        {
+          "name": "hubooomjabebx4fntzdx7vg52celbnvk",
+          "url": "http://hubooomjabebx4fntzdx7vg52celbnvk52j6wprrtqpvsdjscnklaeqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.933194+00:00"
+        },
+        {
+          "name": "torlisthsxo7h65pd2po7kevpzkk4wwf",
+          "url": "http://torlisthsxo7h65pd2po7kevpzkk4wwf3czylz3izcmsx4jzwabbopyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.934198+00:00"
+        },
+        {
+          "name": "2a2a2abbjsjcjwfuozip6idfxsxyowoi",
+          "url": "http://2a2a2abbjsjcjwfuozip6idfxsxyowoi3ajqyehqzfqyxezhacur7oyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.935193+00:00"
+        },
+        {
+          "name": "dmriwkt7jefo5sf7vvmvvndq2lqrfe7i",
+          "url": "http://dmriwkt7jefo5sf7vvmvvndq2lqrfe7itmntxnwfwwkrm67n4o22llyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.967225+00:00"
+        },
+        {
+          "name": "phamsgrqsxfs7ius264evgwtvgacv5et",
+          "url": "http://phamsgrqsxfs7ius264evgwtvgacv5etidb5fww3x4ghtsfg67azjuid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:00.984273+00:00"
+        },
+        {
+          "name": "emarketzhfjehkqd53lnjgmtvbf7tsey",
+          "url": "http://emarketzhfjehkqd53lnjgmtvbf7tseydias4rjpazwifiqcotoi2gad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.006481+00:00"
+        },
+        {
+          "name": "oniondiricuc4x2y5qbucg4jyp2ael5r",
+          "url": "http://oniondiricuc4x2y5qbucg4jyp2ael5rxy7aahy5f4fbars2jkkf7vad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.034527+00:00"
+        },
+        {
+          "name": "4yhsprdqsexzxssvtwe3nbkggeqidcrc",
+          "url": "http://4yhsprdqsexzxssvtwe3nbkggeqidcrciwrvt6gkvuhszbzh3n4tajid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.034527+00:00"
+        },
+        {
+          "name": "cash2tuohd4juo2l6us2ya64qbjtavwt",
+          "url": "http://cash2tuohd4juo2l6us2ya64qbjtavwtmydb7txbraq7m6qs36dc5tqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.034527+00:00"
+        },
+        {
+          "name": "btcw3wabdz3zmt7f6k37k7km5ll6gom2",
+          "url": "http://btcw3wabdz3zmt7f6k37k7km5ll6gom2kwf5hxpzd7djuqrhsdhtodqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.036026+00:00"
+        },
+        {
+          "name": "rankinsczqhyr7nwym6tl5jm5fhtxoa6",
+          "url": "http://rankinsczqhyr7nwym6tl5jm5fhtxoa6xgdamocptddfmt2vagqplhid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.069157+00:00"
+        },
+        {
+          "name": "wizbyu3pkptftdfzrid7oxojfw7efz6k",
+          "url": "http://wizbyu3pkptftdfzrid7oxojfw7efz6kss7cu433yr7qcefmolk2xuid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.070174+00:00"
+        },
+        {
+          "name": "tormartcqzcue4rrvvph7nw4alenvtdv",
+          "url": "http://tormartcqzcue4rrvvph7nw4alenvtdvyprwwnymvaav7w2m7fylqsqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.073646+00:00"
+        },
+        {
+          "name": "2iolxrbeahkjpebnct26go4cre4gjfsh",
+          "url": "http://2iolxrbeahkjpebnct26go4cre4gjfshi33djlykccu4pgh37db3k6ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.099637+00:00"
+        },
+        {
+          "name": "stuffdleakt4xraufncfbovubw6pmdv3",
+          "url": "http://stuffdleakt4xraufncfbovubw6pmdv3i2wekbdrblqph43fwmkhsvqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.100697+00:00"
+        },
+        {
+          "name": "hidden2h77d53dvbftj6exhfi5llymfd",
+          "url": "http://hidden2h77d53dvbftj6exhfi5llymfdxw5s5fe5nytauql2ztpxofad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.100697+00:00"
+        },
+        {
+          "name": "ujuwmruwekgs7ekzlpzrmvkgj7bmsykr",
+          "url": "http://ujuwmruwekgs7ekzlpzrmvkgj7bmsykrcqbmhup3hinpm7lhl2howbqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.100697+00:00"
+        },
+        {
+          "name": "kfj2am4ee2asdqflt4tuxxwbeuzmh6tv",
+          "url": "http://kfj2am4ee2asdqflt4tuxxwbeuzmh6tv64ojbqscc4u55skrechsxzad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.119368+00:00"
+        },
+        {
+          "name": "zionmk5m72ijzdlmnfdxdujyi7p5euvx",
+          "url": "http://zionmk5m72ijzdlmnfdxdujyi7p5euvxl54xui5tikmh27d4u4rea2id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.119368+00:00"
+        },
+        {
+          "name": "deeplinkbhv5kw2pp7hbaljapqkjjsiv",
+          "url": "http://deeplinkbhv5kw2pp7hbaljapqkjjsivp2xtzwe7nv3f45ckm2liqbyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.119368+00:00"
+        },
+        {
+          "name": "istan6d3qmhoaxhfvabj4idyda4bwdfz",
+          "url": "http://istan6d3qmhoaxhfvabj4idyda4bwdfz2gkb3wdmqarxnsdijarqq5ad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.121433+00:00"
+        },
+        {
+          "name": "torlib7fmhyvfv2k7s77xigdds3rosio",
+          "url": "http://torlib7fmhyvfv2k7s77xigdds3rosio6k6bxnn256xmtzlbgyizduqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.155155+00:00"
+        },
+        {
+          "name": "paypalvkdgjjpy6oji7cnjigbgcrcljz",
+          "url": "http://paypalvkdgjjpy6oji7cnjigbgcrcljzipi5vbdryf5csocnaamhj4qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.156237+00:00"
+        },
+        {
+          "name": "searchyftva3jklldm6vjk7axnl54hsc",
+          "url": "http://searchyftva3jklldm6vjk7axnl54hsc4jofgdkhahnh2plwd23f32qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.156237+00:00"
+        },
+        {
+          "name": "abyssou4y5ang24dn4cfkrwd3fsiczx7",
+          "url": "http://abyssou4y5ang24dn4cfkrwd3fsiczx7xg7n7mzlcthrpktfcar6j2qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.156237+00:00"
+        },
+        {
+          "name": "planethwglyjsdngmurfzgn2px3jldgp",
+          "url": "http://planethwglyjsdngmurfzgn2px3jldgpuboreoj35vgjvrssvanealyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.194097+00:00"
+        },
+        {
+          "name": "hztsln4fi3udznlinmxnbwdey6lbehn4",
+          "url": "http://hztsln4fi3udznlinmxnbwdey6lbehn4sinqa6ltbu4crxgqnlzdqoid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.194097+00:00"
+        },
+        {
+          "name": "darkdir3feiqqabygefy4uhazqtcajv3",
+          "url": "http://darkdir3feiqqabygefy4uhazqtcajv3ci4jybdbtpflvuwbowl7s4yd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.194097+00:00"
+        },
+        {
+          "name": "footmoneykcu76apgrpkvps3ncccrxiu",
+          "url": "http://footmoneykcu76apgrpkvps3ncccrxiu6lwcmma6q77a66tfj7t6uxid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.195106+00:00"
+        },
+        {
+          "name": "search7tdrcvri22rieiwgi5g46qnwse",
+          "url": "http://search7tdrcvri22rieiwgi5g46qnwsesvnubqav2xakhezv4hjzkkad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.229106+00:00"
+        },
+        {
+          "name": "deepma3a6535h6nw34iiqdfk42bsp3r4",
+          "url": "http://deepma3a6535h6nw34iiqdfk42bsp3r4ax5ttvqtiefchg35oxihjiqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.230105+00:00"
+        },
+        {
+          "name": "hackhxeu6wber73hkx7hmxo2tw43pjdm",
+          "url": "http://hackhxeu6wber73hkx7hmxo2tw43pjdmnkg3dvnxmrl7npmsdkjkw4qd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.230105+00:00"
+        },
+        {
+          "name": "xkbf4a3cym4umxqp4dqxaebonvjbnfyk",
+          "url": "http://xkbf4a3cym4umxqp4dqxaebonvjbnfykxvi4rsti2taktugcibsvzhqd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.231336+00:00"
+        },
+        {
+          "name": "torchmami5v4bduj36hgtssl2752wfmp",
+          "url": "http://torchmami5v4bduj36hgtssl2752wfmpopopb6ndy3q6qcsqxvucfaid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.268730+00:00"
+        },
+        {
+          "name": "amster4mdi4ls27irjhe3ul6hzha5itf",
+          "url": "http://amster4mdi4ls27irjhe3ul6hzha5itf6naifanpfbdbfybclbnqipyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.270708+00:00"
+        },
+        {
+          "name": "wolfbankaf6zskeyolndbcs4ou6mbpqw",
+          "url": "http://wolfbankaf6zskeyolndbcs4ou6mbpqwvk7iabtgrucvmygueze6aoid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.270708+00:00"
+        },
+        {
+          "name": "btcwikwfnbp7mn7qhpmnlgbhbe6fyj3l",
+          "url": "http://btcwikwfnbp7mn7qhpmnlgbhbe6fyj3lixgkb2kerulumioagu3xzcyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.270708+00:00"
+        },
+        {
+          "name": "paypalmlk747wmqolsoldcdms3q35lkn",
+          "url": "http://paypalmlk747wmqolsoldcdms3q35lknu5nijzadeytsdrzlodan56id.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.305399+00:00"
+        },
+        {
+          "name": "whm2fsi3ljgmhr7uxaepg2ywqgiinm4s",
+          "url": "http://whm2fsi3ljgmhr7uxaepg2ywqgiinm4s52ln5nsbhis2w4jsfhkoawad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.306420+00:00"
+        },
+        {
+          "name": "eludemailxhnqzfmxehy3bk5guyhlxbu",
+          "url": "http://eludemailxhnqzfmxehy3bk5guyhlxbunfyhkcksv4gvx6d3wcf6smad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.306420+00:00"
+        },
+        {
+          "name": "lmoneylmwki7lv4vtijsqr23p6odzpya",
+          "url": "http://lmoneylmwki7lv4vtijsqr23p6odzpyaw3uffsbm6f5e3osy3wkrfvad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/marketplaces",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.307483+00:00"
+        },
+        {
+          "name": "coolshit7gs7pa6fpqhqdxn35fgetkqz",
+          "url": "http://coolshit7gs7pa6fpqhqdxn35fgetkqzb3bhsspixkm6lrazsjckezyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.338022+00:00"
+        },
+        {
+          "name": "d46iasgk554c4h4tiqdqcbrtyapxf6ov",
+          "url": "http://d46iasgk554c4h4tiqdqcbrtyapxf6oviht43dbpf6wvunyhtdnotcad.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://darkwedxhjhl2hy6ljkdgeheuf7ytg3unmyemjt2hguwltgcs5qb2uad.onion/blog/deep-web-links-sites",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.341428+00:00"
+        },
+        {
+          "name": "doraemondnqaydbnlkx7crhywrdzetz2",
+          "url": "http://doraemondnqaydbnlkx7crhywrdzetz2x3ylbeodkdsmplh6x462ceid.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/drugs",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.363330+00:00"
+        },
+        {
+          "name": "searchzx526ymcr4t3nkktdldmxtcsxz",
+          "url": "http://searchzx526ymcr4t3nkktdldmxtcsxzf5heij32axxj2zefybzpctyd.onion",
+          "tags": [],
+          "status": "discovered",
+          "added": "2026-09-05",
+          "source_url": "http://tordexkue7sggxtul2uqwewqiulmgra4ucnmvdfhhfhuzat4l3cofzyd.onion/directory/hidden-wikis",
+          "investigation_id": "f62f1790-b4bf-4db0-b438-b5634260c19b",
+          "added_at": "2026-09-05T06:38:01.363330+00:00"
         }
       ]
     }

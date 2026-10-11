@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "description": "Fixed benchmark query set for VoidAccess P1.0 measurement. Representative dark-web OSINT investigation queries spanning the entity/threat categories the tool targets. Version-controlled and sized for a full run in minutes; extend by appending queries and bumping the version.",
+  "queries": [
+    {"id": "ransomware-01", "query": "LockBit ransomware leak site", "category": "ransomware", "lang": "en"},
+    {"id": "ransomware-02", "query": "ransomware victims data breach", "category": "ransomware", "lang": "en"},
+    {"id": "actor-01", "query": "threat actor forum profile", "category": "actor_handle", "lang": "en"},
+    {"id": "actor-02", "query": "carding forum administrator handle", "category": "actor_handle", "lang": "en"},
+    {"id": "malware-01", "query": "RedLine stealer logs", "category": "malware_family", "lang": "en"},
+    {"id": "malware-02", "query": "Emotet malware distribution", "category": "malware_family", "lang": "en"},
+    {"id": "infra-01", "query": "Cobalt Strike C2 server", "category": "infra_indicator", "lang": "en"},
+    {"id": "infra-02", "query": "phishing kit hosting onion", "category": "infra_indicator", "lang": "en"},
+    {"id": "breach-01", "query": "corporate email password dump", "category": "credential_breach", "lang": "en"},
+    {"id": "breach-02", "query": "combolist credentials leak", "category": "credential_breach", "lang": "en"},
+    {"id": "multilingual-ru-01", "query": "форум кардинг", "category": "multilingual", "lang": "ru"},
+    {"id": "multilingual-es-01", "query": "datos de tarjetas robadas", "category": "multilingual", "lang": "es"}
+  ]
+}

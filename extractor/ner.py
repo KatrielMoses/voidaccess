@@ -435,6 +435,19 @@ def _get_nlp():
     return _nlp
 
 
+def get_nlp():
+    """Public accessor for the single cached ``en_core_web_sm`` spaCy pipeline.
+
+    Returns the shared, lazily-loaded ``Language`` object, or ``None`` when the
+    model is not installed. Exposed so other modules (e.g. the sanitizer's
+    PERSON/GPE redaction) reuse the ONE loader rather than calling
+    ``spacy.load`` a third time. A ``None`` return is a *distinguishable*
+    unavailability signal — callers that must not silently skip redaction should
+    treat it as fail-closed.
+    """
+    return _get_nlp()
+
+
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------

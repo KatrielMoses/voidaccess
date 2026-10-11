@@ -19,6 +19,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from config import DATABASE_URL  # noqa: E402
 from db.models import Base       # noqa: E402  — imports all mapped classes
+# db.models bottom-imports shared_corpus.models, so the shared tier is already
+# registered on Base.metadata above; import it explicitly too so the dependency
+# is obvious and autogenerate always sees the shared-tier tables.
+import shared_corpus.models  # noqa: E402,F401
 
 # Alembic Config object (gives access to alembic.ini values)
 config = context.config
@@ -92,6 +96,17 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         _ensure_version_column_capacity(connection)
+        # ``_ensure_version_column_capacity`` issues a read (``inspect``) and
+        # possibly an ALTER. Under SQLAlchemy 2.0 that autobegins a transaction
+        # on the connection. If it is left open, alembic's
+        # ``context.begin_transaction()`` below sees an existing transaction,
+        # treats itself as a no-op, and never commits — so ``with connection``
+        # exits and SA 2.0 rolls back EVERY migration plus the version bump
+        # (silent success, nothing persisted; PostgreSQL-only, hence invisible
+        # on the SQLite test path). Commit here to persist the capacity fix and
+        # hand alembic a clean, transaction-free connection to manage.
+        if connection.in_transaction():
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

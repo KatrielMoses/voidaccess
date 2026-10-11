@@ -31,6 +31,7 @@ from typing import Any, Optional
 
 import aiohttp
 
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -119,8 +120,8 @@ async def _load_disposable_list() -> frozenset[str]:
     try:
         timeout = aiohttp.ClientTimeout(total=20)
         headers = {"User-Agent": "VoidAccess-OSINT/1.1 (security research)"}
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get(DISPOSABLE_LIST_URL) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(DISPOSABLE_LIST_URL, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning(
                         "email_reputation: Disposable list returned HTTP %s", resp.status
@@ -178,11 +179,12 @@ async def query_hibp(email: str) -> dict[str, Any]:
             "User-Agent": "VoidAccess-OSINT",
         }
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             async with session.get(
                 f"{HIBP_BASE_URL}/breachedaccount/{email}",
                 headers=headers,
                 params={"truncateResponse": "false"},
+                timeout=timeout,
             ) as resp:
                 if resp.status == 404:
                     result: dict[str, Any] = {"found": False, "source": "hibp_not_found"}
@@ -323,8 +325,8 @@ async def query_emailrep(email: str) -> dict[str, Any]:
 
     try:
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get(f"{EMAILREP_BASE_URL}/{email}") as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(f"{EMAILREP_BASE_URL}/{email}", headers=headers, timeout=timeout) as resp:
                 if resp.status == 400:
                     logger.debug(
                         "email_reputation: EmailRep → HTTP 400 for %s (invalid email)",

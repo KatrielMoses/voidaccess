@@ -32,6 +32,7 @@ from typing import Any, Optional
 import aiohttp
 
 import pacing
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -225,8 +226,8 @@ async def query_crt_sh(domain: str) -> list[dict]:
             # stays held so rate_limit_delay()'s arithmetic holds.
             server_wait = 0.0
             try:
-                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                    async with session.get(url) as resp:
+                async with http_pool.clearnet_session() as session:
+                    async with session.get(url, headers=headers, timeout=timeout) as resp:
                         if resp.status == 429:
                             server_wait = pacing.retry_after_seconds(
                                 resp.headers, _crt_delay()
@@ -337,8 +338,8 @@ async def query_urlscan(domain: str) -> dict[str, Any]:
     url = URLSCAN_SEARCH_URL.format(domain=domain)
     try:
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get(url) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.debug("domain_reputation: URLScan %s → HTTP %s", domain, resp.status)
                     _urlscan_cache[domain] = {"result": empty, "loaded_at": time.time()}
@@ -426,8 +427,8 @@ async def _submit_urlscan(domain: str, api_key: str) -> None:
         payload = {"url": f"https://{domain}", "visibility": "public"}
         headers = {"API-Key": api_key, "Content-Type": "application/json"}
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(URLSCAN_SUBMIT_URL, json=payload, headers=headers) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.post(URLSCAN_SUBMIT_URL, json=payload, headers=headers, timeout=timeout) as resp:
                 if resp.status in (200, 201):
                     logger.debug("domain_reputation: URLScan scan submitted for %s", domain)
                 else:
@@ -467,8 +468,8 @@ async def query_wayback(domain: str) -> dict[str, Any]:
     try:
         timeout = aiohttp.ClientTimeout(total=15)
         headers = {"User-Agent": "VoidAccess-OSINT/1.1 (security research)"}
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-            async with session.get(url) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.debug("domain_reputation: Wayback %s → HTTP %s", domain, resp.status)
                     _wayback_cache[domain] = {"result": empty, "loaded_at": time.time()}

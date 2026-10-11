@@ -596,7 +596,7 @@ async def get_entity(
         from db.models import Entity  # noqa: PLC0415
         from db.queries import get_entity_appearances  # noqa: PLC0415
         from utils.ioc_freshness import get_freshness_tag, get_freshness_display  # noqa: PLC0415
-        from utils.defang import defang_value, defang_text  # noqa: PLC0415
+        from utils.defang import defang_value, defang_value_checked, defang_text  # noqa: PLC0415
 
         with get_session() as session:
             entity = session.query(Entity).filter_by(id=eid).first()
@@ -630,8 +630,11 @@ async def get_entity(
             display_value = entity.value
             display_canonical = entity.canonical_value
             display_context = entity.context
+            value_defanged = False
             if defang:
-                display_value = defang_value(entity.entity_type, entity.value or "")
+                display_value, value_defanged = defang_value_checked(
+                    entity.entity_type, entity.value or ""
+                )
                 if entity.canonical_value:
                     display_canonical = defang_value(entity.entity_type, entity.canonical_value)
                 if entity.context:
@@ -657,7 +660,7 @@ async def get_entity(
                 "investigation_count": getattr(entity, "investigation_count", 1) or 1,
                 "corroborating_sources": json.loads(entity.corroborating_sources or '["dark_web_scrape"]'),
                 "cross_referenced": (getattr(entity, "investigation_count", 1) or 1) > 1,
-                "defanged": defang,
+                "defanged": value_defanged,
                 "blockchain_data": {
                     "wallet_type": entity.entity_type if entity.entity_type in ("BITCOIN_ADDRESS", "ETHEREUM_ADDRESS", "MONERO_ADDRESS") else None,
                     "historical_context": entity.historical_context,

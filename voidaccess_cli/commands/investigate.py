@@ -755,10 +755,48 @@ async def _run_investigation(
 
     _metric_finish("source_gathering")
 
+    # --- Step 3.9 — read-from-shared before scraping (P4.2) --------------
+    # Consult the shared tier (populated by OTHER users' runs) for cached page
+    # content, query-relevant seeds, and pre-extracted entities — reading ONLY
+    # user-agnostic shared tables. Served content skips the Tor re-scrape.
+    # Consent-gated + non-fatal; a $0/no-corpus install serves nothing.
+    shared_served_pages: dict[str, str] = {}
+    shared_entities: list[dict] = []
+    try:
+        from db.session import get_session
+        from shared_corpus.read import read_shared_before_scrape
+
+        with get_session() as shared_session:
+            shared_bundle = await read_shared_before_scrape(
+                shared_session, refined, filtered_links
+            )
+        shared_served_pages = shared_bundle.served
+        shared_entities = shared_bundle.entities
+        _rem_links = {
+            (u.get("link") if isinstance(u, dict) else u) for u in shared_bundle.remaining
+        }
+        seed_additions = [
+            s for s in shared_bundle.seeds if s.get("link") not in _rem_links
+        ]
+        filtered_links = shared_bundle.remaining + seed_additions
+        if shared_bundle.skipped_private:
+            display.update_step("Reading shared corpus", "skip", "private mode")
+        elif shared_bundle.served_count or seed_additions:
+            display.update_step(
+                "Reading shared corpus", "ok",
+                f"{shared_bundle.served_count} cached served, {len(seed_additions)} seeds",
+            )
+    except Exception as exc:
+        logger.debug("Shared read failed (non-fatal): %s", exc)
+
     # --- Step 4 — scrape pages -------------------------------------------
     _metric_start("scraping")
     display.update_step("Scraping pages", "active")
     scraped_pages: list[dict] = []
+    # Shared cached content served without a Tor re-scrape (point-2 win).
+    for _url, _text in shared_served_pages.items():
+        if _text:
+            scraped_pages.append({"url": _url, "text": _text, "source": "shared_corpus"})
     if filtered_links:
         try:
             from scraper.scrape import scrape_multiple
@@ -799,15 +837,26 @@ async def _run_investigation(
                     scraped_pages.append(page_record)
             _fetched = sum(1 for _t in results.values() if _t)
             pipeline_metrics.record_scraping(
-                attempted=len(filtered_links),
-                fetched=_fetched,
-                cache_hits=0,
+                attempted=len(filtered_links) + len(shared_served_pages),
+                fetched=_fetched + len(shared_served_pages),
+                cache_hits=len(shared_served_pages),
             )
             display.update_step("Scraping pages", "ok", f"{len(scraped_pages)} pages")
         except Exception as exc:
             display.update_step("Scraping pages", "fail", str(exc))
     else:
-        display.update_step("Scraping pages", "skip", "no links")
+        if shared_served_pages:
+            pipeline_metrics.record_scraping(
+                attempted=len(shared_served_pages),
+                fetched=len(shared_served_pages),
+                cache_hits=len(shared_served_pages),
+            )
+            display.update_step(
+                "Scraping pages", "skip",
+                f"{len(shared_served_pages)} served from shared cache",
+            )
+        else:
+            display.update_step("Scraping pages", "skip", "no links")
     _metric_finish("scraping")
 
     # --- Step 4.1 — discover seeds from scraped pages --------------------
@@ -887,6 +936,27 @@ async def _run_investigation(
         if pid is not None:
             page["page_id"] = pid
 
+    # --- Step 4.2 — usage-seeded auto-indexing (P3.1) --------------------
+    # Feed the .onion pages this investigation touched into the shared corpus
+    # (discovered_onions + snapshot store + owned index), sanitized/consent-
+    # gated/provenance-stamped at the unconfirmed tier. Non-fatal and a graceful
+    # no-op when the store/index is unconfigured or in private mode (CC-3).
+    try:
+        from index_population import index_investigation_pages
+        from db.session import get_session
+
+        with get_session() as seed_session:
+            usage_report = await index_investigation_pages(seed_session, scraped_pages)
+            seed_session.commit()
+        if usage_report.indexed or usage_report.snapshots:
+            display.update_step(
+                "Indexing corpus",
+                "ok",
+                f"{usage_report.onions} onions, {usage_report.indexed} indexed",
+            )
+    except Exception as exc:
+        logger.debug("Usage-seeded indexing failed (non-fatal): %s", exc)
+
     page_count_by_url = {p["url"]: p for p in scraped_pages}
 
     # --- Step 5 — extract entities ---------------------------------------
@@ -918,7 +988,7 @@ async def _run_investigation(
         entity_dicts = sqlite_adapter.get_entities(investigation_id)
         enrichment_pages = await _enrich_inv(refined, otx_api_key=otx_key, entities=entity_dicts)
         sources_used["enrichment"] = {"status": "ok", "count": len(enrichment_pages)}
-        for _source_name in ("nvd", "ransomlook"):
+        for _source_name in ("nvd", "ransomlook", "cve_intel", "sslbl", "openphish", "phishtank", "ransomwhere"):
             _count = sum(
                 1 for _page in enrichment_pages
                 if (_page.get("source") or _page.get("source_type")) == _source_name
@@ -930,6 +1000,21 @@ async def _run_investigation(
         sources_used["nvd"] = {"status": "error"}
         sources_used["ransomlook"] = {"status": "error"}
         display.update_step("Enriching intelligence", "fail", str(exc))
+
+    # --- HIBP Pwned Passwords (k-anonymity, presence-only) ----------------
+    # Runs after extraction (email entities exist) on the in-memory scraped text;
+    # the raw credential is hashed-and-discarded, only a presence flag+count persist.
+    try:
+        from credential_presence import scan_pages_for_pwned_credentials
+        _hibp_page, _hibp_stats = await scan_pages_for_pwned_credentials(scraped_pages)
+        if _hibp_page is not None:
+            enrichment_pages.append(_hibp_page)
+        sources_used["hibp_pwned_passwords"] = {
+            "status": _hibp_stats.get("status", "ok"),
+            "count": _hibp_stats.get("pwned", 0),
+        }
+    except Exception as _hibp_exc:
+        logger.debug("HIBP pwned-password scan skipped: %s", _hibp_exc)
 
     try:
         from sources.ip_reputation import enrich_ip_entities
@@ -1170,6 +1255,32 @@ async def _run_investigation(
         logger.warning("Community detection failed: %s", exc)
         display.update_step("Community detection", "fail", str(exc))
     _metric_finish("graph_build")
+
+    # --- Step 7.5 — promote observed entities into the shared corpus (P4.1) ---
+    # Byproduct of normal use: each observed entity/IOC runs through the full
+    # P4.0 trust gate and lands in global_entities at the gate-assigned tier
+    # (unconfirmed by default; corroborated on ≥N independent sources;
+    # feed_validated on a platform-derived trusted-feed cross-hit). Consent-gated,
+    # collision-safe, and strictly non-fatal — same posture as the P3.1 usage hook.
+    try:
+        from db.session import get_session
+        from shared_corpus.promote import promote_investigation
+
+        with get_session() as promo_session:
+            promo_report = promote_investigation(promo_session, investigation_id)
+            promo_session.commit()
+        if promo_report.skipped_private:
+            display.update_step("Shared-corpus promotion", "skip", "private mode")
+        elif promo_report.promoted or promo_report.rejected:
+            display.update_step(
+                "Shared-corpus promotion", "ok",
+                f"{promo_report.promoted} promoted "
+                f"({promo_report.corroborated} corroborated, "
+                f"{promo_report.feed_validated} feed-validated), "
+                f"{promo_report.rejected} rejected",
+            )
+    except Exception as exc:
+        logger.info("Shared-corpus promotion failed (non-fatal): %s", exc)
 
     # --- Step 8 — summary -------------------------------------------------
     # Phase 6.2 — capped by CLI_PHASE_TIMEOUTS["summary"] so a slow LLM

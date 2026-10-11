@@ -43,6 +43,7 @@ from typing import Any, Optional
 import aiohttp
 
 import pacing
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -188,9 +189,11 @@ async def query_xposedornot(email: str) -> dict[str, Any]:
             #    which is what makes rate_limit_delay()'s arithmetic hold.
             server_wait = 0.0
             try:
-                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with http_pool.clearnet_session() as session:
                     async with session.get(
-                        f"{XPOSEDORNOT_BASE_URL}/check-email/{email}"
+                        f"{XPOSEDORNOT_BASE_URL}/check-email/{email}",
+                        headers=headers,
+                        timeout=timeout,
                     ) as resp:
                         if resp.status == 404:
                             return empty
@@ -301,9 +304,10 @@ async def query_leakcheck(email: str) -> dict[str, Any]:
             # the semaphore rather than after a successful response.
             server_wait = 0.0
             try:
-                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+                async with http_pool.clearnet_session() as session:
                     async with session.get(
-                        LEAKCHECK_PUBLIC_URL, params={"check": email}
+                        LEAKCHECK_PUBLIC_URL, params={"check": email},
+                        headers=headers, timeout=timeout,
                     ) as resp:
                         if resp.status == 429:
                             server_wait = pacing.retry_after_seconds(

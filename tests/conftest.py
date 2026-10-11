@@ -61,9 +61,36 @@ from utils.enrichment_cache import EnrichmentCache, reset_default_cache
 
 
 @pytest.fixture(autouse=True)
+async def _netpool_isolation():
+    """Give each test a fresh, cleanly-closed shared clearnet session (P1.2).
+
+    The netpool session is process-global but event-loop-bound, and each test runs
+    on its own loop. Closing it here — an ASYNC autouse fixture, so under
+    ``asyncio_mode = auto`` it runs in the *test's own* loop — closes the session
+    and its connector in the loop that created them, avoiding both
+    "attached to a different loop" errors (cross-test reuse) and
+    "Unclosed client session" warnings (leaked on GC).
+    """
+    import netpool as _netpool
+
+    await _netpool.close_clearnet_pool()  # drop any leftover from a prior test
+    yield
+    await _netpool.close_clearnet_pool()
+
+
+@pytest.fixture(autouse=True)
 def reset_source_state(monkeypatch):
     """Give each test a fresh in-memory enrichment cache and reset semaphores."""
     reset_default_cache()
+
+    # The in-process rate limiter (P2.3) is process-global; without a per-test
+    # reset, requests from earlier tests that enabled rate limiting would burn
+    # the per-IP budget and 429 a later test's first request.
+    try:
+        import ratelimit
+        ratelimit.reset()
+    except Exception:
+        pass
 
     import sources.breach_lookup as breach_lookup
     import sources.infostealer as infostealer
@@ -71,6 +98,7 @@ def reset_source_state(monkeypatch):
     import sources.nvd as nvd
     import sources.domain_reputation as domain_reputation
     import sources.ip_reputation as ip_reputation
+    import sources.epss as epss
 
     fresh_cache = EnrichmentCache(backend="memory")
 
@@ -84,6 +112,7 @@ def reset_source_state(monkeypatch):
         nvd,
         domain_reputation,
         ip_reputation,
+        epss,
     ):
         monkeypatch.setattr(mod, "_enrichment_cache_singleton", fresh_cache, raising=False)
 
@@ -130,6 +159,9 @@ def reset_source_state(monkeypatch):
 
     _tor_pool._tor_sessions.clear()
     _tor_pool._tor_inflight.clear()
+
+    # The shared clearnet pool (P1.2) is drained by the async `_netpool_isolation`
+    # fixture above, which can close it inside the test's own event loop.
 
     yield
 

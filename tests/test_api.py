@@ -652,5 +652,39 @@ class TestCsvExport(unittest.TestCase):
             self.assertEqual(resp.status_code, 401)
 
 
+# ===========================================================================
+# Regression: GET /investigations (P2.2 carve-out)
+# ===========================================================================
+# Pytest-style function test (needs the conftest `db_engine` fixture for a real
+# SQLite DB so ownership scoping actually executes). Previously the endpoint
+# filtered on the non-existent `current_user.id`, and a broad except swallowed
+# the AttributeError, so it always returned []. This proves the caller gets
+# their own investigations and never another user's.
+
+
+def test_list_investigations_returns_owner_scoped(db_engine):
+    from sqlalchemy.orm import Session as _Session
+
+    from db.models import Investigation, User
+
+    with _Session(db_engine) as s:
+        s.add(User(id=1, email="test@example.com", hashed_password="x", is_active=True,
+                   must_reset_password=False))
+        s.add(User(id=2, email="other@example.com", hashed_password="x", is_active=True,
+                   must_reset_password=False))
+        s.flush()
+        s.add(Investigation(query="mine-owned", user_id=1))
+        s.add(Investigation(query="theirs-private", user_id=2))
+        s.commit()
+
+    client = _make_client()  # authenticated as user.id == 1
+    resp = client.get("/investigations")
+    assert resp.status_code == 200
+    data = resp.json()
+    queries = {row["query"] for row in data}
+    assert "mine-owned" in queries        # not [] anymore
+    assert "theirs-private" not in queries  # never another user's
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,7 @@ from typing import Any, Optional
 import aiohttp
 
 import pacing
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -131,8 +132,8 @@ async def _get_json(url: str, params: dict) -> tuple[Optional[Any], str]:
             # concurrency arithmetic in rate_limit_delay() holds.
             server_wait = 0.0
             try:
-                async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
-                    async with session.get(url, params=params) as resp:
+                async with http_pool.clearnet_session() as session:
+                    async with session.get(url, params=params, headers=headers, timeout=timeout) as resp:
                         if resp.status == 404:
                             return None, "not_found"
                         if resp.status == 429:

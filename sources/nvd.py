@@ -32,6 +32,7 @@ from typing import Any, Optional
 import aiohttp
 
 import pacing
+from sources import http_pool
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -225,11 +226,15 @@ async def fetch_nvd_cve(cve_id: str, session: Optional[aiohttp.ClientSession] = 
     # instead of one being enforced here and the other in the caller's loop.
     await _request_window().acquire(min_spacing=_request_delay())
     try:
+        timeout = aiohttp.ClientTimeout(total=20)
         if owns_session:
-            timeout = aiohttp.ClientTimeout(total=20)
-            session = aiohttp.ClientSession(timeout=timeout, headers=headers)
+            # Shared clearnet pool (P1.2): borrow, never close. Per-request headers
+            # + timeout since the shared session carries no caller-specific ones.
+            session = http_pool.get_clearnet_session()
         assert session is not None
-        async with session.get(_NVD_BASE_URL, params={"cveId": cve_id}) as resp:
+        async with session.get(
+            _NVD_BASE_URL, params={"cveId": cve_id}, headers=headers, timeout=timeout,
+        ) as resp:
             if resp.status == 404:
                 return None
             if resp.status == 403 or resp.status == 429:
@@ -252,9 +257,6 @@ async def fetch_nvd_cve(cve_id: str, session: Optional[aiohttp.ClientSession] = 
     except Exception as exc:
         logger.debug("NVD: error for %s: %s", cve_id, exc)
         return None
-    finally:
-        if owns_session and session is not None:
-            await session.close()
 
     vulns = (data or {}).get("vulnerabilities") or []
     if not vulns:
@@ -332,9 +334,10 @@ async def fetch_nvd_cpe(
     owns_session = session is None
     await _request_window().acquire(min_spacing=_request_delay())
     try:
+        timeout = aiohttp.ClientTimeout(total=20)
         if owns_session:
-            timeout = aiohttp.ClientTimeout(total=20)
-            session = aiohttp.ClientSession(timeout=timeout, headers=headers)
+            # Shared clearnet pool (P1.2): borrow, never close.
+            session = http_pool.get_clearnet_session()
         assert session is not None
         async with session.get(
             _CPE_BASE_URL,
@@ -342,6 +345,8 @@ async def fetch_nvd_cpe(
                 "keywordSearch": product_name,
                 "resultsPerPage": 20,
             },
+            headers=headers,
+            timeout=timeout,
         ) as resp:
             if resp.status in (403, 404, 429):
                 if resp.status in (403, 429):
@@ -357,9 +362,6 @@ async def fetch_nvd_cpe(
     except Exception as exc:
         logger.debug("NVD CPE: error for %s: %s", product_name, exc)
         return None
-    finally:
-        if owns_session and session is not None:
-            await session.close()
 
     products = (data or {}).get("products") or []
     matched = any(
@@ -414,16 +416,9 @@ async def enrich_nvd(entities: list[dict]) -> list[dict]:
     results: list[dict] = []
     started = time.monotonic()
 
-    headers = {
-        "User-Agent": "VoidAccess-OSINT/1.1 (security research)",
-        "Accept": "application/json",
-    }
-    key = _api_key()
-    if key:
-        headers["apiKey"] = key
-
-    timeout = aiohttp.ClientTimeout(total=20)
-    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+    # One shared clearnet session reused across the whole CVE batch (injected into
+    # each fetch_nvd_cve, which applies its own per-request headers + timeout).
+    async with http_pool.clearnet_session() as session:
         for cve_id in cve_ids:
             if time.monotonic() - started > _NVD_SOFT_BUDGET:
                 logger.warning(

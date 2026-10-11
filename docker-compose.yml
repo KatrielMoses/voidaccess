@@ -41,6 +41,30 @@ services:
     networks:
       - voidaccess-net
 
+  # Meilisearch — the owned persistent index (P3.0). Pinned to the version the
+  # owned_index client was validated against (userProvided vector embedder +
+  # hybrid semanticRatio search). MEILI_MASTER_KEY gates writes; leave unset for
+  # keyless local dev only.
+  meilisearch:
+    image: getmeili/meilisearch:v1.11.3
+    container_name: voidaccess-meili
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: ${MEILI_ENV:-production}
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "7700:7700"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - voidaccess-net
+
   # FastAPI Backend (uses root Dockerfile with multi-stage build)
   fastapi:
     build:
@@ -60,10 +84,15 @@ services:
         condition: service_healthy
       tor:
         condition: service_healthy
+      meilisearch:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://voidaccess:${POSTGRES_PASSWORD}@postgres:5432/voidaccess
       TOR_PROXY_HOST: tor
       TOR_PROXY_PORT: 9050
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_KEY: ${MEILI_MASTER_KEY:-}
+      MEILI_INDEX: ${MEILI_INDEX:-onion_pages}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OTX_API_KEY: ${OTX_API_KEY}
@@ -116,6 +145,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  meili_data:
     driver: local
   chroma_data:
     driver: local

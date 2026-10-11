@@ -1,21 +1,22 @@
 """
 sources/engines.py — Additional dark web search engines not in search.py.
 
-search.py handles 16 engines via the legacy thread-pool path (public API
+search.py handles the catalog engines via the fan-out path (public API
 unchanged for ui.py compatibility).  This module adds engines that need
 special handling:
 
-  • DarkSearch  — JSON REST API, paginated, optional API key
   • OnionSearch — HTML scraping of Torch and Haystack onion search engines
 
-Both go through the Tor SOCKS5 proxy (TOR_PROXY_HOST / TOR_PROXY_PORT).
+It goes through the Tor SOCKS5 proxy (TOR_PROXY_HOST / TOR_PROXY_PORT).
 
 Public API:
-    async def search_darksearch(query, pages=2)   -> list[dict]
     async def search_onionsearch(query)            -> list[dict]
 
-Each returns list[dict] with keys: title, url, snippet, source.
+Returns list[dict] with keys: title, url, snippet, source.
 Empty list on any error — never raises.
+
+Note: the DarkSearch JSON-API engine was removed in P1.1 (darksearch.io
+confirmed defunct); see search/ENGINE_CULL.md.
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 import pacing
-from config import DARKSEARCH_API_KEY
 from scraper import tor_pool
 
 _logger = logging.getLogger(__name__)
@@ -37,8 +37,6 @@ _logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-_DARKSEARCH_API = "http://darksearch.io/api/search"
 
 # Torch and Haystack — specifically called out in concept.md; not in search.py
 _ONIONSEARCH_ENGINES = [
@@ -87,81 +85,6 @@ def _ua() -> str:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) "
         "Gecko/20100101 Firefox/137.0"
     )
-
-
-# ---------------------------------------------------------------------------
-# DarkSearch JSON API
-# ---------------------------------------------------------------------------
-
-async def search_darksearch(query: str, pages: int = 2) -> List[dict]:
-    """
-    Query the DarkSearch JSON API and return up to *pages* pages of results.
-
-    Routed through Tor for anonymity even though darksearch.io is clearnet.
-    Uses DARKSEARCH_API_KEY as Authorization header when configured.
-
-    Returns list[dict] with keys: title, url, snippet, source.
-    Returns [] on any network or parse error.
-    """
-    results: List[dict] = []
-    headers = {"User-Agent": _ua(), "Accept": "application/json"}
-    if DARKSEARCH_API_KEY:
-        headers["Authorization"] = f"Bearer {DARKSEARCH_API_KEY}"
-
-    try:
-        # One pooled session for every page — they all target the same host, so
-        # they are one identity to Tor and belong on one circuit.
-        #
-        # darksearch.io is clearnet but deliberately Tor-routed (see docstring).
-        # `tor_isolation_key` maps non-onion hosts to the shared un-isolated
-        # bucket, so this path keeps exactly its present behaviour —
-        # credential-less SOCKS5 through Tor — while no longer building a
-        # throwaway connector on every call.
-        session, iso_key = tor_pool.acquire_tor_session(_DARKSEARCH_API)
-        try:
-            for page in range(1, pages + 1):
-                params = {"query": query, "page": page}
-                try:
-                    async with session.get(
-                        _DARKSEARCH_API,
-                        params=params,
-                        headers=headers,
-                        timeout=_timeout(),
-                    ) as resp:
-                        if resp.status != 200:
-                            _logger.debug(
-                                "DarkSearch page %d returned HTTP %d", page, resp.status
-                            )
-                            break
-                        data = await resp.json(content_type=None)
-                        items = data.get("data") or []
-                        for item in items:
-                            link = str(item.get("link") or "").strip()
-                            if not link:
-                                continue
-                            results.append(
-                                {
-                                    "title": str(item.get("title") or "").strip(),
-                                    "url": link,
-                                    "snippet": str(
-                                        item.get("description") or ""
-                                    ).strip()[:500],
-                                    "source": "DarkSearch",
-                                }
-                            )
-                        # Stop early if we've reached the last page
-                        last = data.get("last_page") or page
-                        if page >= last:
-                            break
-                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-                    _logger.debug("DarkSearch page %d error: %s", page, exc)
-                    break
-        finally:
-            tor_pool.release_tor_session(iso_key)
-    except Exception as exc:
-        _logger.debug("DarkSearch session error: %s", exc)
-
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -278,5 +201,6 @@ def _deduplicate(results: List[dict]) -> List[dict]:
     return out
 
 
-# asyncio is used inside search_darksearch — import here to avoid circular
+# asyncio.TimeoutError is caught in search_onionsearch — imported late to avoid
+# a circular import at module load.
 import asyncio  # noqa: E402

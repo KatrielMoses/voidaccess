@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 import pacing
+from sources import http_pool
 
 logger = logging.getLogger(__name__)
 
@@ -96,11 +97,11 @@ async def fetch_otx_pulses(query: str, api_key: str, limit: int = 20) -> list[di
 
     try:
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             url = f"{OTX_BASE_URL}/search/pulses"
             params = {"q": query, "limit": limit, "page": 1}
 
-            async with session.get(url, params=params) as resp:
+            async with session.get(url, params=params, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning("OTX pulse search returned HTTP %s", resp.status)
                     return []
@@ -249,9 +250,9 @@ async def fetch_malwarebazaar(query: str, limit: int = 20) -> list[dict]:
         try:
             headers = _abusech_headers()
             timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            async with http_pool.clearnet_session() as session:
                 payload = {"query": "get_recent", "selector": "time"}
-                async with session.post(MALWAREBAZAAR_URL, data=payload) as resp:
+                async with session.post(MALWAREBAZAAR_URL, data=payload, headers=headers, timeout=timeout) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         if data.get("query_status") == "ok":
@@ -291,9 +292,9 @@ async def fetch_malwarebazaar(query: str, limit: int = 20) -> list[dict]:
         }
 
     try:
-        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             tag_payload = {"query": "get_taginfo", "tag": q, "limit": limit}
-            async with session.post(MALWAREBAZAAR_URL, data=tag_payload) as resp:
+            async with session.post(MALWAREBAZAAR_URL, data=tag_payload, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning("MalwareBazaar: HTTP %s (tag)", resp.status)
                 else:
@@ -312,7 +313,7 @@ async def fetch_malwarebazaar(query: str, limit: int = 20) -> list[dict]:
                             return results
 
             sig_payload = {"query": "get_siginfo", "signature": q, "limit": limit}
-            async with session.post(MALWAREBAZAAR_URL, data=sig_payload) as resp:
+            async with session.post(MALWAREBAZAAR_URL, data=sig_payload, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning("MalwareBazaar: HTTP %s (signature)", resp.status)
                     return []
@@ -346,8 +347,8 @@ async def fetch_threatfox(query: str, limit: int = 50) -> list[dict]:
         try:
             headers = _abusech_headers()
             timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-                async with session.post(THREATFOX_URL, json=payload) as resp:
+            async with http_pool.clearnet_session() as session:
+                async with session.post(THREATFOX_URL, json=payload, headers=headers, timeout=timeout) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         if data.get("query_status") == "ok":
@@ -374,8 +375,8 @@ async def fetch_threatfox(query: str, limit: int = 50) -> list[dict]:
     payload = {"query": "search_ioc", "search_term": q}
 
     try:
-        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-            async with session.post(THREATFOX_URL, json=payload) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.post(THREATFOX_URL, json=payload, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning("ThreatFox: HTTP %s", resp.status)
                     return []
@@ -435,8 +436,8 @@ async def fetch_urlhaus(query: str, limit: int = 20) -> list[dict]:
     payload = {"tag": q}
 
     try:
-        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-            async with session.post(f"{URLHAUS_URL}tag/", data=payload) as resp:
+        async with http_pool.clearnet_session() as session:
+            async with session.post(f"{URLHAUS_URL}tag/", data=payload, headers=headers, timeout=timeout) as resp:
                 if resp.status != 200:
                     logger.warning("URLhaus: HTTP %s", resp.status)
                     return []
@@ -707,10 +708,13 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
     timeout = aiohttp.ClientTimeout(total=25)
 
     try:
-        async with aiohttp.ClientSession(headers=_RANSOMWARE_LIVE_HEADERS, timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             # ── 1. Match groups from the full group index ──────────────────────
             await _rl_route_gate("/groups")
-            async with session.get(f"{_RANSOMWARE_LIVE_BASE}/groups") as resp:
+            async with session.get(
+                f"{_RANSOMWARE_LIVE_BASE}/groups",
+                headers=_RANSOMWARE_LIVE_HEADERS, timeout=timeout,
+            ) as resp:
                 if resp.status == 429:
                     wait = pacing.retry_after_seconds(
                         resp.headers, pacing.scale_delay_floor(_RL_MIN_INTERVAL)
@@ -743,7 +747,10 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
                     # /group/{name} is ONE endpoint for rate-limit purposes, so
                     # every group shares a single 1-req/min allowance.
                     await _rl_route_gate("/group/" + str(gname))
-                    async with session.get(f"{_RANSOMWARE_LIVE_BASE}/group/{gname}") as r:
+                    async with session.get(
+                        f"{_RANSOMWARE_LIVE_BASE}/group/{gname}",
+                        headers=_RANSOMWARE_LIVE_HEADERS, timeout=timeout,
+                    ) as r:
                         if r.status == 429:
                             logger.warning(
                                 "ransomware.live /group/%s rate limited", gname
@@ -1044,9 +1051,12 @@ async def fetch_ransomlook(query: str) -> list[dict]:
     timeout = aiohttp.ClientTimeout(total=25)
 
     try:
-        async with aiohttp.ClientSession(headers=_RANSOMLOOK_HEADERS, timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             # ── 1. Match groups from the full group name index ─────────────────
-            async with session.get(f"{_RANSOMLOOK_BASE}/groups") as resp:
+            async with session.get(
+                f"{_RANSOMLOOK_BASE}/groups",
+                headers=_RANSOMLOOK_HEADERS, timeout=timeout,
+            ) as resp:
                 if resp.status != 200:
                     logger.warning("ransomlook.io /groups HTTP %s", resp.status)
                     return []
@@ -1066,7 +1076,10 @@ async def fetch_ransomlook(query: str) -> list[dict]:
             # ── 2. Fetch detail for each matched group ─────────────────────────
             async def _fetch_group_detail(gname: str) -> tuple[str, Optional[dict]]:
                 try:
-                    async with session.get(f"{_RANSOMLOOK_BASE}/group/{gname}") as r:
+                    async with session.get(
+                        f"{_RANSOMLOOK_BASE}/group/{gname}",
+                        headers=_RANSOMLOOK_HEADERS, timeout=timeout,
+                    ) as r:
                         if r.status == 200:
                             data = await r.json(content_type=None)
                             if isinstance(data, list) and data and isinstance(data[0], dict):
@@ -1091,7 +1104,10 @@ async def fetch_ransomlook(query: str) -> list[dict]:
             # ── 3. Pull recent posts and filter by matched group names ─────────
             recent_by_group: dict[str, list[dict]] = {name.lower(): [] for name in matched}
             try:
-                async with session.get(f"{_RANSOMLOOK_BASE}/recent") as r:
+                async with session.get(
+                    f"{_RANSOMLOOK_BASE}/recent",
+                    headers=_RANSOMLOOK_HEADERS, timeout=timeout,
+                ) as r:
                     if r.status == 200:
                         recent = await r.json(content_type=None)
                         for post in (recent if isinstance(recent, list) else []):
@@ -1137,6 +1153,9 @@ def ransomlook_to_pages(groups: list[dict]) -> list[dict]:
     Onion URLs match ransomware.live's format so cross-source dedup collapses
     shared leak sites.
     """
+    from feeds import provenance as _feed_provenance
+    _rl_prov = _feed_provenance("ransomlook")  # CC BY 4.0 — attribution required
+
     pages: list[dict] = []
 
     for gd in groups:
@@ -1165,6 +1184,11 @@ def ransomlook_to_pages(groups: list[dict]) -> list[dict]:
                     victim_line += f" {date}"
                 lines.append(victim_line)
 
+        # CC BY 4.0 attribution — RansomLook requires visible credit.
+        lines.append(
+            f"\nSource: {_rl_prov['attribution']} ({_rl_prov['url']}) — "
+            f"license: {_rl_prov['license']}"
+        )
         content = "\n".join(lines)
         base_link = f"https://www.ransomlook.io/group/{gname}"
 
@@ -1177,6 +1201,7 @@ def ransomlook_to_pages(groups: list[dict]) -> list[dict]:
             "source": "ransomlook",
             "title": f"ransomlook.io — {gname}",
             "via": "ransomlook_api",
+            "provenance": _rl_prov,
         })
 
         for onion_url in onion_urls:
@@ -1192,6 +1217,7 @@ def ransomlook_to_pages(groups: list[dict]) -> list[dict]:
                     "title": f"{gname} leak site",
                     "via": "ransomlook_onion_seed",
                     "_scrape_seed": True,
+                    "provenance": _rl_prov,
                 })
 
     return pages
@@ -1248,10 +1274,25 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
 
     pages: list[dict] = []
 
-    if cisa_results:
-        pages.extend(_cisa_results_to_pages(cisa_results, query))
-    if nvd_results:
-        pages.extend(_nvd_results_to_pages(nvd_results))
+    # P1.3: fuse NVD + CISA KEV (already fetched above — no re-fetch, so NVD/KEV
+    # behavior is unchanged) with EPSS + Exploit-DB into ONE unified CVE view,
+    # replacing the separate NVD page + KEV-CVE pages. CISA advisories (non-CVE
+    # actor matches) still render on their own.
+    kev_results = [r for r in cisa_results if r.get("source") == "cisa_kev"]
+    advisory_results = [r for r in cisa_results if r.get("source") != "cisa_kev"]
+
+    if advisory_results:
+        pages.extend(_cisa_results_to_pages(advisory_results, query))
+    try:
+        from sources.cve_intel import fuse_cve_intelligence
+        pages.extend(await fuse_cve_intelligence(query, entities, nvd_results, kev_results))
+    except Exception as exc:
+        logger.warning("cve_intel fusion failed, falling back to legacy CVE pages: %s", exc)
+        if kev_results:
+            pages.extend(_cisa_results_to_pages(kev_results, query))
+        if nvd_results:
+            pages.extend(_nvd_results_to_pages(nvd_results))
+
     if shodan_results:
         pages.extend(_shodan_results_to_pages(shodan_results))
     if vt_results:
@@ -1306,6 +1347,16 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
                 "source": "mitre_attack_overlay",
                 "via": "mitre_overlay",
             })
+
+    # P1.4 — abuse/phishing blocklist matching (SSLBL / OpenPhish / PhishTank).
+    # Bulk feeds matched in memory against the investigation's entities; matched
+    # entities are flagged in the DB and a provenance-stamped page is emitted.
+    try:
+        from feeds import enrich_blocklists
+        _bl_pages, _bl_stats = await enrich_blocklists(entities)
+        pages.extend(_bl_pages)
+    except Exception as exc:
+        logger.warning("blocklist enrichment failed: %s", exc)
 
     return pages
 

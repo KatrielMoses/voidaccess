@@ -14,6 +14,7 @@ from typing import Optional, Any
 from datetime import datetime, timezone
 
 import pacing
+from sources import http_pool
 from db.models import Entity, EntityRelationship, RelationshipType
 from db.queries import upsert_entity_canonical
 
@@ -100,11 +101,10 @@ async def lookup_bitcoin_address(
         params["token"] = api_token
     
     try:
-        connector = aiohttp.TCPConnector(ssl=True)
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+        async with http_pool.clearnet_session() as session:
             url = f"{BLOCKCYPHER_BASE}/addrs/{address}"
-            async with session.get(url, params=params) as resp:
+            async with session.get(url, params=params, timeout=timeout) as resp:
                 
                 if resp.status == 429:
                     logger.warning(f"BlockCypher rate limited for {address[:12]}...")
@@ -203,10 +203,9 @@ async def lookup_ethereum_address(
         return result
     
     try:
-        connector = aiohttp.TCPConnector(ssl=True)
         timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            
+        async with http_pool.clearnet_session() as session:
+
             # Get balance
             async with session.get(
                 ETHERSCAN_BASE,
@@ -217,6 +216,7 @@ async def lookup_ethereum_address(
                     "tag": "latest",
                     "apikey": api_key,
                 },
+                timeout=timeout,
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -238,6 +238,7 @@ async def lookup_ethereum_address(
                     "sort": "desc",
                     "apikey": api_key,
                 },
+                timeout=timeout,
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()

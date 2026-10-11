@@ -22,18 +22,35 @@ _model: "SentenceTransformer | None" = None
 _lock = threading.Lock()
 
 
+class EmbeddingBackendError(RuntimeError):
+    """Real semantic embeddings are required but only the fallback is available.
+
+    Raised on the central path (owned index configured) so a broken embedder
+    fails loud instead of silently serving SHA-256 hash-noise as "semantic"
+    vectors — see ``assert_real_embeddings``.
+    """
+
+
 class _FallbackEmbeddingModel:
     """Small deterministic encoder used when sentence-transformers cannot load."""
+
+    @staticmethod
+    def _vector(payload: str) -> list[float]:
+        digest = hashlib.sha256(payload.encode("utf-8", errors="ignore")).digest()
+        return [((digest[i % len(digest)] / 255.0) * 2.0) - 1.0 for i in range(384)]
 
     def encode(self, text, convert_to_numpy: bool = True, **_kwargs):
         import numpy as np
 
-        payload = text if isinstance(text, str) else "\n".join(map(str, text))
-        digest = hashlib.sha256(payload.encode("utf-8", errors="ignore")).digest()
-        values = [((digest[i % len(digest)] / 255.0) * 2.0) - 1.0 for i in range(384)]
-        arr = np.array(values, dtype=float)
+        # Per-text digest: a batch (list) must yield one DISTINCT vector per
+        # element, matching the single-text path. The previous implementation
+        # hashed the whole joined list once and repeated that vector for every
+        # element, collapsing ``embed_batch`` to identical vectors — which
+        # silently breaks semantic ranking wherever the fallback is active.
         if isinstance(text, list):
-            arr = np.vstack([arr for _ in text])
+            arr = np.array([self._vector(str(t)) for t in text], dtype=float)
+        else:
+            arr = np.array(self._vector(text), dtype=float)
         return arr if convert_to_numpy else arr.tolist()
 
 
@@ -90,3 +107,55 @@ def get_embedding_model() -> "SentenceTransformer | None":
             _model = _FallbackEmbeddingModel()
 
     return _model
+
+
+# ---------------------------------------------------------------------------
+# P3-HARDEN / DRIFT-1 — make the silent embedding degradation loud.
+#
+# numpy 2.x (and other stack breaks) can make real MiniLM fail to load, silently
+# activating the deterministic SHA-256 fallback. On the central service that
+# quietly kills semantic ranking + owned-index vectors (P3.2's differentiator)
+# while every test stays green. The primitives below let the central path assert
+# real embeddings at startup and refuse to serve, while the local/$0 path keeps
+# the graceful fallback.
+# ---------------------------------------------------------------------------
+
+
+def using_fallback_embeddings() -> bool:
+    """True if the ACTIVE embedding model is the deterministic SHA-256 fallback
+    (real MiniLM failed to load) or is unavailable — i.e. NOT real embeddings."""
+    model = get_embedding_model()
+    return model is None or isinstance(model, _FallbackEmbeddingModel)
+
+
+def semantic_embeddings_required() -> bool:
+    """The explicit "semantic required" signal.
+
+    The central service requires real semantic embeddings iff the owned index is
+    configured (``MEILI_HOST`` set): semantic ranking + index vectors are the
+    differentiator there, so a silent hash-noise fallback is a product failure. A
+    local/$0 install (no owned index) has no such requirement and keeps the
+    graceful fallback. Read live so tests and a late ``.env`` take effect.
+    """
+    import config
+
+    return bool((getattr(config, "MEILI_HOST", None) or "").strip())
+
+
+def assert_real_embeddings(*, context: str = "") -> None:
+    """Raise ``EmbeddingBackendError`` if only the fallback embedder is available.
+
+    Called on the central path where semantic embeddings are a hard requirement,
+    so a broken embedder fails loud (clear message + refuse) instead of silently
+    serving SHA-256 hash noise. A no-op when real MiniLM is loaded.
+    """
+    if using_fallback_embeddings():
+        raise EmbeddingBackendError(
+            "Real semantic embeddings (all-MiniLM-L6-v2) failed to load; the "
+            "deterministic SHA-256 fallback is active. On the central service the "
+            "owned index's vectors and P3.2 semantic ranking would be silently "
+            "degraded to hash noise — refusing to serve rather than ship a silent "
+            "product failure. Fix the embedding stack (install voidaccess[nlp] "
+            "with a compatible numpy<2 + sentence-transformers/torch set) and "
+            "restart." + (f" [{context}]" if context else "")
+        )

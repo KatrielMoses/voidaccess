@@ -20,19 +20,17 @@ everything we send it anyway:
 So all of an engine's traffic within one investigation belongs on one circuit —
 building a fresh circuit per attempt would buy nothing and cost a circuit
 build.  Different engines, though, must not share: before this module existed
-the whole fan-out ran on one credential-less session, which put all 18 engines
+the whole fan-out ran on one credential-less session, which put every engine
 on a single circuit and let any one engine operator observe the timing pattern
 of our queries to all the others.
 
 CLEARNET ENGINES GET NO CREDENTIAL — AND STAY ON TOR
 ----------------------------------------------------
-Two of the catalog's engines are clearnet (`ahmia.fi`, `darksearch.io`).  They
-are deliberately **still routed through Tor** — that is what hides the
-investigator's IP from those services, and it is the same stance
-`sources/engines.py::search_darksearch` documents ("Routed through Tor for
-anonymity even though darksearch.io is clearnet") and what CLAUDE.md's Tor-safety
-rule requires.  Sending them direct would leak the operator's real address to
-two services that currently only ever see a Tor exit, so that is not done.
+One catalog engine is clearnet (`ahmia.fi`).  It is deliberately **still routed
+through Tor** — that is what hides the investigator's IP from the service, and it
+is what CLAUDE.md's Tor-safety rule requires.  Sending it direct would leak the
+operator's real address to a service that currently only ever sees a Tor exit,
+so that is not done.
 
 What they do *not* get is an isolation credential: they fall into the pool's
 shared un-isolated bucket, byte-for-byte the SOCKS5 no-auth behaviour they have
@@ -49,9 +47,9 @@ separate named function anyway because:
   * `tor_isolation_key`'s onion-only behaviour is pinned by
     tests/test_scrape_isolation.py::test_clearnet_is_not_isolated and must not
     be edited to serve search;
-  * if the clearnet decision is ever revisited (isolating `ahmia.fi` and
-    `darksearch.io` from each other would be a one-line change *here*), this is
-    the single place that changes, and the pinned scraper contract is untouched.
+  * if the clearnet decision is ever revisited (isolating clearnet engines from
+    each other would be a one-line change *here*), this is the single place that
+    changes, and the pinned scraper contract is untouched.
 
 It delegates instead of copying the parsing so the two can never disagree about
 what counts as an onion hostname.

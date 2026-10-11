@@ -8,7 +8,9 @@ import { getToken } from "@/lib/auth";
 export interface TemporalAnomaly {
   date: string;
   count: number;
-  z_score: number;
+  // Poisson event-count model (replaced the old z_score signal).
+  poisson_p_value: number;
+  expected_rate: number;
   type: "spike" | "drop";
   description: string;
 }

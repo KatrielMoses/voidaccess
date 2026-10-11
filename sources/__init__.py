@@ -6,7 +6,7 @@ Public API:
     enrich_investigation(query, otx_api_key)  async  — threat intel enrichment
 
 Sub-modules:
-    engines.py     — DarkSearch JSON API + OnionSearch HTML scraping
+    engines.py     — OnionSearch (Torch/Haystack) HTML scraping
     seeds.py       — curated .onion seed URL list
     pastes.py      — .onion paste site monitor
     telegram.py    — Telegram public channel monitor (clearnet, optional)
@@ -35,7 +35,7 @@ async def collect_all_sources(
     """
     Aggregate all Phase 1D intelligence sources for *query*.
 
-    Search engines (DarkSearch + OnionSearch) and the paste monitor run
+    The OnionSearch (Torch/Haystack) engine and the paste monitor run
     concurrently via asyncio.gather().  Telegram runs separately, and only
     when *include_telegram=True* and credentials exist.
 
@@ -48,21 +48,20 @@ async def collect_all_sources(
                            "index"]); None returns all categories.
 
     Returns dict with keys:
-        "search_results"   list[dict]  — from DarkSearch + OnionSearch
+        "search_results"   list[dict]  — from OnionSearch (Torch/Haystack)
         "paste_results"    list[dict]  — from paste site monitor
         "telegram_results" list[dict]  — from Telegram (empty if skipped)
         "seed_urls"        list[dict]  — from seeds.py (for crawler to consume)
     """
-    from sources.engines import search_darksearch, search_onionsearch
+    from sources.engines import search_onionsearch
     from sources.pastes import fetch_recent_pastes
     from sources.seeds import get_seeds
 
     # --- All network sources run concurrently -------------------------------
-    (darksearch_results, onionsearch_results), paste_results, telegram_results = await asyncio.gather(
-        asyncio.gather(
-            search_darksearch(query),
-            search_onionsearch(query),
-        ),
+    # DarkSearch was removed in P1.1 (darksearch.io confirmed defunct); the
+    # OnionSearch (Torch/Haystack) engine is what remains here.
+    onionsearch_results, paste_results, telegram_results = await asyncio.gather(
+        search_onionsearch(query),
         fetch_recent_pastes(query),
         _fetch_telegram_if_enabled(
             include_telegram=include_telegram,
@@ -70,7 +69,7 @@ async def collect_all_sources(
             query=query,
         ),
     )
-    search_results: List[dict] = darksearch_results + onionsearch_results
+    search_results: List[dict] = list(onionsearch_results)
 
     # --- Seeds (synchronous) ------------------------------------------------
     if seed_categories:

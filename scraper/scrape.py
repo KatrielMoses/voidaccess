@@ -40,6 +40,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 import pacing
+import netpool
 from config import TOR_PROXY_HOST, TOR_PROXY_PORT, PLAYWRIGHT_ENABLED
 from scraper import tor_pool
 
@@ -81,11 +82,10 @@ MAX_RETRIES = 3
 RETRY_DELAYS = (2.0, 4.0, 8.0)  # seconds before retry 1, 2, 3
 RETRYABLE_STATUS = {500, 502, 503, 504}
 
-# Per-attempt outer timeout and cached-session connect/read timeouts, also
-# `normal` baselines scaled by the active profile at call time.
+# Per-attempt outer timeout — `normal` baseline scaled by the active profile at
+# call time. The cached direct-session connect/read timeouts now live with the
+# shared clearnet pool that owns the session (`netpool`); see below.
 PER_ATTEMPT_TIMEOUT = 10.0
-DIRECT_CONNECT_TIMEOUT = 5
-DIRECT_READ_TIMEOUT = 25
 
 # Pooled-Tor-session connect/read defaults now live with the pool that bakes
 # them into the session (`scraper/tor_pool.py`); re-exported here because this
@@ -367,16 +367,6 @@ def _evict_idle_tor_session() -> None:
     tor_pool.evict_idle_tor_session(TOR_ISOLATION_POOL_MAX)
 
 
-def _direct_tcp_connector() -> aiohttp.TCPConnector:
-    """Direct TCP connector with connection pooling."""
-    return aiohttp.TCPConnector(
-        limit=30,
-        limit_per_host=10,
-    )
-
-
-_direct_session: Optional[aiohttp.ClientSession] = None
-
 _close_session_soon = tor_pool._close_session_soon
 
 
@@ -415,29 +405,19 @@ _release_tor_session = tor_pool.release_tor_session
 
 
 def get_direct_session_cached() -> aiohttp.ClientSession:
-    """Return a cached direct session for connection reuse."""
-    global _direct_session
-    if _direct_session is None or _direct_session.closed:
-        connector = _direct_tcp_connector()
-        _direct_session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=aiohttp.ClientTimeout(
-                connect=pacing.scale_timeout(DIRECT_CONNECT_TIMEOUT),
-                sock_read=pacing.scale_timeout(DIRECT_READ_TIMEOUT),
-            ),
-        )
-    return _direct_session
+    """Return the shared cached direct (clearnet) session for connection reuse.
+
+    Delegates to the neutral ``netpool`` module, which owns the one clearnet
+    session shared with ``sources/`` — see netpool/README.md for why the pool
+    lives outside both ``scraper`` and ``sources``.
+    """
+    return netpool.get_clearnet_session()
 
 
 async def close_cached_sessions() -> None:
-    """Close every cached session (whole isolation pool + direct) - on shutdown."""
-    global _direct_session
-
+    """Close every cached session (whole isolation pool + shared clearnet) - on shutdown."""
     await tor_pool.close_pool()
-
-    if _direct_session and not _direct_session.closed:
-        await _direct_session.close()
-        _direct_session = None
+    await netpool.close_clearnet_pool()
 
 
 _reset_tor_session_on_error = tor_pool.reset_tor_session_on_error
