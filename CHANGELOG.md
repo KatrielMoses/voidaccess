@@ -20,6 +20,11 @@ All notable changes to VoidAccess are documented here.
   retry fits in the same budget. The report JSON gains `summary_kind`
   (`llm` | `fallback` | `none`). The CLI also passes `preset="threat_intel"` by
   keyword; it was being passed in the `entities` position.
+- **Search engines:** `OSS` and `TorNet` are quarantined (excluded from the
+  fan-out, retained for re-probe). Live Tor probe, 4 samples each: p90 latency
+  48.6 s / 76.1 s and unique-result share 0% / 7.2%
+  (`benchmark/artifacts/E1B_engine_probe.json`). Kaizer, Anima, Tornado and
+  Find Tor were already quarantined and probed at 0% success again.
 - **Tests:** `tests/test_setup.sh` no longer contains a real-looking OpenRouter
   key or admin password.
 
