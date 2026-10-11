@@ -246,7 +246,7 @@ pip install voidaccess
 
 | Command | Common flags | Notes |
 |---|---|---|
-| `voidaccess investigate "<query>"` | `--output`, `--model`, `--no-tor`, `--no-llm`, `--depth`, `--format`, `--quiet`, `--no-banner` | Runs the full local pipeline and writes report files |
+| `voidaccess investigate "<query>"` | `--output`, `--model`, `--no-tor`, `--no-llm`, `--depth`, `--format`, `--quiet`, `--no-banner`, `--events-jsonl PATH` | Runs the full local pipeline and writes report files |
 | `voidaccess show [target]` | `--no-tui` | Opens the entity browser, or prints a summary table for scripted use |
 | `voidaccess export <target>` | `--format stix|misp|sigma|yara|snort|suricata|package|csv|md|json`, `--output`, `--tlp`, `--redact-credentials`, `--include-raw` | Exports a saved investigation or JSON report |
 | `voidaccess package <target>` | `--output`, `--tlp`, `--redact-credentials`, `--include-raw` | Shortcut for `voidaccess export <target> --format package`; writes an IOC ZIP bundle |
@@ -442,6 +442,8 @@ The API and CLI wrap the major long-running phases in configurable timeouts:
 | Graph build | `VOIDACCESS_GRAPH_TIMEOUT` | `60` seconds |
 | Summary | `VOIDACCESS_SUMMARY_TIMEOUT` | `90` seconds |
 | Finalize | `VOIDACCESS_FINALIZE_TIMEOUT` | `30` seconds |
+
+On the CLI, the enrichment cap is applied only when `VOIDACCESS_ENRICHMENT_TIMEOUT` is set explicitly (partial results are kept); the 120 s default is not enforced there. The CLI summary phase splits its budget: the first attempt gets 67% of it; if that times out, one retry runs with a reduced context (top 4 pages, 4000 characters) in the remaining 33%. If that also fails, a deterministic fallback summary built from the top entities and sources is used and the report JSON carries `"summary_kind": "fallback"` (`"llm"` for a model summary, `"none"` for `--no-llm`).
 
 Pipeline metadata that used to live only in process memory now survives restarts through the investigation metadata JSON column:
 
@@ -1583,3 +1585,22 @@ Rationale: single-operator self-hosted tool with 8-hour (not short-lived) tokens
 ### proxy transport Over Plain HTTP Can Return 502
 
 When `VOIDACCESS_USE_PROXY=true` is set and the target URL is plain HTTP (not HTTPS), the ScrapingAnt proxy transport endpoint occasionally returns HTTP 502 instead of the target's content. HTTPS targets succeed reliably. Because real-world paste sites and the curated RSS feed list are nearly universally HTTPS, this only surfaces against an unusual plain-HTTP target and the silent fallback to direct (`sources/proxy_client.py::_fetch_via_proxy_mode` returns `None` on `resp.status >= 500`, then the chokepoint retries without the proxy) still returns usable content. The REST API transport (`VOIDACCESS_USE_PROXIES=true`) is not affected — the same chokepoint has no observed flakiness on plain HTTP via the `/v2/general` endpoint. If a future investigation produces unexpectedly few results from a plain-HTTP source, the cause is this; switching to REST API or to direct is a workaround.
+
+### 13.17 Opt-in Speed Controls and Progress Events
+
+All of these are unset by default and change nothing for self-hosters. Each overrides one built-in value.
+
+| Env var / flag | Default (unset) | Effect |
+|---|---|---|
+| `VOIDACCESS_PACE=aggressive` | `normal` (or the persisted `configure pace` value) | Existing pacing profile; scales every search and scrape timeout, retry backoff and politeness delay (`pacing/`). Third-party quota delays never shrink below their published interval. |
+| `VOIDACCESS_SEARCH_WORKERS` | `DEPTH_PRESETS[depth].max_workers` (3 / 5 / 8) | Concurrent Tor search engines. Engines queued behind this limit spend their per-engine timeout waiting, so a low value causes spurious timeouts. |
+| `VOIDACCESS_SCRAPE_WORKERS` | `DEPTH_PRESETS[depth].max_workers` | Concurrent page fetches. |
+| `VOIDACCESS_EXTRACT_CONCURRENCY` | `DEPTH_PRESETS[depth].extract_concurrency` (3 / 5 / 6) | Pages extracted concurrently. |
+| `VOIDACCESS_SEARCH_DEADLINE` | none (wait for the slowest engine) | Seconds. When it passes, the search stage returns the engines that have answered and cancels the rest (reported as `deadline`, not counted against the circuit breaker). |
+| `VOIDACCESS_CONCURRENT_COLLECT` | off | `1` runs the side sources (paste, GitHub, GitLab, RSS, Torch/Haystack, Telegram) concurrently with the Tor engine fan-out instead of after it. |
+| `VOIDACCESS_ENRICHMENT_TIMEOUT` | not enforced on the CLI | Seconds; caps the whole enrichment cluster on the CLI and keeps partial results. |
+| `VOIDACCESS_ENRICHMENT_SOURCES` | all | See 13.16. |
+| `MAX_LLM_PAGES_PER_INV` | `10` | Pages that get an LLM extraction call. The CLI now honours it (as the API already did). |
+| `--events-jsonl PATH` | off | Writes one JSON progress event per line; see `progress/README.md`. |
+
+Why enrichment is not run concurrently with scraping or extraction: the query-only fetchers (OTX, abuse.ch, ransomware.live, RansomLook) have no data dependency and could overlap scraping, but they are exactly the sources a licence-restricted deployment turns off, and the remaining sources (NVD, CISA KEV, RDAP, crt.sh, Wayback, MITRE) are driven by entities that only exist after extraction. The entity enrichers share and rewrite the extraction result list and the entity rows, so they stay sequential.
