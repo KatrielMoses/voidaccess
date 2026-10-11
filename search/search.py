@@ -327,10 +327,40 @@ async def _search_async(
             logger.warning(f"Engine {name} exception: {e}")
             return EngineResult(name=name, links=[], error=str(e), took_ms=took_ms)
 
-    tasks = [run_engine(e) for e in active_engines]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    deadline = search_config.search_deadline()
+    if deadline is None:
+        tasks = [run_engine(e) for e in active_engines]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        deadline_results: list[EngineResult] = []
+    else:
+        # Opt-in deadline: keep what arrived, cancel the stragglers.  Cancelled
+        # engines are not recorded against the circuit breaker (a deadline cut
+        # is not an engine failure).
+        engine_tasks = {
+            asyncio.ensure_future(run_engine(e)): e["name"] for e in active_engines
+        }
+        done, pending = await asyncio.wait(engine_tasks, timeout=deadline)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        results = []
+        for task in done:
+            try:
+                results.append(task.result())
+            except BaseException as exc:  # noqa: BLE001 - mirror gather(return_exceptions=True)
+                results.append(exc)
+        deadline_results = [
+            EngineResult(name=engine_tasks[t], links=[], error="deadline")
+            for t in pending
+        ]
+        if pending:
+            logger.warning(
+                "Search deadline %.0fs reached: %d/%d engines still running, returning partial results",
+                deadline, len(pending), len(engine_tasks),
+            )
 
-    processed: list[EngineResult] = list(skipped_results)
+    processed: list[EngineResult] = list(skipped_results) + deadline_results
     for r in results:
         if isinstance(r, Exception):
             logger.warning(f"Engine task exception: {r}")
