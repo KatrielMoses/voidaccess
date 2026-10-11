@@ -389,3 +389,26 @@ def test_step_metrics_table_ensured_on_preexisting_db(monkeypatch, tmp_path):
         s.commit()
     rows = _step_metrics_for(inv_id)
     assert "scraping" in rows and rows["scraping"]["duration_ms"] == 5.0
+
+
+def test_probe_artifact_reports_p90_latency_and_unique_share():
+    from benchmark.engine_probe import _build_artifact, _percentile, _unique_contribution
+    from benchmark.queries import load_query_set
+
+    assert _percentile([], 0.9) == 0.0
+    assert _percentile([1.0, 2.0, 3.0, 4.0, 5.0], 0.9) == pytest.approx(4.6)
+
+    def o(urls, lat):
+        return {"success": True, "result_count": len(urls), "latency_ms": lat, "error_class": "ok", "urls": urls}
+
+    per = {e["name"]: [] for e in __import__("search.engine_catalog", fromlist=["x"]).SEARCH_ENGINES}
+    names = list(per)
+    per[names[0]] = [o(["a", "b"], 100), o(["c"], 300)]
+    per[names[1]] = [o(["b"], 200), o(["d"], 200)]
+    unique, distinct = _unique_contribution(per)
+    assert unique[names[0]] == (2, 3) and unique[names[1]] == (1, 2) and distinct == 4
+    qs = load_query_set()
+    art = _build_artifact(qs, list(qs.queries)[:2], per, "test")
+    e0 = next(e for e in art["engines"] if e["name"] == names[0])
+    assert e0["unique_result_count"] == 2 and e0["unique_result_share"] == 0.5
+    assert e0["latency_p90_ms"] == pytest.approx(280.0)

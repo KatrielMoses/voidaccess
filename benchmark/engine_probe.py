@@ -30,7 +30,7 @@ import pacing
 from search import config as search_config
 from search import tor_isolation
 from search.engine_catalog import SEARCH_ENGINES
-from search.search import EngineResult, _fetch_engine
+from search.search import EngineResult, _fetch_engine, _normalize_for_dedup
 
 from benchmark import artifact as _artifact
 from benchmark.queries import QuerySet, load_query_set
@@ -125,6 +125,7 @@ async def _probe_one(
                 "result_count": len(result.links),
                 "latency_ms": (time.monotonic() - start) * 1000.0,
                 "error_class": classify_error(result.error),
+                "urls": [_normalize_for_dedup(l.get("link", "")) for l in result.links],
             }
         except asyncio.TimeoutError:
             return {
@@ -177,9 +178,42 @@ async def _run_all(queries: list) -> dict[str, list[dict[str, Any]]]:
     return per
 
 
+def _percentile(values: list[float], p: float) -> float:
+    """Linear-interpolated percentile (0 <= p <= 1); 0.0 for an empty list."""
+    if not values:
+        return 0.0
+    v = sorted(values)
+    k = (len(v) - 1) * p
+    lo = int(k)
+    hi = min(lo + 1, len(v) - 1)
+    return v[lo] + (v[hi] - v[lo]) * (k - lo)
+
+
+def _unique_contribution(per: dict) -> tuple[dict[str, tuple[int, int]], int]:
+    """Per engine: (results found by no other engine for the same query, all its
+    results), plus the count of distinct (query, url) results across all engines."""
+    seen_by: dict[tuple[int, str], set[str]] = {}
+    for name, outcomes in per.items():
+        for qi, o in enumerate(outcomes):
+            for url in o.get("urls") or []:
+                if url:
+                    seen_by.setdefault((qi, url), set()).add(name)
+    out: dict[str, tuple[int, int]] = {}
+    for name, outcomes in per.items():
+        unique = total = 0
+        for qi, o in enumerate(outcomes):
+            for url in set(u for u in (o.get("urls") or []) if u):
+                total += 1
+                if seen_by[(qi, url)] == {name}:
+                    unique += 1
+        out[name] = (unique, total)
+    return out, len(seen_by)
+
+
 def _build_artifact(query_set: QuerySet, queries: list, per: dict, tor_source: str) -> dict:
     engines_report = []
     flagged: list[str] = []
+    unique_by_engine, total_unique = _unique_contribution(per)
 
     for engine in SEARCH_ENGINES:
         name = engine["name"]
@@ -218,6 +252,11 @@ def _build_artifact(query_set: QuerySet, queries: list, per: dict, tor_source: s
             "success_rate": round(success_rate, 4),
             "mean_result_count": round(mean_result_count, 2),
             "mean_latency_ms": round(mean_latency_ms, 1),
+            "latency_p90_ms": round(_percentile(latencies, 0.9), 1),
+            "unique_result_count": unique_by_engine.get(name, (0, 0))[0],
+            "unique_result_share": round(
+                unique_by_engine.get(name, (0, 0))[0] / total_unique, 4
+            ) if total_unique else 0.0,
             "error_class_counts": err_counts,
             "dominant_error": dominant_error,
             "flagged_zero": flagged_zero,
