@@ -534,17 +534,10 @@ async def _fetch_one_impl(
         _logger.warning("SSRF blocked fetch: %s", url)
         return url, title, None, None, None
 
-    try:
-        from utils.content_safety import is_blocked_url
-        url_blocked, _reason = is_blocked_url(url)
-        if url_blocked:
-            _logger.warning(
-                "URL blocked — prohibited content. URL hash: %s",
-                hashlib.sha256(url.encode()).hexdigest()[:16],
-            )
-            return url, title, None, None, None
-    except Exception:
-        pass
+    from utils.content_safety import url_is_blocked
+
+    if url_is_blocked(url):
+        return url, title, None, None, None
 
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -1098,12 +1091,21 @@ async def scrape_multiple(
         Tuple[str, str, Optional[bytes], Optional[str], Optional[datetime]]
     ] = []
 
+    from utils.content_safety import scan_page_text
+
     for row in raw_results:
         url, display_text, raw_bytes, db_text, posted_at = row[:5]
         if len(row) > 5 and row[5]:
             relationship_claims_by_url[url] = row[5]
         if not url:
             continue
+        display_text, dropped = scan_page_text(url, display_text or "")
+        if dropped:
+            continue
+        if db_text:
+            db_text, db_dropped = scan_page_text(url, db_text)
+            if db_dropped:
+                continue
         if len(display_text) > MAX_RETURN_CHARS:
             available = MAX_RETURN_CHARS - len(suffix)
             if available > 0:
@@ -1121,8 +1123,7 @@ async def scrape_multiple(
     # failures are swallowed inside _discover_seeds_from_one_page.
     discovery_counter: dict = {"count": 0}
     discovery_tasks: List[asyncio.Task] = []
-    for row in raw_results:
-        url, _display, _raw, db_text, _posted = row[:5]
+    for url, _display, _raw, db_text, _posted in db_items:
         if not url or not db_text:
             continue
         if ".onion" not in url.lower():

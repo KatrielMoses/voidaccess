@@ -599,11 +599,11 @@ async def extract_entities_from_pages(
     # Only text-based types are checked; technical IOCs are never filtered.
     # The actual value is never logged — only type and count.
     # -----------------------------------------------------------------------
-    from utils.content_safety import is_blocked_entity_value as _is_blocked_entity_value
+    from utils.content_safety import entity_value_is_blocked
     clean_entities: list[NormalizedEntity] = []
     blocked_entity_count = 0
     for _ent in all_normalized:
-        if _is_blocked_entity_value(_ent.entity_type, _ent.value):
+        if entity_value_is_blocked(_ent.entity_type, _ent.value):
             blocked_entity_count += 1
             logger.debug(
                 "Entity value blocked — prohibited content: type=%s",

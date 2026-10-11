@@ -8,9 +8,10 @@ Never logs actual prohibited content — only event metadata.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
-from typing import Optional
+from typing import Any, Optional, Union
 
 _logger = logging.getLogger(__name__)
 
@@ -198,6 +199,157 @@ def is_blocked_url(url: str) -> tuple[bool, str]:
         if term in url_lower:
             return True, "URL blocked — prohibited content"
     return False, ""
+
+
+def content_hash_prefix(value: str) -> str:
+    """SHA-256 hex prefix for logs and audit events (never log raw content)."""
+    return hashlib.sha256(value.encode()).hexdigest()[:16]
+
+
+def scan_page_text(
+    url: str,
+    text: str,
+    *,
+    user_id: Optional[int] = None,
+) -> tuple[str, bool]:
+    """
+    Layer-4 scan for one page. Returns (clean_text, dropped).
+
+    Fail-closed: gate errors treat the page as blocked.
+    """
+    url_key = url or content_hash_prefix(text or "")
+    try:
+        clean, flagged = sanitize_content(text or "")
+        if flagged:
+            url_hash = content_hash_prefix(url_key)
+            _logger.warning(
+                "Page content blocked — prohibited content. Page hash: %s",
+                url_hash,
+            )
+            log_content_safety_event(
+                event_type="content_blocked",
+                content_hash=url_hash,
+                user_id=user_id,
+            )
+            return "", True
+        return clean, False
+    except Exception as exc:
+        url_hash = content_hash_prefix(url_key)
+        _logger.warning(
+            "Content safety gate error (fail-closed). Page hash: %s: %s",
+            url_hash,
+            exc,
+        )
+        log_content_safety_event(
+            event_type="content_blocked",
+            content_hash=url_hash,
+            user_id=user_id,
+        )
+        return "", True
+
+
+def url_is_blocked(
+    url: str,
+    *,
+    user_id: Optional[int] = None,
+) -> bool:
+    """Return True when the URL must not be fetched (fail-closed on gate errors)."""
+    if not url:
+        return True
+    url_hash = content_hash_prefix(url)
+    try:
+        blocked, _reason = is_blocked_url(url)
+        if blocked:
+            _logger.warning(
+                "URL blocked — prohibited content. URL hash: %s",
+                url_hash,
+            )
+            log_content_safety_event(
+                event_type="url_blocked",
+                content_hash=url_hash,
+                user_id=user_id,
+            )
+            return True
+        return False
+    except Exception as exc:
+        _logger.warning(
+            "URL safety gate error (fail-closed). URL hash: %s: %s",
+            url_hash,
+            exc,
+        )
+        log_content_safety_event(
+            event_type="url_blocked",
+            content_hash=url_hash,
+            user_id=user_id,
+        )
+        return True
+
+
+def entity_value_is_blocked(entity_type: str, value: str) -> bool:
+    """Fail-closed wrapper around ``is_blocked_entity_value``."""
+    try:
+        return is_blocked_entity_value(entity_type, value)
+    except Exception as exc:
+        _logger.warning(
+            "Entity safety gate error (fail-closed): type=%s err=%s",
+            entity_type,
+            exc,
+        )
+        return True
+
+
+def gate_pages(
+    pages: Union[dict[str, str], list[dict[str, Any]]],
+    *,
+    user_id: Optional[int] = None,
+) -> tuple[Union[dict[str, str], list[dict[str, Any]]], int]:
+    """
+    Scan page text before persistence, caching, extraction, or summarization.
+
+    Accepts either ``{url: text}`` (API scrape pool) or a list of page
+    records with ``url``/``link`` and ``text``/``content`` keys (CLI/API).
+
+    Returns (clean_pages, dropped_count).
+    """
+    dropped = 0
+    if isinstance(pages, dict):
+        clean: dict[str, str] = {}
+        for page_url, page_text in pages.items():
+            clean_text, was_dropped = scan_page_text(
+                page_url, page_text or "", user_id=user_id
+            )
+            if was_dropped:
+                dropped += 1
+            else:
+                clean[page_url] = clean_text
+        return clean, dropped
+
+    clean_records: list[dict[str, Any]] = []
+    for record in pages:
+        page_url = (
+            record.get("url")
+            or record.get("link")
+            or ""
+        )
+        page_text = (
+            record.get("text")
+            or record.get("content")
+            or record.get("cleaned_text")
+            or record.get("text_content")
+            or ""
+        )
+        clean_text, was_dropped = scan_page_text(
+            page_url, page_text, user_id=user_id
+        )
+        if was_dropped:
+            dropped += 1
+            continue
+        updated = dict(record)
+        updated["text"] = clean_text
+        if any(k in record for k in ("content", "text", "cleaned_text", "text_content")):
+            updated["content"] = clean_text
+        clean_records.append(updated)
+    return clean_records, dropped
 
 
 def sanitize_content(text: str) -> tuple[str, bool]:

@@ -350,12 +350,12 @@ Cancellation checkpoint after this step.
 - SSRF validation (`validate_urls_for_scraping`) blocks unsafe URLs before scraping.
 - Paste, GitHub, GitLab, and RSS pages bypass this step entirely — they inject pre-fetched text directly into the extraction pool.
 
-**Step 5.5 — Vector cache write**
-- New pages with >100 characters are stored in ChromaDB with `source: "scraper"` metadata.
-
 **Step 5.75 — Content safety scan (Layer 4)**
-- `sanitize_content()` scans each page's text for CSAM/gore terms.
+- `gate_pages()` scans every scraped/cached/shared page via `sanitize_content()` before vector cache writes, DB persistence, extraction, or summarization.
 - Flagged pages are discarded entirely; their URLs are hashed (SHA-256 prefix) and logged to `content_safety_events`. The original text is never stored.
+
+**Step 5.5 — Vector cache write**
+- New pages with >100 characters are stored in ChromaDB with `source: "scraper"` metadata (only pages that passed Step 5.75).
 - Cancellation checkpoint after scraping.
 
 **Step 5.7 — Language detection**
@@ -945,7 +945,7 @@ Six mandatory layers. None can be disabled via configuration.
 | 1 — Query intake | `POST /investigations` handler | `BLOCKED_TERMS` list + `BLOCKED_PATTERNS` regexes | HTTP 400; event logged |
 | 2 — URL pre-scan | `is_blocked_url()` before any scraping | `BLOCKED_URL_TERMS` (pedo, loli, jailbait, csam, hurtcore, bestgore, etc.) | URL silently dropped |
 | 3 — Paste/RSS content | `sanitize_content()` in paste and RSS scrapers | `CONTENT_BLOCKLIST` | Page silently dropped |
-| 4 — Scraped content | `sanitize_content()` in Step 5.75 | `CONTENT_BLOCKLIST` | Page discarded; URL hash logged |
+| 4 — Scraped content | `gate_pages()` / `scan_page_text()` in Step 5.75 (CLI + API) and inside `scrape_multiple` before DB write | `CONTENT_BLOCKLIST` | Page discarded; URL hash logged |
 | 5 — Post-extraction entity values | `is_blocked_entity_value()` in `extract_entities_from_pages()` | `ENTITY_VALUE_BLOCKLIST` against `_TEXT_ENTITY_TYPES` only | Entity silently dropped |
 | 6 — Audit logging | All block events | SHA-256 prefix of blocked item | Written to `content_safety_events` |
 
@@ -1322,6 +1322,7 @@ At least one LLM provider key is needed for query refinement, result filtering, 
 | `GROQ_API_KEY` | — | Enables Groq fast inference |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Enables local Ollama models |
 | `LLAMA_CPP_BASE_URL` | `http://127.0.0.1:8080` | Enables llama.cpp server |
+| `VOIDACCESS_SAFETY_BYPASS_PROMPT` | `on` | When `off`, omits the LLM authorization preamble from refine, filter, and summary prompts (cloud runners). Mandatory content-safety gates are unchanged. |
 
 ### 13.3 Threat Intelligence Enrichment
 

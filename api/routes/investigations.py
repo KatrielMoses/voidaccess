@@ -1907,50 +1907,37 @@ async def _run_investigation_task(
         if await _check_cancelled(inv_uuid, investigation_id):
             return
 
-        # ===== STEP 5.5: Store new pages in vector cache (no session held) =====
-        try:
-            from vector.store import store_page
-
-            stored_count = 0
-            for page_url, page_text in freshly_scraped.items():
-                if page_text and len(page_text) > 100:
-                    if store_page(url=page_url, content=page_text, metadata={"source": "scraper"}):
-                        stored_count += 1
-            logger.info("[%s] Stored %d new pages in vector cache", inv_uuid, stored_count)
-        except Exception as exc:
-            logger.info("[%s] Cache store failed (non-fatal): %s", inv_uuid, exc)
-
         # Shared cached content first, then local-cache, then freshly scraped.
         scraped_pages = {**shared_served, **cached_dict, **freshly_scraped}
 
-        # ===== STEP 5.75: Content safety scan (Layer 4) =====
-        from utils.content_safety import sanitize_content, log_content_safety_event
-        clean_pages: dict[str, str] = {}
-        blocked_count = 0
-        for page_url, page_text in scraped_pages.items():
-            clean_text, was_flagged = sanitize_content(page_text)
-            if was_flagged:
-                blocked_count += 1
-                url_hash = hashlib.sha256(page_url.encode()).hexdigest()[:16]
-                logger.warning(
-                    "[%s] Page content blocked — prohibited content. Page hash: %s",
-                    inv_uuid,
-                    url_hash,
-                )
-                log_content_safety_event(
-                    event_type="content_blocked",
-                    content_hash=url_hash,
-                    user_id=inv_user_id,
-                )
-            else:
-                clean_pages[page_url] = clean_text
+        # ===== STEP 5.75: Content safety scan (Layer 4) — before cache/DB =====
+        from utils.content_safety import gate_pages
+
+        scraped_pages, blocked_count = gate_pages(
+            scraped_pages, user_id=inv_user_id
+        )
         if blocked_count > 0:
             logger.warning(
                 "[%s] Blocked %d pages for prohibited content",
                 inv_uuid,
                 blocked_count,
             )
-        scraped_pages = clean_pages
+
+        # ===== STEP 5.5: Store new pages in vector cache (no session held) =====
+        try:
+            from vector.store import store_page
+
+            stored_count = 0
+            for page_url, page_text in freshly_scraped.items():
+                if page_url not in scraped_pages:
+                    continue
+                page_text = scraped_pages[page_url]
+                if page_text and len(page_text) > 100:
+                    if store_page(url=page_url, content=page_text, metadata={"source": "scraper"}):
+                        stored_count += 1
+            logger.info("[%s] Stored %d new pages in vector cache", inv_uuid, stored_count)
+        except Exception as exc:
+            logger.info("[%s] Cache store failed (non-fatal): %s", inv_uuid, exc)
         run_metrics.record_scraping(
             attempted=len(all_urls_to_scrape) + len(shared_served),
             fetched=len(shared_served) + len(cached_dict)
@@ -2115,18 +2102,12 @@ async def _run_investigation_task(
 
         # Apply the same content-safety gate to direct-source pages and collapse
         # mirrored material before entity extraction/page counting.
-        from utils.content_safety import sanitize_content
+        from utils.content_safety import gate_pages
         from utils.content_dedup import deduplicate_page_records
-        safe_page_records = []
-        for record in page_records:
-            clean_text, flagged = sanitize_content(record.get("text") or record.get("content") or "")
-            if flagged:
-                continue
-            record = dict(record)
-            record["text"] = clean_text
-            record["content"] = clean_text
-            safe_page_records.append(record)
-        page_records = deduplicate_page_records(safe_page_records)
+        page_records, _side_blocked = gate_pages(
+            page_records, user_id=inv_user_id
+        )
+        page_records = deduplicate_page_records(page_records)
         scraped_count = len(page_records)
 
         # P3.1 — usage-seeded auto-indexing. Feed the .onion pages this
@@ -3116,10 +3097,10 @@ async def get_investigation_entities(
 
             # Safety net: filter prohibited entity values from the response.
             # Catches values that may have been stored before FIX 2 was deployed.
-            from utils.content_safety import is_blocked_entity_value as _is_blocked_ev
+            from utils.content_safety import entity_value_is_blocked
             candidates = [
                 e for e in candidates
-                if not _is_blocked_ev(e.entity_type, e.value)
+                if not entity_value_is_blocked(e.entity_type, e.value)
             ]
 
             # Apply freshness exclusion before pagination so ``total`` and paging
