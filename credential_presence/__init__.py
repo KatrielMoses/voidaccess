@@ -31,6 +31,10 @@ import hygiene
 import pacing
 from feeds import provenance
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +56,9 @@ async def check_password_presence(password: str) -> dict:
     """
     if not password:
         return {"present": False, "breach_count": 0, "status": "ok"}
+    if not is_enrichment_source_enabled("hibp_pwned_passwords"):
+        # VOIDACCESS_ENRICHMENT_SOURCES: no network call (not even the prefix).
+        return {"present": False, "breach_count": 0, "status": "disabled"}
     digest = _sha1_upper(password)
     prefix, suffix = digest[:5], digest[5:]
     try:
@@ -133,6 +140,10 @@ async def scan_pages_for_pwned_credentials(pages: list[dict]) -> tuple[Optional[
     Returns ``(summary_page | None, stats)``. Raw passwords exist only as loop-local
     variables and are discarded; they never reach the DB, logs, the page, or stats.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+    if not is_enrichment_source_enabled("hibp_pwned_passwords"):
+        # Disabled by VOIDACCESS_ENRICHMENT_SOURCES: skip before observing any credential.
+        return None, {"status": "disabled", "observed": 0, "checked": 0, "pwned": 0}
     observations: list[tuple[str, str]] = []
     for page in pages or []:
         text = (

@@ -35,6 +35,11 @@ from typing import Any, Optional
 import aiohttp
 
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    get_enrichment_allowlist,
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -538,8 +543,13 @@ async def check_hash_reputation(
         av_detections, av_total, file_type, first_seen, new_entities,
         tags, confidence_delta, suppress (always False for hashes)
     """
+    # The in-process result cache is bypassed (read and write) while a
+    # VOIDACCESS_ENRICHMENT_SOURCES allowlist is active, so a restricted
+    # result never leaks into an unrestricted run and vice versa.
+    _use_cache = get_enrichment_allowlist() is None
+
     # Serve from cache when fresh
-    cached = _hash_cache.get(hash_value)
+    cached = _hash_cache.get(hash_value) if _use_cache else None
     if cached and (time.time() - cached["loaded_at"]) < HASH_CACHE_TTL:
         return cached["result"]
 
@@ -562,11 +572,19 @@ async def check_hash_reputation(
     if not _is_valid_hash(hash_value):
         return result
 
+    # Disabled sources are never called and report "not found".
+    async def _disabled() -> dict[str, Any]:
+        return {"found": False}
+
     ha_result, mb_result, tf_result, vt_result = await asyncio.gather(
-        _cached_query_hybrid_analysis(hash_value),
-        _cached_query_malwarebazaar(hash_value),
-        _cached_query_threatfox(hash_value),
-        _cached_query_virustotal(hash_value),
+        _cached_query_hybrid_analysis(hash_value)
+        if is_enrichment_source_enabled("hybrid_analysis") else _disabled(),
+        _cached_query_malwarebazaar(hash_value)
+        if is_enrichment_source_enabled("malwarebazaar") else _disabled(),
+        _cached_query_threatfox(hash_value)
+        if is_enrichment_source_enabled("threatfox") else _disabled(),
+        _cached_query_virustotal(hash_value)
+        if is_enrichment_source_enabled("virustotal") else _disabled(),
         return_exceptions=True,
     )
 
@@ -807,7 +825,8 @@ async def check_hash_reputation(
 
     result["confidence_delta"] = min(result["confidence_delta"], 0.35)
 
-    _hash_cache[hash_value] = {"result": result, "loaded_at": time.time()}
+    if _use_cache:
+        _hash_cache[hash_value] = {"result": result, "loaded_at": time.time()}
     return result
 
 
@@ -871,6 +890,8 @@ async def enrich_hash_entities(
 
     Returns (extraction_results, stats_dict).
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+
     seen: dict[str, tuple[str, float]] = {}  # hash_value → (entity_type, confidence)
 
     for exr in extraction_results:

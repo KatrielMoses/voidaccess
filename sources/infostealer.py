@@ -38,6 +38,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -351,6 +355,10 @@ async def enrich_infostealer_entities(
     Returns (extraction_results, stats_dict) — ``stats_dict`` always carries a
     ``hudsonrock`` status key.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+    if not is_enrichment_source_enabled("hudsonrock"):
+        return extraction_results, {"hudsonrock": "disabled", "emails_checked": 0, "domains_checked": 0}
+
     emails, domains = _collect_entities(extraction_results)
 
     if not emails and not domains:

@@ -15,6 +15,10 @@ from datetime import datetime, timezone
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from db.models import Entity, EntityRelationship, RelationshipType
 from db.queries import upsert_entity_canonical
 
@@ -96,6 +100,11 @@ async def lookup_bitcoin_address(
         "error": None,
     }
     
+    # VOIDACCESS_ENRICHMENT_SOURCES gate: no network call when disabled.
+    if not is_enrichment_source_enabled("blockcypher"):
+        result["error"] = "source_disabled"
+        return result
+
     params = {"limit": MAX_TRANSACTIONS_PER_WALLET}
     if api_token:
         params["token"] = api_token
@@ -198,6 +207,10 @@ async def lookup_ethereum_address(
         "error": None,
     }
     
+    if not is_enrichment_source_enabled("etherscan"):
+        result["error"] = "source_disabled"
+        return result
+
     if not api_key:
         result["error"] = "no_api_key"
         return result
@@ -324,6 +337,8 @@ async def enrich_wallets_for_investigation(
     2. Store transaction metadata on the entity
     3. Create connected address entities and PAID_TO/FUNDED_BY relationships
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+
     stats = {
         "wallets_looked_up": 0,
         "successful_lookups": 0,

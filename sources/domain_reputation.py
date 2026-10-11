@@ -33,6 +33,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -569,10 +573,15 @@ async def check_domain_reputation(
     if _is_onion(domain) or _is_private_domain(domain):
         return result
 
+    # VOIDACCESS_ENRICHMENT_SOURCES gate: a disabled source is never called
+    # (no coroutine is created) and contributes nothing.
+    async def _disabled() -> None:
+        return None
+
     crt_data, urlscan_data, wayback_data = await asyncio.gather(
-        _cached_query_crt_sh(domain),
-        _cached_query_urlscan(domain),
-        _cached_query_wayback(domain),
+        _cached_query_crt_sh(domain) if is_enrichment_source_enabled("crtsh") else _disabled(),
+        _cached_query_urlscan(domain) if is_enrichment_source_enabled("urlscan") else _disabled(),
+        _cached_query_wayback(domain) if is_enrichment_source_enabled("wayback") else _disabled(),
         return_exceptions=True,
     )
 
@@ -701,6 +710,8 @@ async def enrich_domain_entities(
 
     Returns (extraction_results, stats_dict).
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+
     seen: dict[str, float] = {}
     for exr in extraction_results:
         for entity in getattr(exr, "entities", []):

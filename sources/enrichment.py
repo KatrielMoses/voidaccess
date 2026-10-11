@@ -20,6 +20,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +92,8 @@ async def fetch_otx_pulses(query: str, api_key: str, limit: int = 20) -> list[di
 
     Returns list of dicts with pulse metadata and optional ``indicators``.
     """
+    if not is_enrichment_source_enabled("otx"):
+        return []
     if not (api_key or "").strip():
         logger.debug("OTX skipped — no API key configured")
         return []
@@ -241,6 +247,8 @@ def otx_pulse_to_page(pulse: dict) -> dict:
 
 async def fetch_malwarebazaar(query: str, limit: int = 20) -> list[dict]:
     """Query MalwareBazaar by tag then by signature."""
+    if not is_enrichment_source_enabled("malwarebazaar"):
+        return []
     if not _abusech_enabled():
         return []
     results: list[dict] = []
@@ -337,6 +345,8 @@ async def fetch_malwarebazaar(query: str, limit: int = 20) -> list[dict]:
 
 async def fetch_threatfox(query: str, limit: int = 50) -> list[dict]:
     """Search ThreatFox IOCs by search term."""
+    if not is_enrichment_source_enabled("threatfox"):
+        return []
     if not _abusech_enabled():
         return []
     results: list[dict] = []
@@ -424,6 +434,8 @@ async def fetch_threatfox(query: str, limit: int = 50) -> list[dict]:
 
 async def fetch_urlhaus(query: str, limit: int = 20) -> list[dict]:
     """Search URLhaus by tag."""
+    if not is_enrichment_source_enabled("urlhaus"):
+        return []
     if not _abusech_enabled():
         return []
     results: list[dict] = []
@@ -700,6 +712,8 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
 
     Free public API — no key required.
     """
+    if not is_enrichment_source_enabled("ransomware_live"):
+        return []
     q = (query or "").strip().lower()
     if not q:
         return []
@@ -966,6 +980,8 @@ async def _gather_with_partial_results(
     the Exception instance (callers already guard with ``isinstance(x, Exception)``).
     Names whose task did not finish map to ``[]``.
     """
+    if not named_coros:  # every source gated off by VOIDACCESS_ENRICHMENT_SOURCES
+        return {}
     tasks: dict[str, asyncio.Task] = {
         name: asyncio.ensure_future(coro) for name, coro in named_coros
     }
@@ -1043,6 +1059,8 @@ async def fetch_ransomlook(query: str) -> list[dict]:
 
     Cross-validates the existing ransomware.live source (different corpus).
     """
+    if not is_enrichment_source_enabled("ransomlook"):
+        return []
     q = (query or "").strip().lower()
     if not q:
         return []
@@ -1243,16 +1261,25 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
     from sources.virustotal import enrich_virustotal
     from sources.historical_intel import enrich_historical
 
-    packed = await _gather_with_partial_results(
+    # VOIDACCESS_ENRICHMENT_SOURCES: build coroutines only for enabled sources
+    # (no never-awaited coroutine objects for disabled ones).
+    validate_enrichment_allowlist()
+    _factories = [
+        ("cisa", "cisa_kev", lambda: enrich_cisa(query, entities)),
+        ("nvd", "nvd", lambda: enrich_nvd(entities)),
+        ("shodan", "shodan_internetdb", lambda: enrich_shodan(entities)),
+        ("virustotal", "virustotal", lambda: enrich_virustotal(entities)),
+    ]
+    packed: dict[str, Any] = {name: [] for name, _sid, _f in _factories}
+    packed.update(await _gather_with_partial_results(
         [
-            ("cisa", enrich_cisa(query, entities)),
-            ("nvd", enrich_nvd(entities)),
-            ("shodan", enrich_shodan(entities)),
-            ("virustotal", enrich_virustotal(entities)),
+            (name, factory())
+            for name, sid, factory in _factories
+            if is_enrichment_source_enabled(sid)
         ],
         timeout=55.0,
         phase_label="_enrich_new_sources",
-    )
+    ))
 
     cisa_results = packed["cisa"]
     nvd_results = packed["nvd"]
@@ -1316,7 +1343,7 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
         (e.get("type") or e.get("entity_type", "")) in _cve_mitre_types
         for e in entities
     )
-    if _actor_ents and not _has_cve_or_mitre:
+    if _actor_ents and not _has_cve_or_mitre and is_enrichment_source_enabled("mitre_attack"):
         from sources.historical_intel import get_techniques_for_actor
         for _actor_ent in _actor_ents:
             _actor_name = (
@@ -1603,6 +1630,8 @@ async def run_dns_enrichment(extracted_entities: list[dict]) -> dict:
     Run DNS/WHOIS enrichment on extracted IP and domain entities.
     Returns ip_enrichments, domain_enrichments, new_entities, infrastructure_clusters.
     """
+    # Validate OUTSIDE the try so an unknown id is never swallowed below.
+    validate_enrichment_allowlist()
     try:
         from sources.dns_enrichment import enrich_with_dns
         return await enrich_with_dns(extracted_entities)
@@ -1636,6 +1665,9 @@ async def enrich_investigation(
 
     Completes within ~60s (enforced via ``asyncio.wait_for``).
     """
+    # Fail loudly (outside the gather) on an unknown VOIDACCESS_ENRICHMENT_SOURCES id.
+    validate_enrichment_allowlist()
+
     logger.info("Starting threat intel enrichment for: %s", query)
 
     _entities = entities if entities is not None else []
@@ -1644,19 +1676,37 @@ async def enrich_investigation(
     # sources are still running, the results of sources that ALREADY finished
     # are kept (unfinished ones contribute nothing) rather than discarding the
     # entire batch.
-    packed = await _gather_with_partial_results(
-        [
-            ("otx", fetch_otx_pulses(query, otx_api_key or "", limit=20)),
-            ("malwarebazaar", fetch_malwarebazaar(query, limit=20)),
-            ("threatfox", fetch_threatfox(query, limit=50)),
-            ("urlhaus", fetch_urlhaus(query, limit=20)),
-            ("ransomware_live", fetch_ransomware_live(query)),
-            ("ransomlook", fetch_ransomlook(query)),
-            ("new_sources", _enrich_new_sources(query, _entities)),
-        ],
+    # VOIDACCESS_ENRICHMENT_SOURCES: coroutines are created only for enabled
+    # sources. "new_sources" fans out to cisa_kev/nvd/shodan_internetdb/
+    # virustotal/mitre_attack/blocklists, each gated again inside; it is skipped
+    # outright only when none of those is enabled.
+    _factories = [
+        ("otx", "otx", lambda: fetch_otx_pulses(query, otx_api_key or "", limit=20)),
+        ("malwarebazaar", "malwarebazaar", lambda: fetch_malwarebazaar(query, limit=20)),
+        ("threatfox", "threatfox", lambda: fetch_threatfox(query, limit=50)),
+        ("urlhaus", "urlhaus", lambda: fetch_urlhaus(query, limit=20)),
+        ("ransomware_live", "ransomware_live", lambda: fetch_ransomware_live(query)),
+        ("ransomlook", "ransomlook", lambda: fetch_ransomlook(query)),
+    ]
+    _new_source_ids = (
+        "cisa_kev", "nvd", "shodan_internetdb", "virustotal", "mitre_attack",
+        "fbi_doj_press", "blocklists", "sslbl", "openphish", "phishtank", "ransomwhere",
+        "epss", "exploitdb",
+    )
+    _named: list[tuple[str, Any]] = [
+        (name, factory())
+        for name, sid, factory in _factories
+        if is_enrichment_source_enabled(sid)
+    ]
+    if any(is_enrichment_source_enabled(sid) for sid in _new_source_ids):
+        _named.append(("new_sources", _enrich_new_sources(query, _entities)))
+    packed: dict[str, Any] = {name: [] for name, _sid, _f in _factories}
+    packed["new_sources"] = []
+    packed.update(await _gather_with_partial_results(
+        _named,
         timeout=59.0,
         phase_label="Enrichment",
-    )
+    ))
 
     otx_pulses = packed["otx"]
     mb_results = packed["malwarebazaar"]
@@ -1714,7 +1764,7 @@ async def enrich_investigation(
             if _mfname and _mfname not in _overlay_actor_names:
                 _overlay_actor_names.append(_mfname)
 
-    if _overlay_actor_names:
+    if _overlay_actor_names and is_enrichment_source_enabled("mitre_attack"):
         _t_pattern = re.compile(r'\bT\d{4}(?:\.\d{3})?\b')
         _t_found = any(
             _t_pattern.search(p.get("content", "") or p.get("text", ""))

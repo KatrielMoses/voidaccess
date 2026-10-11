@@ -17,6 +17,10 @@ from typing import Any, Optional
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 from extractor.identity import entity_canonical_id
 
@@ -191,14 +195,23 @@ class DNSEnrichment:
                 "tags": [],
             }
 
+            # VOIDACCESS_ENRICHMENT_SOURCES gate: disabled sources are never
+            # called (no coroutine created) and contribute nothing.
+            circl_on = is_enrichment_source_enabled("circl")
+            rdap_on = is_enrichment_source_enabled("rdap")
+
+            async def _off(neutral: Any) -> Any:
+                return neutral
+
             pdns, whois, ssl = await asyncio.gather(
-                self._circl_pdns_ip(ip),
-                self._rdap_ip(ip),
-                self._circl_pssl_ip(ip),
+                self._circl_pdns_ip(ip) if circl_on else _off([]),
+                self._rdap_ip(ip) if rdap_on else _off({}),
+                self._circl_pssl_ip(ip) if circl_on else _off([]),
                 return_exceptions=True,
             )
 
-            await asyncio.sleep(pacing.scale_delay_floor(CIRCL_DELAY))
+            if circl_on:
+                await asyncio.sleep(pacing.scale_delay_floor(CIRCL_DELAY))
 
             if isinstance(pdns, list):
                 result["passive_dns"] = pdns
@@ -257,13 +270,20 @@ class DNSEnrichment:
                 "tags": [],
             }
 
+            circl_on = is_enrichment_source_enabled("circl")
+            rdap_on = is_enrichment_source_enabled("rdap")
+
+            async def _off(neutral: Any) -> Any:
+                return neutral
+
             pdns, whois = await asyncio.gather(
-                self._circl_pdns_domain(domain),
-                self._rdap_domain(domain),
+                self._circl_pdns_domain(domain) if circl_on else _off([]),
+                self._rdap_domain(domain) if rdap_on else _off({}),
                 return_exceptions=True,
             )
 
-            await asyncio.sleep(pacing.scale_delay_floor(CIRCL_DELAY))
+            if circl_on:
+                await asyncio.sleep(pacing.scale_delay_floor(CIRCL_DELAY))
 
             if isinstance(pdns, list):
                 result["passive_dns"] = pdns
@@ -650,6 +670,7 @@ async def enrich_with_dns(entities: list[dict]) -> dict:
     Main entry point for DNS/WHOIS enrichment.
     Takes extracted entities, returns enrichment results including new entities.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
     enabled = os.getenv("DNS_ENRICHMENT_ENABLED", "true").lower() == "true"
 
     if not enabled:
@@ -662,6 +683,14 @@ async def enrich_with_dns(entities: list[dict]) -> dict:
         }
 
     if not entities:
+        return {
+            "ip_enrichments": {},
+            "domain_enrichments": {},
+            "new_entities": [],
+            "infrastructure_clusters": [],
+        }
+
+    if not (is_enrichment_source_enabled("circl") or is_enrichment_source_enabled("rdap")):
         return {
             "ip_enrichments": {},
             "domain_enrichments": {},

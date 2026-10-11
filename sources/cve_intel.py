@@ -28,10 +28,27 @@ import os
 from typing import Any, Optional
 
 import hygiene
+from sources.enrichment_allowlist import (
+    get_enrichment_allowlist,
+    is_enrichment_source_enabled,
+)
 from sources.epss import enrich_epss
 from sources.exploitdb import enrich_exploitdb
 
 logger = logging.getLogger(__name__)
+
+# The four feeds the fused view is built from. Under a
+# VOIDACCESS_ENRICHMENT_SOURCES allowlist some may be off; the fused view then
+# says so instead of presenting a partial signal as complete.
+_FUSION_SOURCES = ("nvd", "cisa_kev", "epss", "exploitdb")
+
+
+def _disabled_signals() -> list[str]:
+    """Fusion sources switched off by the allowlist ([] when it is unset)."""
+    if get_enrichment_allowlist() is None:
+        return []
+    return [s for s in _FUSION_SOURCES if not is_enrichment_source_enabled(s)]
+
 
 _CVE_ENTITY_TYPES = {"CVE_NUMBER", "CVE"}
 
@@ -122,11 +139,15 @@ def _derive(record: dict) -> tuple[str, list[str]]:
     eb = _epss_band(epss)
     if eb:
         tags.append(f"epss:{eb}")
+    if record.get("signals_disabled"):
+        # Band is a lower bound: it was computed without every feed.
+        tags.append("cve_priority_partial")
     return band, tags
 
 
 def _fuse_one(cve: str, nvd: Optional[dict], kev: Optional[dict],
-              epss: Optional[dict], edb: Optional[dict]) -> dict:
+              epss: Optional[dict], edb: Optional[dict],
+              signals_disabled: Optional[list[str]] = None) -> dict:
     nvd = nvd or {}
     kev = kev or {}
     epss = epss or {}
@@ -146,6 +167,7 @@ def _fuse_one(cve: str, nvd: Optional[dict], kev: Optional[dict],
         "epss_percentile": epss.get("epss_percentile"),
         "exploit_public": bool(edb.get("exploit_public")),
         "edb_ids": edb.get("edb_ids") or [],
+        "signals_disabled": list(signals_disabled or []),
     }
     band, tags = _derive(record)
     record["priority_band"] = band
@@ -198,7 +220,11 @@ def _write_cve_priority(cve_entities: list[dict], fused: dict[str, dict]) -> Non
 def _fused_to_pages(fused: dict[str, dict]) -> list[dict]:
     if not fused:
         return []
-    lines = ["Unified CVE intelligence (NVD + CISA KEV + EPSS + Exploit-DB)\n"]
+    header = "Unified CVE intelligence (NVD + CISA KEV + EPSS + Exploit-DB)"
+    disabled = next(iter(fused.values())).get("signals_disabled") or []
+    if disabled:
+        header += f" — not queried (disabled by VOIDACCESS_ENRICHMENT_SOURCES): {', '.join(disabled)}"
+    lines = [header + "\n"]
     for cve in sorted(fused):
         r = fused[cve]
         # Keep the CVE id + CWEs in the text so downstream re-extraction still
@@ -263,20 +289,32 @@ async def fuse_cve_intelligence(
     if not cve_ids:
         return []
 
+    disabled = _disabled_signals()
+    if len(disabled) == len(_FUSION_SOURCES):
+        # Every feed is off: there is nothing to fuse, and a bare "priority: low"
+        # would claim knowledge we do not have. Emit nothing, write nothing.
+        return []
+
     # EPSS + Exploit-DB — graceful: a failure yields {} and the signal omits it.
-    try:
-        epss_by = await enrich_epss(cve_ids)
-    except Exception as exc:
-        logger.warning("cve_intel: EPSS unavailable: %s", exc)
-        epss_by = {}
-    try:
-        edb_by = await enrich_exploitdb(cve_ids)
-    except Exception as exc:
-        logger.warning("cve_intel: Exploit-DB unavailable: %s", exc)
-        edb_by = {}
+    # A feed switched off by the allowlist is skipped the same way (no call).
+    epss_by: dict = {}
+    edb_by: dict = {}
+    if "epss" not in disabled:
+        try:
+            epss_by = await enrich_epss(cve_ids)
+        except Exception as exc:
+            logger.warning("cve_intel: EPSS unavailable: %s", exc)
+            epss_by = {}
+    if "exploitdb" not in disabled:
+        try:
+            edb_by = await enrich_exploitdb(cve_ids)
+        except Exception as exc:
+            logger.warning("cve_intel: Exploit-DB unavailable: %s", exc)
+            edb_by = {}
 
     fused = {
-        cve: _fuse_one(cve, nvd_by.get(cve), kev_by.get(cve), epss_by.get(cve), edb_by.get(cve))
+        cve: _fuse_one(cve, nvd_by.get(cve), kev_by.get(cve), epss_by.get(cve), edb_by.get(cve),
+                       disabled)
         for cve in cve_ids
     }
 

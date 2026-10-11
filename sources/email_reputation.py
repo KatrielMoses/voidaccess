@@ -32,6 +32,10 @@ from typing import Any, Optional
 import aiohttp
 
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -147,6 +151,8 @@ async def _load_disposable_list() -> frozenset[str]:
 
 async def is_disposable_domain(domain: str) -> bool:
     """Return True if *domain* appears in the disposable email domain blocklist."""
+    if not is_enrichment_source_enabled("disposable_email"):
+        return False
     blocklist = await _load_disposable_list()
     return domain.lower() in blocklist
 
@@ -426,10 +432,17 @@ async def check_email_reputation(
     if not domain:
         return result
 
+    # VOIDACCESS_ENRICHMENT_SOURCES gate: disabled sources are never called.
+    # (is_disposable_domain gates "disposable_email" itself.)
+    async def _disabled(neutral: Any) -> Any:
+        return neutral
+
     disposable_check, hibp_result, emailrep_result = await asyncio.gather(
         is_disposable_domain(domain),
-        _cached_query_hibp(email),
-        _cached_query_emailrep(email),
+        _cached_query_hibp(email)
+        if is_enrichment_source_enabled("hibp") else _disabled({"found": False}),
+        _cached_query_emailrep(email)
+        if is_enrichment_source_enabled("emailrep") else _disabled({}),
         return_exceptions=True,
     )
 
@@ -585,6 +598,8 @@ async def enrich_email_entities(
 
     Returns (extraction_results, stats_dict).
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+
     seen: dict[str, float] = {}
     for exr in extraction_results:
         for entity in getattr(exr, "entities", []):

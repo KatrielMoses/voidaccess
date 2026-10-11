@@ -1464,6 +1464,72 @@ GET /admin/enrichment-cache/stats
 | `VOIDACCESS_INVESTIGATION_HARD_TIMEOUT_MINUTES` | `30` | Age after which a stuck processing investigation is marked failed |
 | `VOIDACCESS_SWEEP_INTERVAL_SECONDS` | `300` | How often the stuck-investigation sweep runs |
 
+### 13.16 Enrichment Source Allowlist
+
+| Variable | Default | Notes |
+|---|---|---|
+| `VOIDACCESS_ENRICHMENT_SOURCES` | unset | Comma-separated list of enrichment source ids (table below). When set, only the named sources may make network calls during enrichment. Ids are case-insensitive and whitespace is ignored. |
+
+**Unset or blank: behaviour is unchanged.** Every enrichment source runs exactly as before, subject to its own key and feature checks.
+
+**Set: restricts, never widens.** A source in the list still needs its own API key (where it has one). A source not in the list is never called: no HTTP request, no cache read, and no coroutine is created for it. It contributes the same empty result the code already returns when a key is missing or a call fails. Reported statuses read `disabled` where the code reports a per-source status (`hudsonrock`, `xposedornot`, `leakcheck`, blocklist feeds, Pwned Passwords).
+
+The gate sits inside the `sources/` modules (and `feeds/`, `credential_presence/`), so it applies on every path that runs enrichment: `voidaccess investigate`, `voidaccess enrich`, the API, and the monitor seed refresh. Search-stage sources (onion engines, paste sites, GitHub/GitLab, RSS, Telegram, proxy) are not enrichment sources and are not affected.
+
+**Unknown id: hard error.** A typo never silently enables or disables a source. The process raises `EnrichmentAllowlistError` (a `ValueError`) naming the unknown id(s) and listing every valid id, for example `VOIDACCESS_ENRICHMENT_SOURCES contains unknown source id(s): nvdd. Valid ids: ...`. The CLI validates the variable at startup; library callers hit the same error on the first enrichment call.
+
+**Recommended cloud value** (the licence-table "fine on our keys" sources that are enrichment sources, exported as `sources.enrichment_allowlist.CLOUD_ENRICHMENT_SOURCES`; not applied by default):
+
+```
+VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack
+```
+
+With that value, CVE fusion (`sources/cve_intel.py`) still runs on NVD and CISA KEV. EPSS and Exploit-DB are skipped with no request, the unified CVE page says which feeds were not queried, and the stored priority tags gain `cve_priority_partial` because the band is a lower bound (no EPSS or public-exploit uplift). If every fusion feed is off, no CVE page is emitted and nothing is written back, so an unknown CVE is never labelled `low`. The `blocklists` feeds (including Ransomwhere), Pwned Passwords and the justice.gov press feed are off under this value.
+
+The licence column is the verdict in `platform/docs/baseline/E0-LICENCE-TABLE.md` (2026-10-11). It is an audit aid, not legal advice. "not in table" means the source is called by the pipeline but was not audited, so its terms need a human check before it is enabled for paying customers.
+
+| id | What it queries | Module | Licence-table verdict |
+|---|---|---|---|
+| `otx` | AlienVault OTX pulse search | `sources/enrichment.py` | off |
+| `malwarebazaar` | abuse.ch MalwareBazaar (recent samples; hash lookup) | `sources/enrichment.py`, `sources/hash_reputation.py` | off (BYO) |
+| `threatfox` | abuse.ch ThreatFox IOC search; hash lookup | `sources/enrichment.py`, `sources/hash_reputation.py` | off (BYO) |
+| `urlhaus` | abuse.ch URLhaus tag search | `sources/enrichment.py` | off (BYO) |
+| `ransomware_live` | ransomware.live API v2 group/victim data | `sources/enrichment.py` | off |
+| `ransomlook` | RansomLook group/victim data | `sources/enrichment.py` | off |
+| `cisa_kev` | CISA KEV catalogue and CISA advisories feed | `sources/cisa.py`, `sources/historical_intel.py` | on our keys |
+| `nvd` | NIST NVD 2.0 CVE data and CPE product lookup | `sources/nvd.py` | on our keys |
+| `epss` | FIRST EPSS exploit-probability scores (CVE fusion) | `sources/epss.py` | conditional (confirm with FIRST) |
+| `exploitdb` | Exploit-DB CVE-to-EDB-ID CSV (CVE fusion) | `sources/exploitdb.py` | conditional (read repo licence) |
+| `shodan_internetdb` | Shodan InternetDB open ports/vulns per IP | `sources/shodan.py` | off |
+| `virustotal` | VirusTotal file-hash lookups (entity enrichment and hash reputation) | `sources/virustotal.py`, `sources/hash_reputation.py` | BYO |
+| `mitre_attack` | MITRE ATT&CK STIX actor-to-technique mapping and the technique overlay | `sources/historical_intel.py`, `sources/enrichment.py` | on our keys |
+| `fbi_doj_press` | justice.gov press-release RSS matched against actors | `sources/historical_intel.py` | not in table (cf. row 39, RSS feeds) |
+| `blocklists` | Umbrella id: enables `sslbl`, `openphish`, `phishtank` and `ransomwhere` together | `feeds/__init__.py` | not in table |
+| `sslbl` | abuse.ch SSL Blacklist | `feeds/__init__.py` | not in table (abuse.ch terms, cf. row 12) |
+| `openphish` | OpenPhish community feed | `feeds/__init__.py` | not in table |
+| `phishtank` | PhishTank bulk feed | `feeds/__init__.py` | not in table |
+| `ransomwhere` | Ransomwhere BTC ransom-wallet list | `feeds/__init__.py` | not in table |
+| `feodo_tracker` | abuse.ch Feodo Tracker C2 IP list | `sources/ip_reputation.py` | off |
+| `c2_tracker` | C2-Tracker / C2IntelFeeds GitHub lists | `sources/ip_reputation.py` | off |
+| `abuseipdb` | AbuseIPDB IP check | `sources/ip_reputation.py` | BYO |
+| `greynoise` | GreyNoise Community IP check | `sources/ip_reputation.py` | off (BYO) |
+| `crtsh` | crt.sh certificate-transparency subdomains | `sources/domain_reputation.py` | on our keys |
+| `wayback` | Wayback Machine CDX snapshot history | `sources/domain_reputation.py` | on our keys |
+| `urlscan` | urlscan.io search and submit | `sources/domain_reputation.py` | BYO |
+| `hybrid_analysis` | Hybrid Analysis hash search | `sources/hash_reputation.py` | BYO |
+| `hibp` | HIBP v3 breached-account lookup | `sources/email_reputation.py` | conditional (paid key + attribution, else BYO) |
+| `emailrep` | EmailRep.io reputation | `sources/email_reputation.py` | BYO |
+| `disposable_email` | Disposable-email-domain list download | `sources/email_reputation.py` | conditional (read repo licence) |
+| `xposedornot` | XposedOrNot breach lookup | `sources/breach_lookup.py` | BYO |
+| `leakcheck` | LeakCheck public API | `sources/breach_lookup.py` | off |
+| `hudsonrock` | Hudson Rock Cavalier infostealer OSINT (email and domain) | `sources/infostealer.py` | off |
+| `rdap` | RDAP via rdap.org and rdap.arin.net | `sources/dns_enrichment.py` | on our keys |
+| `circl` | CIRCL passive DNS and passive SSL | `sources/dns_enrichment.py` | off |
+| `securitytrails` | SecurityTrails DNS history (key is configured but no code path calls it today) | `sources/dns_enrichment.py` | BYO |
+| `blockcypher` | BlockCypher Bitcoin address lookup | `sources/blockchain.py` | BYO |
+| `etherscan` | Etherscan Ethereum address lookup | `sources/blockchain.py` | off (BYO) |
+| `hibp_pwned_passwords` | HIBP Pwned Passwords k-anonymity range API (5-char hash prefix only) | `credential_presence/__init__.py` | not in table |
+
 ---
 
 ## 14. Known Limitations

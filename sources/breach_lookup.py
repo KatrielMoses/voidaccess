@@ -44,6 +44,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -408,9 +412,16 @@ async def check_breach_exposure(email: str) -> dict[str, Any]:
     if not _is_valid_email(email):
         return result
 
+    # VOIDACCESS_ENRICHMENT_SOURCES gate: disabled sources are never called
+    # and report the same neutral "not found" shape.
+    async def _disabled(source: str) -> dict[str, Any]:
+        return {"found": False, "source": f"{source}_not_found"}
+
     xon, leak = await asyncio.gather(
-        _cached_query_xposedornot(email),
-        _cached_query_leakcheck(email),
+        _cached_query_xposedornot(email)
+        if is_enrichment_source_enabled("xposedornot") else _disabled("xposedornot"),
+        _cached_query_leakcheck(email)
+        if is_enrichment_source_enabled("leakcheck") else _disabled("leakcheck"),
         return_exceptions=True,
     )
 
@@ -511,6 +522,8 @@ async def enrich_breach_entities(
     Returns (extraction_results, stats_dict). ``stats_dict`` always carries
     ``xposedornot`` and ``leakcheck`` keys so the orchestrator can surface them.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+
     seen: dict[str, float] = {}
     for exr in extraction_results:
         for entity in getattr(exr, "entities", []):
@@ -595,6 +608,12 @@ async def enrich_breach_entities(
     stats["leakcheck"] = _status_string(
         "leakcheck", checked, stats["leakcheck_breached"], leakcheck_error
     )
+
+    # Report honestly when the allowlist switched a source off.
+    if not is_enrichment_source_enabled("xposedornot"):
+        stats["xposedornot"] = "disabled"
+    if not is_enrichment_source_enabled("leakcheck"):
+        stats["leakcheck"] = "disabled"
 
     logger.info(
         "breach_lookup: done — %d checked, XposedOrNot %d breached (%d stealer-log), "
