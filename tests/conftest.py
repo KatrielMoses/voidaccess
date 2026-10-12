@@ -82,6 +82,14 @@ async def _netpool_isolation():
 def reset_source_state(monkeypatch):
     # An ambient allowlist in a developer shell must not change unrelated tests.
     monkeypatch.delenv("VOIDACCESS_ENRICHMENT_SOURCES", raising=False)
+    # Likewise an ambient deny-list, and the process-wide cancel token / source
+    # tracker (module state that must not leak from one test to the next).
+    monkeypatch.delenv("VOIDACCESS_DISABLED_SOURCES", raising=False)
+    from sources import source_control as _source_control
+    from utils import cancel as _cancel
+
+    _source_control.reset_for_tests()
+    _cancel.reset_for_tests()
     """Give each test a fresh in-memory enrichment cache and reset semaphores."""
     reset_default_cache()
 
