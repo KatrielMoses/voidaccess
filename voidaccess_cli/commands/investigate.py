@@ -621,6 +621,12 @@ async def _run_investigation(
                 emitter.cancelled()
             else:
                 emitter.failed("error", type(exc).__name__)
+        # The normal exit path closes the cached HTTP sessions; a cancelled or
+        # failed run must too, or aiohttp reports "Unclosed connector" on stderr.
+        try:
+            await _close_cached_sessions()
+        except BaseException:  # noqa: BLE001 - never mask the original exit
+            pass
         raise
     finally:
         emitter.close()

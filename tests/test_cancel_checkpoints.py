@@ -425,6 +425,23 @@ def test_cancel_during_fetch_emits_cancelled_with_accurate_stages_and_no_output(
     assert list(out_dir.iterdir()) == []
 
 
+def test_cancel_closes_the_cached_http_sessions(tmp_path, monkeypatch):
+    """A cancelled run must release its connection pools like a finished one."""
+    token = cancel.CancelToken()
+    inv, _session, _scrape = _prepare_fetch_pipeline(tmp_path, monkeypatch, 20, 5, token)
+    closed = []
+
+    async def spy():
+        closed.append(1)
+
+    monkeypatch.setattr(inv, "_close_cached_sessions", spy)
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    with pytest.raises(cancel.PipelineCancelled):
+        h.run(inv, out_dir, no_tor=False, no_llm=True, quiet=True, cancel_token=token)
+    assert closed == [1]
+
+
 def test_cancel_row_is_marked_cancelled_not_running(tmp_path, monkeypatch):
     token = cancel.CancelToken()
     inv, _session, _scrape = _prepare_fetch_pipeline(tmp_path, monkeypatch, 20, 5, token)
