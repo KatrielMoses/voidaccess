@@ -26,6 +26,8 @@ from typing import Any, Callable, Optional
 import typer
 from rich.console import Console
 
+from utils import cancel
+
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,15 @@ def run(
     ),
     depth: str = typer.Option("normal", "--depth", help="shallow | normal | deep"),
     fmt: str = typer.Option("both", "--format", help="json | md | both"),
-    quiet: bool = typer.Option(False, "--quiet", help="No live display; print final summary only"),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        help=(
+            "No terminal output except fatal errors (which never echo the query). "
+            "Output files are still written; their paths are in the `completed` "
+            "event of --events-jsonl. --events-jsonl is unaffected."
+        ),
+    ),
     events_jsonl: Optional[Path] = typer.Option(
         None,
         "--events-jsonl",
@@ -130,8 +140,10 @@ def run(
         )
         raise typer.Exit(code=2)
     if len(stripped_query) < MIN_QUERY_LENGTH:
+        # A fatal error under --quiet must not echo the query.
+        shown = "Your query" if quiet else f"'{stripped_query}'"
         console.print(
-            f"[red]Query too short.[/red] '{stripped_query}' is only "
+            f"[red]Query too short.[/red] {shown} is only "
             f"{len(stripped_query)} character(s); provide at least {MIN_QUERY_LENGTH} "
             "characters of meaningful context so results reflect a real query, "
             "not generic noise."
@@ -174,10 +186,10 @@ def run(
     except Exception:
         import subprocess
         import sys
-        from rich.console import Console
-        Console().print(
-            "  [dim]→[/dim] Installing spaCy NER model (one-time)..."
-        )
+        if not quiet:
+            console.print(
+                "  [dim]→[/dim] Installing spaCy NER model (one-time)..."
+            )
         subprocess.run(
             [sys.executable, "-m", "spacy",
              "download", "en_core_web_sm"],
@@ -185,7 +197,11 @@ def run(
         )
 
     if quiet:
+        import warnings
+
         logging.getLogger().setLevel(logging.ERROR)
+        # Library warnings (deprecations, SSL notices) go to stderr; quiet is quiet.
+        warnings.filterwarnings("ignore")
 
     from utils.content_safety import is_blocked_query
     blocked, reason = is_blocked_query(query)
@@ -208,6 +224,16 @@ def run(
         console.print(f"[red]Invalid VOIDACCESS_ENRICHMENT_SOURCES:[/red] {exc}")
         raise typer.Exit(code=2)
 
+    # A bad VOIDACCESS_DISABLED_SOURCES must fail too: a typo would leave a
+    # source running that the operator meant to switch off.
+    from sources.source_control import SourceControlError, validate_disabled_sources
+
+    try:
+        validate_disabled_sources()
+    except SourceControlError as exc:
+        console.print(f"[red]Invalid VOIDACCESS_DISABLED_SOURCES:[/red] {exc}")
+        raise typer.Exit(code=2)
+
     if not cli_config.is_configured() and not no_llm:
         console.print("[yellow]No LLM configured.[/yellow] Run [bold]voidaccess configure[/bold] first, or pass --no-llm.")
         raise typer.Exit(code=2)
@@ -222,6 +248,13 @@ def run(
     out_dir = Path(output).expanduser() if output else cli_config.get_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # SIGTERM is a cancel request: set the token, let the current item finish,
+    # emit the terminal ``cancelled`` event and exit without writing any output
+    # file. Installed here (the CLI entry point), never in the library
+    # functions, so an embedding runner keeps its own signal handling.
+    token = cancel.CancelToken()
+    previous_sigterm = _install_sigterm_cancel(token)
+
     try:
         from voidaccess_cli.adapters.sqlite import DatabaseSchemaError
         asyncio.run(
@@ -235,14 +268,47 @@ def run(
                 fmt=fmt,
                 quiet=quiet,
                 events_jsonl=events_jsonl,
+                cancel_token=token,
             )
         )
     except DatabaseSchemaError as exc:
         console.print(f"[red]Database schema error:[/red] {exc}")
         raise typer.Exit(code=1)
+    except cancel.PipelineCancelled:
+        if not quiet:
+            console.print("\n[yellow]Cancelled.[/yellow]")
+        raise typer.Exit(code=CANCELLED_EXIT_CODE)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted by user.[/yellow]")
+        if not quiet:
+            console.print("\n[yellow]Interrupted by user.[/yellow]")
         raise typer.Exit(code=130)
+    finally:
+        _restore_sigterm(previous_sigterm)
+
+
+# Conventional exit status for a process ended by SIGTERM (128 + 15).
+CANCELLED_EXIT_CODE = 143
+
+
+def _install_sigterm_cancel(token: "cancel.CancelToken"):
+    """Route SIGTERM to *token*. Returns the previous handler (or None)."""
+    import signal
+
+    try:
+        return signal.signal(signal.SIGTERM, lambda *_: token.cancel("sigterm"))
+    except (ValueError, OSError):  # not the main thread / unsupported platform
+        return None
+
+
+def _restore_sigterm(previous) -> None:
+    import signal
+
+    if previous is None:
+        return
+    try:
+        signal.signal(signal.SIGTERM, previous)
+    except (ValueError, OSError):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +335,13 @@ MAX_LLM_PAGES_ENV = "MAX_LLM_PAGES_PER_INV"
 MAX_LLM_PAGES_DEFAULT = 10
 
 # Summary phase: the first attempt gets this share of the phase budget, the
-# retry (reduced context) gets the rest.
-SUMMARY_FIRST_ATTEMPT_SHARE = 0.67
-SUMMARY_RETRY_TOP_PAGES = 4
-SUMMARY_RETRY_MAX_CHARS = 4000
+# retry (reduced context) gets the rest. The values live next to the shared
+# helper so the CLI and the API use the same ones.
+from voidaccess.summary_fallback import (  # noqa: E402
+    SUMMARY_FIRST_ATTEMPT_SHARE,
+    SUMMARY_RETRY_MAX_CHARS,
+    SUMMARY_RETRY_TOP_PAGES,
+)
 
 
 def _env_positive_int(name: str) -> Optional[int]:
@@ -518,11 +587,19 @@ async def _run_investigation(
     quiet: bool,
     events_jsonl: Optional[Path] = None,
     sinks: Optional[list] = None,
+    cancel_token: Optional["cancel.CancelToken"] = None,
 ) -> None:
     """Run the pipeline, reporting progress to the Rich display and any extra
-    sinks (``events_jsonl`` path, or ``sinks`` such as a ``CallbackSink``)."""
+    sinks (``events_jsonl`` path, or ``sinks`` such as a ``CallbackSink``).
+
+    ``cancel_token`` lets an embedding caller cancel the run cooperatively: the
+    pipeline stops at its next checkpoint, emits ``cancelled`` and raises
+    :class:`utils.cancel.PipelineCancelled`. Without one the run cannot be
+    cancelled this way (behaviour unchanged)."""
     from progress import JsonlSink, ProgressEmitter
 
+    if cancel_token is not None:
+        cancel.set_current(cancel_token, process_wide=True)
     emitter = ProgressEmitter()
     extra_sinks = list(sinks or [])
     if events_jsonl is not None:
@@ -534,15 +611,39 @@ async def _run_investigation(
             query, out_dir, model, no_tor, no_llm, depth, fmt, quiet, emitter
         )
     except BaseException as exc:
+        is_cancel = isinstance(
+            exc, (asyncio.CancelledError, KeyboardInterrupt, cancel.PipelineCancelled)
+        )
+        if is_cancel:
+            _mark_investigation_cancelled(getattr(emitter, "investigation_id", None))
         if not emitter.terminal_sent:
-            reason = "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)) else "error"
-            if reason == "cancelled":
+            if is_cancel:
                 emitter.cancelled()
             else:
-                emitter.failed(reason, type(exc).__name__)
+                emitter.failed("error", type(exc).__name__)
+        # The normal exit path closes the cached HTTP sessions; a cancelled or
+        # failed run must too, or aiohttp reports "Unclosed connector" on stderr.
+        try:
+            await _close_cached_sessions()
+        except BaseException:  # noqa: BLE001 - never mask the original exit
+            pass
         raise
     finally:
         emitter.close()
+        if cancel_token is not None:
+            cancel.set_current(None, process_wide=True)
+
+
+def _mark_investigation_cancelled(investigation_id: Optional[str]) -> None:
+    """Best effort: leave the investigation row ``cancelled``, not ``running``."""
+    if not investigation_id:
+        return
+    try:
+        from voidaccess_cli.adapters import sqlite as sqlite_adapter
+
+        sqlite_adapter.update_investigation(investigation_id, {"status": "cancelled"})
+    except Exception as exc:  # pragma: no cover - never mask the cancel
+        logger.debug("could not mark investigation cancelled: %s", exc)
 
 
 async def _run_investigation_impl(
@@ -576,6 +677,15 @@ async def _run_investigation_impl(
         # Never let a counter-reset glitch break the run; the counters
         # default to 0 so absence is safe.
         pass
+
+    # Per-run source accounting (request counts and gate refusals). The CLI runs
+    # one investigation per process, so the process-wide tracker is the one to
+    # reset; the thread-isolated search loop reads the same one.
+    from sources import source_control
+
+    source_control.reset_tracker()
+    source_entry = source_control.source_entry
+    STATUS_SKIPPED = source_control.STATUS_SKIPPED
 
     from voidaccess_cli.display import RichDisplaySink
 
@@ -660,6 +770,7 @@ async def _run_investigation_impl(
         status="running",
     )
     inv_uuid = uuid.UUID(investigation_id)
+    emitter.investigation_id = investigation_id  # so a cancel can mark the row
     from utils.investigation_metrics import InvestigationMetrics, persist as persist_metrics, set_current
     pipeline_metrics = InvestigationMetrics(inv_uuid)
     set_current(pipeline_metrics)
@@ -668,11 +779,22 @@ async def _run_investigation_impl(
     # duration_ms is recorded, and — critically — so ``record_llm_call`` (which
     # only credits steps that are currently *active*) attributes LLM calls to
     # the right step.  Mirrors the API pipeline's _metric_start/_metric_finish.
+    _requests_at_start: dict[str, dict[str, int]] = {}
+
     def _metric_start(step_name: str) -> None:
         pipeline_metrics.start(step_name)
+        _requests_at_start[step_name] = source_control.get_tracker().snapshot_requests()
 
     def _metric_finish(step_name: str) -> None:
         pipeline_metrics.finish(step_name)
+        # HTTP calls each source made during this step (the runner reports
+        # enrichment_calls per source from these).
+        before = _requests_at_start.pop(step_name, {})
+        now = source_control.get_tracker().snapshot_requests()
+        pipeline_metrics.record_source_requests(
+            step_name,
+            {sid: n - before.get(sid, 0) for sid, n in now.items() if n - before.get(sid, 0) > 0},
+        )
 
     sources_used: dict[str, dict[str, Any]] = {}
     page_count_by_url: dict[str, dict[str, Any]] = {}
@@ -725,20 +847,22 @@ async def _run_investigation_impl(
                 )
                 display.update_substep("Searching dark web", "Tor engines", "ok")
                 search_summary = get_last_search_summary()
-                sources_used["tor_search"] = {"status": "ok", "count": len(search_links)}
+                sources_used["tor_search"] = source_entry("tor_search", count=len(search_links))
             except Exception as exc:
                 display.update_substep("Searching dark web", "Tor engines", "fail")
                 search_summary = {}
-                sources_used["tor_search"] = {"status": "fail", "error": str(exc)}
+                sources_used["tor_search"] = source_entry(
+                    "tor_search", ok=False, error=type(exc).__name__
+                )
         else:
             display.update_substep("Searching dark web", "Tor engines", "skip")
-            sources_used["tor_search"] = {"status": "skipped"}
+            sources_used["tor_search"] = source_entry("tor_search", status=STATUS_SKIPPED)
 
     # Opt-in: overlap the Tor engine fan-out with the side sources.
     concurrent_collect = (os.getenv(CONCURRENT_COLLECT_ENV) or "").strip().lower() in ("1", "true", "on", "yes")
     tor_task = asyncio.ensure_future(_tor_search()) if concurrent_collect else None
     if tor_task is None:
-        await _tor_search()
+        await cancel.run_cancellable(_tor_search(), "collect")
 
     # Parallel clearnet sources
     async def _safe(coro_factory, label, key):
@@ -746,11 +870,11 @@ async def _run_investigation_impl(
         try:
             res = await coro_factory()
             display.update_substep("Searching dark web", label, "ok")
-            sources_used[key] = {"status": "ok", "count": len(res) if res else 0}
+            sources_used[key] = source_entry(key, count=len(res) if res else 0)
             return res or []
         except Exception as exc:
             display.update_substep("Searching dark web", label, "fail")
-            sources_used[key] = {"status": "fail", "error": str(exc)}
+            sources_used[key] = source_entry(key, ok=False, error=type(exc).__name__)
             return []
 
     async def _onionsearch():
@@ -772,17 +896,20 @@ async def _run_investigation_impl(
         channels = [c.strip() for c in os.getenv("TELEGRAM_CHANNELS", "").split(",") if c.strip()]
         return await fetch_telegram_messages(channels, refined)
 
-    side_tasks = await asyncio.gather(
-        _safe(lambda: _scrape_pastes(refined), "Paste sites", "paste_sites"),
-        _safe(lambda: _scrape_github(refined), "GitHub", "github"),
-        _safe(lambda: _scrape_gitlab(refined), "GitLab", "gitlab"),
-        _safe(lambda: _scrape_rss(refined), "RSS feeds", "rss"),
-        _safe(_onionsearch, "Torch + Haystack", "onion_search"),
-        _safe(_telegram, "Telegram", "telegram"),
+    side_tasks = await cancel.run_cancellable(
+        asyncio.gather(
+            _safe(lambda: _scrape_pastes(refined), "Paste sites", "paste_sites"),
+            _safe(lambda: _scrape_github(refined), "GitHub", "github"),
+            _safe(lambda: _scrape_gitlab(refined), "GitLab", "gitlab"),
+            _safe(lambda: _scrape_rss(refined), "RSS feeds", "rss"),
+            _safe(_onionsearch, "Torch + Haystack", "onion_search"),
+            _safe(_telegram, "Telegram", "telegram"),
+        ),
+        "collect",
     )
     paste_pages, github_pages, gitlab_pages, rss_pages, onion_pages, telegram_pages = side_tasks
     if tor_task is not None:
-        await tor_task
+        await cancel.run_cancellable(tor_task, "collect")
     for onion in onion_pages:
         search_links.append({
             "link": onion.get("url", ""),
@@ -790,20 +917,24 @@ async def _run_investigation_impl(
             "snippet": onion.get("snippet", ""),
             "source_engine": onion.get("source", ""),
         })
-    if not os.getenv("TELEGRAM_API_ID", "").strip() or not os.getenv("TELEGRAM_API_HASH", "").strip():
-        sources_used["telegram"] = {"status": "skipped_no_key"}
+    if no_tor:
+        # The combined onion-engine entry is not "ok with zero results" when no
+        # engine was contacted.
+        sources_used["onion_search"] = source_entry("onion_search", status=STATUS_SKIPPED)
     for _engine_name in ("Torch", "Haystack"):
+        _engine_id = _engine_name.lower()
         if no_tor:
             # Onion search engines are never contacted in --no-tor mode.
-            sources_used[_engine_name.lower()] = {"status": "skipped", "count": 0}
+            sources_used[_engine_id] = source_entry(_engine_id, status=STATUS_SKIPPED)
             continue
         _count = sum(1 for item in onion_pages if item.get("source") == _engine_name)
         from sources.engines import get_last_onionsearch_status
         _engine_status = get_last_onionsearch_status().get(_engine_name, "ok")
-        sources_used[_engine_name.lower()] = {
-            "status": "ok" if _engine_status.startswith("ok_") else _engine_status,
-            "count": _count,
-        }
+        sources_used[_engine_id] = source_entry(
+            _engine_id,
+            count=_count,
+            status=source_control.normalize_module_status(_engine_id, _engine_status),
+        )
 
     # --no-tor defence-in-depth: even though the Tor search branch and the
     # onion search engines are both skipped above, strip any .onion URL that
@@ -848,6 +979,7 @@ async def _run_investigation_impl(
     )
 
     # --- Step 3 — filter results ------------------------------------------
+    cancel.checkpoint("filter")
     display.stage_start(Stage.FILTER)
     display.update_step("Filtering results", "active")
     filter_top_n = LLM_FILTER_TOP_N
@@ -915,6 +1047,7 @@ async def _run_investigation_impl(
     # content, query-relevant seeds, and pre-extracted entities — reading ONLY
     # user-agnostic shared tables. Served content skips the Tor re-scrape.
     # Consent-gated + non-fatal; a $0/no-corpus install serves nothing.
+    cancel.checkpoint("fetch")
     display.stage_start(Stage.FETCH)
     shared_served_pages: dict[str, str] = {}
     shared_entities: list[dict] = []
@@ -972,7 +1105,7 @@ async def _run_investigation_impl(
                     extract_typed_relationships=no_llm,
                 )
 
-            results = await _scrape_with_progress()
+            results = await cancel.run_cancellable(_scrape_with_progress(), "fetch")
             display.update_current_url("")
             relationship_claims_by_url = getattr(
                 results, "relationship_claims_by_url", {}
@@ -1116,22 +1249,27 @@ async def _run_investigation_impl(
         logger.debug("Usage-seeded indexing failed (non-fatal): %s", exc)
 
     page_count_by_url = {p["url"]: p for p in scraped_pages}
+    cancel.checkpoint("fetch")
     display.stage_end(Stage.FETCH, pages_fetched=len(scraped_pages))
 
     # --- Step 5 — extract entities ---------------------------------------
+    cancel.checkpoint("extract")
     _metric_start("entity_extraction")
     display.stage_start(Stage.EXTRACT)
     display.update_step("Extracting entities", "active")
     extraction_results = []
     try:
         from extractor.pipeline import extract_entities_from_pages
-        extraction_results = await extract_entities_from_pages(
-            pages=scraped_pages,
-            investigation_id=inv_uuid,
-            llm=llm,
-            run_llm_extraction=llm is not None,
-            max_concurrent=_preset_workers(preset, "extract_concurrency", EXTRACT_CONCURRENCY_ENV),
-            max_llm_pages=_max_llm_pages(),
+        extraction_results = await cancel.run_cancellable(
+            extract_entities_from_pages(
+                pages=scraped_pages,
+                investigation_id=inv_uuid,
+                llm=llm,
+                run_llm_extraction=llm is not None,
+                max_concurrent=_preset_workers(preset, "extract_concurrency", EXTRACT_CONCURRENCY_ENV),
+                max_llm_pages=_max_llm_pages(),
+            ),
+            "extract",
         )
         total_entities = sum(len(r.entity_ids) for r in extraction_results)
         display.update_step("Extracting entities", "ok", f"{total_entities} entities")
@@ -1154,6 +1292,7 @@ async def _run_investigation_impl(
     )
 
     # --- Step 6 — enrich intelligence (OTX + IP) ---------------------------
+    cancel.checkpoint("enrich")
     _metric_start("enrichment")
     display.stage_start(Stage.ENRICH)
     enrichment_pages: list[dict] = []
@@ -1165,19 +1304,25 @@ async def _run_investigation_impl(
             otx_key = os.getenv("OTX_API_KEY", "") or ""
             entity_dicts = sqlite_adapter.get_entities(investigation_id)
             enrichment_pages = await _enrich_inv(refined, otx_api_key=otx_key, entities=entity_dicts)
-            sources_used["enrichment"] = {"status": "ok", "count": len(enrichment_pages)}
+            sources_used["enrichment"] = source_entry(
+                "enrichment", count=len(enrichment_pages), status="ok"
+            )
             for _source_name in ("nvd", "ransomlook", "cve_intel", "sslbl", "openphish", "phishtank", "ransomwhere"):
                 _count = sum(
                     1 for _page in enrichment_pages
                     if (_page.get("source") or _page.get("source_type")) == _source_name
                 )
-                sources_used[_source_name] = {"status": "ok", "count": _count}
+                sources_used[_source_name] = source_entry(_source_name, count=_count)
             display.update_step("Enriching intelligence", "ok", f"{len(enrichment_pages)} pages added")
         except Exception as exc:
-            sources_used["enrichment"] = {"status": "fail", "error": str(exc)}
-            sources_used["nvd"] = {"status": "error"}
-            sources_used["ransomlook"] = {"status": "error"}
-            display.update_step("Enriching intelligence", "fail", str(exc))
+            sources_used["enrichment"] = source_entry(
+                "enrichment", ok=False, error=type(exc).__name__, status="error"
+            )
+            sources_used["nvd"] = source_entry("nvd", ok=False, status="error")
+            sources_used["ransomlook"] = source_entry("ransomlook", ok=False, status="error")
+            display.update_step("Enriching intelligence", "fail", type(exc).__name__)
+
+        cancel.checkpoint("enrich")
 
         # --- HIBP Pwned Passwords (k-anonymity, presence-only) ----------------
         # Runs after extraction (email entities exist) on the in-memory scraped text;
@@ -1187,18 +1332,25 @@ async def _run_investigation_impl(
             _hibp_page, _hibp_stats = await scan_pages_for_pwned_credentials(scraped_pages)
             if _hibp_page is not None:
                 enrichment_pages.append(_hibp_page)
-            sources_used["hibp_pwned_passwords"] = {
-                "status": _hibp_stats.get("status", "ok"),
-                "count": _hibp_stats.get("pwned", 0),
-            }
+            sources_used["hibp_pwned_passwords"] = source_entry(
+                "hibp_pwned_passwords",
+                count=_hibp_stats.get("pwned", 0),
+                status=source_control.normalize_module_status(
+                    "hibp_pwned_passwords", _hibp_stats.get("status", "ok")
+                ),
+            )
         except Exception as _hibp_exc:
             logger.debug("HIBP pwned-password scan skipped: %s", _hibp_exc)
+
+        cancel.checkpoint("enrich")
 
         try:
             from sources.ip_reputation import enrich_ip_entities
             await enrich_ip_entities(extraction_results, investigation_id=inv_uuid)
         except Exception as ip_exc:
             logger.debug("ip_reputation skipped: %s", ip_exc)
+
+        cancel.checkpoint("enrich")
 
         # --- Step 6.2–6.4 — domain / hash / email (before graph) -------------
         # Phase 6.2 — per-step timeouts so a hung reputation source doesn't
@@ -1228,6 +1380,7 @@ async def _run_investigation_impl(
             logger.debug("Domain enrichment: %s", exc)
             display.update_step("Enriching domains", "fail", str(exc))
 
+        cancel.checkpoint("enrich")  # between sources
         display.update_step("Enriching hashes", "active")
         try:
             from sources.hash_reputation import enrich_hash_entities
@@ -1243,6 +1396,7 @@ async def _run_investigation_impl(
             logger.debug("Hash enrichment: %s", exc)
             display.update_step("Enriching hashes", "fail", str(exc))
 
+        cancel.checkpoint("enrich")  # between sources
         display.update_step("Enriching emails", "active")
         try:
             from sources.email_reputation import enrich_email_entities
@@ -1258,6 +1412,7 @@ async def _run_investigation_impl(
             logger.debug("Email enrichment: %s", exc)
             display.update_step("Enriching emails", "fail", str(exc))
 
+        cancel.checkpoint("enrich")  # between sources
         display.update_step("Breach exposure lookup", "active")
         try:
             from sources.breach_lookup import enrich_breach_entities
@@ -1265,26 +1420,33 @@ async def _run_investigation_impl(
                 enrich_breach_entities(extraction_results, inv_uuid),
                 timeout=60,
             )
-            sources_used["xposedornot"] = {
-                "status": "ok",
-                "count": _breach_stats.get("xon_breached", 0),
-            }
-            sources_used["leakcheck"] = {
-                "status": "ok",
-                "count": _breach_stats.get("leakcheck_breached", 0),
-            }
+            sources_used["xposedornot"] = source_entry(
+                "xposedornot",
+                count=_breach_stats.get("xon_breached", 0),
+                status=source_control.normalize_module_status(
+                    "xposedornot", _breach_stats.get("xposedornot", "ok")
+                ),
+            )
+            sources_used["leakcheck"] = source_entry(
+                "leakcheck",
+                count=_breach_stats.get("leakcheck_breached", 0),
+                status=source_control.normalize_module_status(
+                    "leakcheck", _breach_stats.get("leakcheck", "ok")
+                ),
+            )
             display.update_step("Breach exposure lookup", "ok")
         except asyncio.TimeoutError:
             logger.warning("[%s] Breach lookup timed out after 60s", inv_uuid)
-            sources_used["xposedornot"] = {"status": "timed_out"}
-            sources_used["leakcheck"] = {"status": "timed_out"}
+            sources_used["xposedornot"] = source_entry("xposedornot", timed_out=True)
+            sources_used["leakcheck"] = source_entry("leakcheck", timed_out=True)
             display.update_step("Breach exposure lookup", "fail", "timeout")
         except Exception as exc:
             logger.debug("Breach lookup: %s", exc)
-            sources_used["xposedornot"] = {"status": "error"}
-            sources_used["leakcheck"] = {"status": "error"}
-            display.update_step("Breach exposure lookup", "fail", str(exc))
+            sources_used["xposedornot"] = source_entry("xposedornot", ok=False, status="error")
+            sources_used["leakcheck"] = source_entry("leakcheck", ok=False, status="error")
+            display.update_step("Breach exposure lookup", "fail", type(exc).__name__)
 
+        cancel.checkpoint("enrich")  # between sources
         display.update_step("Infostealer intel", "active")
         try:
             from sources.infostealer import enrich_infostealer_entities
@@ -1292,33 +1454,39 @@ async def _run_investigation_impl(
                 enrich_infostealer_entities(extraction_results, inv_uuid),
                 timeout=60,
             )
-            sources_used["hudsonrock"] = {
-                "status": "ok",
-                "count": _infostealer_stats.get("emails_infected", 0),
-            }
+            sources_used["hudsonrock"] = source_entry(
+                "hudsonrock",
+                count=_infostealer_stats.get("emails_infected", 0),
+                status=source_control.normalize_module_status(
+                    "hudsonrock", _infostealer_stats.get("hudsonrock", "ok")
+                ),
+            )
             display.update_step("Infostealer intel", "ok")
         except asyncio.TimeoutError:
             logger.warning("[%s] Infostealer enrichment timed out after 60s", inv_uuid)
-            sources_used["hudsonrock"] = {"status": "timed_out"}
+            sources_used["hudsonrock"] = source_entry("hudsonrock", timed_out=True)
             display.update_step("Infostealer intel", "fail", "timeout")
         except Exception as exc:
             logger.debug("Infostealer enrichment: %s", exc)
-            sources_used["hudsonrock"] = {"status": "error"}
-            display.update_step("Infostealer intel", "fail", str(exc))
+            sources_used["hudsonrock"] = source_entry("hudsonrock", ok=False, status="error")
+            display.update_step("Infostealer intel", "fail", type(exc).__name__)
 
 
     _enrich_cap = _explicit_enrichment_timeout()
     if _enrich_cap is None:
-        await _enrichment_phase()
+        await cancel.run_cancellable(_enrichment_phase(), "enrich")
     else:
         # Opt-in cap (VOIDACCESS_ENRICHMENT_TIMEOUT): keep partial results.
         try:
-            await asyncio.wait_for(_enrichment_phase(), timeout=_enrich_cap)
+            await asyncio.wait_for(
+                cancel.run_cancellable(_enrichment_phase(), "enrich"), timeout=_enrich_cap
+            )
         except asyncio.TimeoutError:
             logger.warning(
                 "[%s] Enrichment phase timed out after %ds - continuing with partial results",
                 inv_uuid, _enrich_cap,
             )
+            sources_used["enrichment"] = source_entry("enrichment", timed_out=True)
             display.update_step("Enriching intelligence", "fail", "timeout")
 
     if enrichment_pages:
@@ -1332,7 +1500,9 @@ async def _run_investigation_impl(
                 max_concurrent=preset["extract_concurrency"],
             )
         except Exception as exc:
-            console.print(f"[grey50]Enrichment extraction failed: {exc}[/grey50]")
+            if not quiet:
+                console.print(f"[grey50]Enrichment extraction failed: {exc}[/grey50]")
+            logger.debug("Enrichment extraction failed: %s", exc)
     # Enrichment pages participate in entity extraction and graph construction
     # just like the core scraped pages.  Add them to the final manifest before
     # page IDs, page_count, and the JSON payload are finalized; otherwise the
@@ -1340,6 +1510,7 @@ async def _run_investigation_impl(
     # also contains enrichment-provenance entities and edges.
     _append_enrichment_pages_to_manifest(scraped_pages, enrichment_pages)
     _metric_finish("enrichment")
+    cancel.checkpoint("enrich")
     display.stage_end(Stage.ENRICH)
 
     # --- Step 6.9 — Update persistent actor profiles (non-blocking) -------
@@ -1376,6 +1547,7 @@ async def _run_investigation_impl(
     # --- Step 7 — build graph (co-occurrence) ----------------------------
     # Phase 6.2 — capped by CLI_PHASE_TIMEOUTS["graph_build"] so a large
     # entity table doesn't pin the CLI thread indefinitely.
+    cancel.checkpoint("graph")
     _metric_start("graph_build")
     display.stage_start(Stage.GRAPH)
     display.update_step("Building graph", "active")
@@ -1450,6 +1622,7 @@ async def _run_investigation_impl(
         logger.warning("Community detection failed: %s", exc)
         display.update_step("Community detection", "fail", str(exc))
     _metric_finish("graph_build")
+    cancel.checkpoint("graph")
     display.stage_end(Stage.GRAPH)
 
     # --- Step 7.5 — promote observed entities into the shared corpus (P4.1) ---
@@ -1481,6 +1654,7 @@ async def _run_investigation_impl(
     # --- Step 8 — summary -------------------------------------------------
     # Phase 6.2 — capped by CLI_PHASE_TIMEOUTS["summary"] so a slow LLM
     # call never holds the CLI process open past its budget.
+    cancel.checkpoint("summarize")
     _metric_start("summary_generation")
     display.stage_start(Stage.SUMMARIZE)
     display.update_step("Generating summary", "active")
@@ -1488,54 +1662,38 @@ async def _run_investigation_impl(
     summary_kind = "none"
     pages_to_summarize = scraped_pages[:10]
     if llm is not None:
-        try:
-            from voidaccess.llm import generate_summary
-            if pages_to_summarize:
-                summary_budget = CLI_PHASE_TIMEOUTS["summary"]
-                first_budget = summary_budget * SUMMARY_FIRST_ATTEMPT_SHARE
-                try:
-                    summary_text = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            generate_summary, llm, refined, pages_to_summarize, preset="threat_intel"
-                        ),
-                        timeout=first_budget,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "[%s] Summary generation timed out after %.0fs - retrying with reduced context",
-                        inv_uuid, first_budget,
-                    )
-                    summary_text = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            generate_summary,
-                            llm,
-                            refined,
-                            pages_to_summarize[:SUMMARY_RETRY_TOP_PAGES],
-                            max_summary_chars=SUMMARY_RETRY_MAX_CHARS,
-                            preset="threat_intel",
-                        ),
-                        timeout=max(summary_budget - first_budget, 1),
-                    )
-                if (summary_text or "").strip():
-                    summary_kind = "llm"
-            display.update_step("Generating summary", "ok")
-        except asyncio.TimeoutError:
-            logger.warning(
-                "[%s] Summary generation (retry) timed out within the %ds budget",
-                inv_uuid, CLI_PHASE_TIMEOUTS["summary"],
-            )
-            display.update_step("Generating summary", "fail", "timeout")
-        except Exception as exc:
-            display.update_step("Generating summary", "fail", str(exc))
-        if pages_to_summarize and not (summary_text or "").strip():
-            # Never ship an empty summary when pages were found.
-            from voidaccess.summary_fallback import build_fallback_summary
+        from voidaccess.llm import generate_summary
+        from voidaccess.summary_fallback import summarize_with_fallback
 
-            summary_text = build_fallback_summary(
-                refined, sqlite_adapter.get_entities(investigation_id), pages_to_summarize
+        async def _summary_call(call_pages: list, **kwargs: Any) -> str:
+            # generate_summary raises SummaryUnavailable on a failed LLM, which
+            # summarize_with_fallback turns into a retry and then the fallback.
+            return await asyncio.to_thread(
+                generate_summary, llm, refined, call_pages, preset="threat_intel", **kwargs
             )
-            summary_kind = "fallback"
+
+        outcome = await cancel.run_cancellable(
+            summarize_with_fallback(
+                _summary_call,
+                pages_to_summarize,
+                query=refined,
+                budget_s=CLI_PHASE_TIMEOUTS["summary"],
+                fallback_entities=lambda: sqlite_adapter.get_entities(investigation_id),
+                first_share=SUMMARY_FIRST_ATTEMPT_SHARE,
+                retry_top_pages=SUMMARY_RETRY_TOP_PAGES,
+                retry_max_chars=SUMMARY_RETRY_MAX_CHARS,
+                log_id=str(inv_uuid),
+            ),
+            "summarize",
+        )
+        summary_text, summary_kind = outcome.text, outcome.kind
+        if outcome.kind == "llm":
+            display.update_step("Generating summary", "ok")
+        elif outcome.kind == "fallback":
+            # Generic text only: never the raw provider/exception message.
             display.update_step("Generating summary", "ok", "fallback (no AI summary)")
+        else:
+            display.update_step("Generating summary", "ok", "nothing to summarise")
     else:
         display.update_step("Generating summary", "skip", "--no-llm")
     _metric_finish("summary_generation")
@@ -1603,6 +1761,20 @@ async def _run_investigation_impl(
         route = page.get("dependency_extraction_route") or "unknown"
         dependency_routes[route] = dependency_routes.get(route, 0) + 1
 
+    # Make sources_used honest and complete: deny-listed and allowlisted-off
+    # sources never read ``ok``, and every source that made HTTP calls is listed
+    # with its request count.
+    source_control.finalize_sources_used(sources_used)
+    from sources.enrichment_allowlist import ENRICHMENT_SOURCE_IDS
+
+    _umbrella_requests = sum(
+        entry.get("requests", 0)
+        for sid, entry in sources_used.items()
+        if sid in ENRICHMENT_SOURCE_IDS and isinstance(entry, dict)
+    )
+    if "enrichment" in sources_used:
+        sources_used["enrichment"]["requests"] = _umbrella_requests
+
     payload = {
         "id": investigation_id,
         "query": query,
@@ -1637,10 +1809,27 @@ async def _run_investigation_impl(
         "seeds_discovered": _discovered_count,
     }
 
-    if fmt in ("json", "both"):
-        json_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    if fmt in ("md", "both"):
-        md_path.write_text(_render_markdown(payload), encoding="utf-8")
+    # Outputs are written to temp files and renamed into place only after the
+    # last cancel checkpoint, so a cancelled run never leaves a half-written (or
+    # any) output file behind.
+    _staged: list[tuple[Path, Path]] = []
+    try:
+        if fmt in ("json", "both"):
+            _staged.append(
+                (_stage_output(json_path, json.dumps(payload, indent=2, default=str)), json_path)
+            )
+        if fmt in ("md", "both"):
+            _staged.append((_stage_output(md_path, _render_markdown(payload)), md_path))
+        cancel.checkpoint("finalize")
+        for _tmp, _final in _staged:
+            os.replace(_tmp, _final)
+        _staged = []
+    finally:
+        for _tmp, _ in _staged:
+            try:
+                _tmp.unlink()
+            except OSError:
+                pass
 
     display.update_step("Finalizing results", "ok")
     _metric_finish("finalization")
@@ -1707,7 +1896,7 @@ async def _run_investigation_impl(
             "seeds_discovered": _discovered_count,
             "sources_used": sum(
                 1 for v in sources_used.values()
-                if str(v.get("status", "")).startswith("ok")
+                if v.get("status") == source_control.STATUS_OK
             ),
             "relationship_count": len(final_relationships),
             "relationships_by_type": relationship_type_counts,
@@ -1731,13 +1920,39 @@ async def _run_investigation_impl(
         actors_found=actor_count,
     )
     if final_entities or scraped_pages:
-        emitter.completed()
+        emitter.completed(
+            {
+                # HTTP calls per source (total and per step) so a runner can
+                # report enrichment_calls per source.
+                "source_requests": pipeline_metrics.source_requests_total(),
+                "source_requests_by_step": {
+                    name: dict(metric.source_requests)
+                    for name, metric in pipeline_metrics.steps.items()
+                    if metric.source_requests
+                },
+                "sources_status": {
+                    sid: entry.get("status")
+                    for sid, entry in sources_used.items()
+                    if isinstance(entry, dict)
+                },
+                "summary_kind": summary_kind,
+                "report_path": str(md_path) if fmt in ("md", "both") else None,
+                "data_path": str(json_path) if fmt in ("json", "both") else None,
+            }
+        )
     else:
         emitter.failed("no_results", "no entities or pages found")
 
     # Close any cached aiohttp sessions so the event loop exits cleanly
     # (otherwise aiohttp prints "Unclosed client session" warnings).
     await _close_cached_sessions()
+
+
+def _stage_output(final_path: Path, text: str) -> Path:
+    """Write *text* beside *final_path* as a dot-prefixed temp file; return it."""
+    tmp = final_path.with_name(f".{final_path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    return tmp
 
 
 def _patch_llm_extraction_cache(sqlite_adapter: Any) -> None:
@@ -1822,56 +2037,57 @@ async def _close_cached_sessions() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _note_side_source(key: str, state: str) -> None:
+    from sources.source_control import get_tracker
+
+    get_tracker().set_state(key, state)
+
+
+async def _run_side_source(key: str, env_flag: str, module: str, func: str, query: str) -> list[dict]:
+    """Run one side source, recording an honest state instead of a silent ``[]``.
+
+    A missing module or a failure is ``error``; the source's own off switch
+    (``PASTE_SCRAPING_ENABLED`` and friends) is ``disabled``.
+    """
+    import importlib
+
+    try:
+        scraper = getattr(importlib.import_module(module), func)
+    except Exception:
+        _note_side_source(key, "error")
+        return []
+    if os.getenv(env_flag, "true").lower() != "true":
+        _note_side_source(key, "disabled")
+        return []
+    try:
+        return await scraper(query) or []
+    except Exception:
+        _note_side_source(key, "error")
+        return []
+
+
 async def _scrape_pastes(query: str) -> list[dict]:
-    try:
-        from sources.paste_scraper import scrape_paste_sites
-    except Exception:
-        return []
-    if os.getenv("PASTE_SCRAPING_ENABLED", "true").lower() != "true":
-        return []
-    try:
-        return await scrape_paste_sites(query) or []
-    except Exception:
-        return []
+    return await _run_side_source(
+        "paste_sites", "PASTE_SCRAPING_ENABLED", "sources.paste_scraper", "scrape_paste_sites", query
+    )
 
 
 async def _scrape_github(query: str) -> list[dict]:
-    try:
-        from sources.github_scraper import scrape_github
-    except Exception:
-        return []
-    if os.getenv("GITHUB_SCRAPING_ENABLED", "true").lower() != "true":
-        return []
-    try:
-        return await scrape_github(query) or []
-    except Exception:
-        return []
+    return await _run_side_source(
+        "github", "GITHUB_SCRAPING_ENABLED", "sources.github_scraper", "scrape_github", query
+    )
 
 
 async def _scrape_gitlab(query: str) -> list[dict]:
-    try:
-        from sources.gitlab_scraper import scrape_gitlab
-    except Exception:
-        return []
-    if os.getenv("GITLAB_SCRAPING_ENABLED", "true").lower() != "true":
-        return []
-    try:
-        return await scrape_gitlab(query) or []
-    except Exception:
-        return []
+    return await _run_side_source(
+        "gitlab", "GITLAB_SCRAPING_ENABLED", "sources.gitlab_scraper", "scrape_gitlab", query
+    )
 
 
 async def _scrape_rss(query: str) -> list[dict]:
-    try:
-        from sources.rss_scraper import scrape_rss_feeds
-    except Exception:
-        return []
-    if os.getenv("RSS_FEEDS_ENABLED", "true").lower() != "true":
-        return []
-    try:
-        return await scrape_rss_feeds(query) or []
-    except Exception:
-        return []
+    return await _run_side_source(
+        "rss", "RSS_FEEDS_ENABLED", "sources.rss_scraper", "scrape_rss_feeds", query
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2173,8 +2389,17 @@ def _render_markdown(payload: dict[str, Any]) -> str:
 
     lines.append("## Sources used")
     for name, info in payload.get("sources_used", {}).items():
-        glyph = "✓" if info.get("status") == "ok" else ("↷" if info.get("status") == "skipped" else "✗")
+        _status = info.get("status")
+        glyph = (
+            "✓" if _status == "ok"
+            else "↷" if _status in ("skipped", "skipped_by_allowlist", "disabled")
+            else "✗"
+        )
         detail = f" ({info.get('count', 0)} results)" if "count" in info else ""
+        if _status not in ("ok", "skipped"):
+            detail += f" [{_status}]"
+        if info.get("requests"):
+            detail += f" [{info['requests']} requests]"
         lines.append(f"- {glyph} {name}{detail}")
 
     return "\n".join(lines) + "\n"

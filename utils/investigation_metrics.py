@@ -25,6 +25,9 @@ class StepMetric:
     pages_failed: int = 0
     pages_cache_hits: int = 0
     pages_fresh: int = 0
+    # HTTP calls made per source id during this step. In-memory only (not a DB
+    # column): surfaced through the progress hook's ``completed`` metrics.
+    source_requests: dict[str, int] = field(default_factory=dict)
     _started: float | None = field(default=None, repr=False)
 
 
@@ -68,6 +71,18 @@ class InvestigationMetrics:
         metric.pages_failed = max(0, attempted - fetched)
         metric.pages_cache_hits = cache_hits
         metric.pages_fresh = max(0, attempted - cache_hits)
+
+    def record_source_requests(self, step_name: str, requests: dict[str, int]) -> None:
+        metric = self.steps.setdefault(step_name, StepMetric())
+        for source_id, n in requests.items():
+            metric.source_requests[source_id] = metric.source_requests.get(source_id, 0) + n
+
+    def source_requests_total(self) -> dict[str, int]:
+        total: dict[str, int] = {}
+        for metric in self.steps.values():
+            for source_id, n in metric.source_requests.items():
+                total[source_id] = total.get(source_id, 0) + n
+        return total
 
     def _active_metrics(self) -> list[StepMetric]:
         return [metric for metric in self.steps.values() if metric._started is not None]

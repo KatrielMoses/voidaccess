@@ -522,13 +522,34 @@ def main(
         console.print(f"voidaccess {__version__}")
         raise typer.Exit()
     cli_config.apply_env()
+    quiet = _is_quiet_invocation(ctx)
+    if quiet:
+        # `investigate --quiet` prints nothing: not even the optional-key warning
+        # config.validate_config() logs below, nor the banner.
+        import logging
+
+        logging.getLogger().setLevel(logging.ERROR)
     # Validate after the CLI has injected its runtime environment. This keeps
     # --help/--version cold-start safe while preserving the required-key and
     # once-per-process optional-key checks for real command invocations.
     import config as runtime_config
     runtime_config.validate_config()
-    if not no_banner and ctx.invoked_subcommand:
+    if not no_banner and not quiet and ctx.invoked_subcommand:
         show_banner(console)
+
+
+def _is_quiet_invocation(ctx: typer.Context) -> bool:
+    """True for ``voidaccess investigate ... --quiet`` run from the command line.
+
+    The group callback runs before the subcommand's own options are parsed (and
+    Click does not expose them to it), so the process argv is the only place to
+    look. A programmatic ``app([...])`` call is therefore not covered; it only
+    matters for the banner and the config warning, both of which are already off
+    when stdout is not a terminal.
+    """
+    if ctx.invoked_subcommand != "investigate":
+        return False
+    return "--quiet" in sys.argv[1:]
 
 
 def run() -> None:

@@ -22,6 +22,8 @@ from db.search_engine_stats import (
 )
 from search.query_builder import diversify_query
 from search.engine_catalog import SEARCH_ENGINES
+from sources.source_control import record_request, source_gate
+from utils import cancel
 from utils.async_utils import run_async
 from search import config as search_config
 
@@ -137,7 +139,10 @@ async def _fetch_engine(
     
     async with semaphore:
         for attempt in range(search_config.engine_retry_count() + 1):
+            if cancel.is_cancelled():
+                return EngineResult(name=name, links=[], error="cancelled")
             try:
+                record_request("tor_search")
                 async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=search_config.search_timeout())) as resp:
                     if resp.status != 200:
                         if attempt < search_config.engine_retry_count():
@@ -252,6 +257,12 @@ async def _search_async(
     allow_diversify: bool = True,
 ) -> list[EngineResult]:
     global _LAST_SEARCH_SUMMARY
+    if not source_gate("tor_search"):
+        # VOIDACCESS_DISABLED_SOURCES: the whole onion-engine fan-out is off.
+        _LAST_SEARCH_SUMMARY = {
+            "success": 0, "total": 0, "active": 0, "circuits_open": 0, "results": 0,
+        }
+        return []
     semaphore = asyncio.Semaphore(max_workers)
     # Static catalog lifecycle (P1.1): only `active` engines enter the fan-out.
     # This is distinct from — and runs before — the dynamic circuit-breaker skip
@@ -286,6 +297,9 @@ async def _search_async(
     # instead of all sharing one — see search/tor_isolation.py for the policy.
     async def run_engine(engine: dict) -> EngineResult:
         name = engine["name"]
+        if cancel.is_cancelled():
+            # Cancel checkpoint between engines: do not start another one.
+            return EngineResult(name=name, links=[], error="cancelled")
         timeout = get_engine_timeout(stats_by_name.get(name, _default_stats(name)))
         engine_url = engine["url"].format(query=query)
 
@@ -303,6 +317,9 @@ async def _search_async(
         try:
             result = await asyncio.wait_for(fetch_with_engine_session(), timeout=timeout)
             result.took_ms = int((time.monotonic() - start) * 1000)
+            if result.error == "cancelled":
+                # A cancel is not an engine failure: leave the breaker alone.
+                return result
             success = result.error is None
             task = record_engine_attempt_async(name, success, len(result.links), result.took_ms)
             if task is not None:
@@ -328,7 +345,7 @@ async def _search_async(
             return EngineResult(name=name, links=[], error=str(e), took_ms=took_ms)
 
     deadline = search_config.search_deadline()
-    if deadline is None:
+    if deadline is None and cancel.current() is None:
         tasks = [run_engine(e) for e in active_engines]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         deadline_results: list[EngineResult] = []
@@ -339,7 +356,18 @@ async def _search_async(
         engine_tasks = {
             asyncio.ensure_future(run_engine(e)): e["name"] for e in active_engines
         }
-        done, pending = await asyncio.wait(engine_tasks, timeout=deadline)
+        done, pending = await cancel.wait_cancellable(
+            set(engine_tasks), timeout=deadline
+        )
+        cancelled_run = cancel.is_cancelled()
+        if cancelled_run and pending:
+            # Cancel arrived: in-flight engines get the grace period (finish the
+            # current item), then are stopped. Cancelled engines are never
+            # recorded against the circuit breaker.
+            more_done, pending = await asyncio.wait(
+                pending, timeout=cancel.grace_period()
+            )
+            done = set(done) | set(more_done)
         for task in pending:
             task.cancel()
         if pending:
@@ -351,10 +379,14 @@ async def _search_async(
             except BaseException as exc:  # noqa: BLE001 - mirror gather(return_exceptions=True)
                 results.append(exc)
         deadline_results = [
-            EngineResult(name=engine_tasks[t], links=[], error="deadline")
+            EngineResult(
+                name=engine_tasks[t],
+                links=[],
+                error="cancelled" if cancelled_run else "deadline",
+            )
             for t in pending
         ]
-        if pending:
+        if pending and not cancelled_run:
             logger.warning(
                 "Search deadline %.0fs reached: %d/%d engines still running, returning partial results",
                 deadline, len(pending), len(engine_tasks),
@@ -371,7 +403,13 @@ async def _search_async(
         await asyncio.gather(*record_tasks, return_exceptions=True)
 
     result_count = sum(len(r.links) for r in processed)
-    if allow_diversify and result_count < 5 and llm_client is not None and active_engines:
+    if (
+        allow_diversify
+        and result_count < 5
+        and llm_client is not None
+        and active_engines
+        and not cancel.is_cancelled()
+    ):
         alternatives = await diversify_query(query, result_count, llm_client)
         top_engines = active_engines[:3]
         for alternative in alternatives[:2]:

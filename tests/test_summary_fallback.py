@@ -125,3 +125,160 @@ def test_cli_summary_total_failure_produces_fallback(tmp_path, monkeypatch):
     assert payload["summary_kind"] == "fallback"
     assert payload["summary"].strip()
     assert "LockBit" in payload["summary"]
+
+
+# ---------------------------------------------------------------------------
+# E1C / C1: generate_summary raises SummaryUnavailable; callers retry then fall back
+# ---------------------------------------------------------------------------
+
+SECRET = "sk-live-PROVIDER-SECRET-999"
+
+
+def test_cli_summary_unavailable_retries_once_then_falls_back(tmp_path, monkeypatch):
+    from voidaccess.llm import SummaryUnavailable
+
+    calls = []
+
+    def gen(llm, q, pages, *a, **k):
+        calls.append(k.get("max_summary_chars"))
+        raise SummaryUnavailable("llm_error") from RuntimeError(f"provider said {SECRET}")
+
+    payload = _run(tmp_path, monkeypatch, gen)
+    assert len(calls) == 2 and calls[0] is None and calls[1] is not None  # reduced context
+    assert payload["summary_kind"] == "fallback"
+    assert "LockBit" in payload["summary"]
+    # A failed LLM never surfaces as llm, and no raw exception text is user-facing.
+    assert "Summary unavailable" not in payload["summary"]
+    assert SECRET not in json.dumps(payload)
+
+
+def test_cli_summary_unavailable_then_retry_success_is_llm(tmp_path, monkeypatch):
+    from voidaccess.llm import SummaryUnavailable
+
+    calls = []
+
+    def gen(llm, q, pages, *a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            raise SummaryUnavailable("llm_error")
+        return "Recovered summary."
+
+    payload = _run(tmp_path, monkeypatch, gen)
+    assert payload["summary"] == "Recovered summary."
+    assert payload["summary_kind"] == "llm"
+
+
+def test_cli_summary_kind_none_when_llm_disabled(tmp_path, monkeypatch):
+    from tests import e1c_harness as h
+
+    inv = h.prepare(tmp_path, monkeypatch)
+    h.run(inv, tmp_path, no_llm=True)
+    payload = h.read_payload(tmp_path)
+    assert payload["summary_kind"] == "none"
+
+
+def test_cli_empty_llm_text_is_not_marked_llm(tmp_path, monkeypatch):
+    payload = _run(tmp_path, monkeypatch, lambda llm, q, pages, *a, **k: "   ")
+    assert payload["summary_kind"] == "fallback"
+
+
+def test_cli_progress_never_shows_raw_exception(tmp_path, monkeypatch, capfd):
+    """The display line for a failed summary is generic, not the exception text."""
+    def gen(llm, q, pages, *a, **k):
+        raise RuntimeError(f"provider said {SECRET}")
+
+    from tests import e1c_harness as h
+
+    inv = h.prepare(tmp_path, monkeypatch, generate_summary=gen)
+    h.run(inv, tmp_path, quiet=False)
+    out = capfd.readouterr()
+    assert SECRET not in out.out + out.err
+
+
+def test_summarize_with_fallback_no_pages_is_none():
+    from voidaccess.summary_fallback import summarize_with_fallback
+
+    async def call(pages, **kw):  # pragma: no cover - must not be called
+        raise AssertionError("no LLM call without pages")
+
+    outcome = asyncio.run(
+        summarize_with_fallback(call, [], query="q", budget_s=5, fallback_entities=lambda: [])
+    )
+    assert outcome.kind == "none" and outcome.text == "" and outcome.attempts == 0
+
+
+def test_summarize_with_fallback_failure_reports_class_name_only():
+    from voidaccess.llm import SummaryUnavailable
+    from voidaccess.summary_fallback import summarize_with_fallback
+
+    async def call(pages, **kw):
+        raise SummaryUnavailable("llm_error") from RuntimeError(SECRET)
+
+    outcome = asyncio.run(
+        summarize_with_fallback(
+            call,
+            [{"url": "http://a.onion/x", "text": "t"}],
+            query="q",
+            budget_s=5,
+            fallback_entities=lambda: [{"entity_type": "CVE", "value": "CVE-2023-4966"}],
+        )
+    )
+    assert outcome.kind == "fallback" and outcome.attempts == 2
+    assert outcome.failure == "SummaryUnavailable"
+    assert SECRET not in outcome.text and "CVE-2023-4966" in outcome.text
+
+
+def test_api_summary_phase_falls_back_without_exception_text(monkeypatch):
+    """The API path: failed LLM -> retry -> deterministic fallback, no raw text."""
+    import api.routes.investigations as api
+    import voidaccess.llm as llm_mod
+    from voidaccess.llm import SummaryUnavailable
+
+    calls = []
+
+    def gen(llm, query, content, entities=None, **k):
+        calls.append(k.get("max_summary_chars"))
+        raise SummaryUnavailable("llm_error") from RuntimeError(f"provider said {SECRET}")
+
+    monkeypatch.setattr(llm_mod, "generate_summary", gen)
+
+    class _Result:
+        entities = [
+            {"entity_type": "RANSOMWARE_GROUP", "value": "LockBit", "confidence": 0.9},
+        ]
+
+    import uuid
+
+    text = asyncio.run(
+        api._generate_summary_phase(
+            [_Result()],
+            [{"url": "http://a.onion/x", "text": "LockBit ransomware", "content": "LockBit ransomware"}],
+            "lockbit",
+            object(),
+            uuid.uuid4(),
+            "inv-1",
+            1,
+            1,
+        )
+    )
+    assert len(calls) == 2 and calls[1] is not None
+    assert "LockBit" in text
+    assert SECRET not in text and "Summary unavailable" not in text
+
+
+def test_api_summary_phase_success_returns_llm_text(monkeypatch):
+    import uuid
+
+    import api.routes.investigations as api
+    import voidaccess.llm as llm_mod
+
+    monkeypatch.setattr(
+        llm_mod, "generate_summary", lambda llm, query, content, entities=None, **k: "API summary."
+    )
+    text = asyncio.run(
+        api._generate_summary_phase(
+            [], [{"url": "http://a.onion/x", "text": "x", "content": "x"}],
+            "q", object(), uuid.uuid4(), "inv-1", 1, 0,
+        )
+    )
+    assert text == "API summary."

@@ -194,11 +194,13 @@ def test_rich_display_output_unchanged():
         d.complete({"entity_count": 2, "page_count": 1, "sources_used": 1, "source_details": {}})
 
     direct_buf = io.StringIO()
-    direct = InvestigationDisplay(console=Console(file=direct_buf, width=100, force_terminal=False), quiet=True)
+    # Not quiet: quiet mode prints nothing but output paths (see
+    # tests/test_quiet_mode.py), so the live display is what routing must keep.
+    direct = InvestigationDisplay(console=Console(file=direct_buf, width=100, force_terminal=False), quiet=False)
     script(direct)
 
     routed_buf = io.StringIO()
-    routed_display = InvestigationDisplay(console=Console(file=routed_buf, width=100, force_terminal=False), quiet=True)
+    routed_display = InvestigationDisplay(console=Console(file=routed_buf, width=100, force_terminal=False), quiet=False)
     emitter = ProgressEmitter([RichDisplaySink(routed_display)])
     script(PipelineReporter(emitter))
     emitter.close()

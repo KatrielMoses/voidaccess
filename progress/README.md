@@ -18,11 +18,15 @@ parsing its display strings.
 | `refined_queries` | on `refined`: the refined query list |
 | `message` | short human label, never raw dark-web text |
 | `stages_completed`, `reason` | on `failed` / `cancelled` (`blocked_query`, `no_results`, `deadline`, `error`, `cancelled`) |
-| `metrics` | on terminal events: `stage_ms` per stage |
+| `metrics` | on terminal events: `stage_ms` per stage. On `completed` (CLI) also `source_requests` (HTTP calls per source id), `source_requests_by_step`, `sources_status`, `summary_kind`, and `report_path` / `data_path` (the output files; `--quiet` prints nothing, so this is where a runner finds them) |
 | `run_id`, `seq`, `at` | stamped by the emitter (`seq` is monotonic from 1) |
 
 Additive fields (not in the contract): `status` on `stage` events
 (`start` / `end` / `skipped` / `failed`) and `duration_ms` on a stage end.
+
+A `cancelled` event is emitted when the run is cancelled cooperatively (SIGTERM on
+the CLI, `cancel_token` for an embedding caller): `stages_completed` lists only
+stages that finished, and no output file is written. See `utils/cancel.py`.
 
 ### Stages and their order
 

@@ -180,9 +180,23 @@ def test_wheel_installs_and_imports(tmp_path):
         names = set(z.namelist())
     for required in ("benchmark/data/benchmark_queries.json",
                      "sources/data/onion_seeds.json",
-                     "data/threat_gazetteer.json"):
+                     "data/threat_gazetteer.json",
+                     # E1C: the cancel helper and the source deny-list/status module
+                     # are imported by the CLI pipeline, so the wheel must carry them.
+                     "utils/cancel.py",
+                     "sources/source_control.py",
+                     "voidaccess/summary_fallback.py"):
         assert required in names, f"{required} missing from wheel"
 
-    for args in (["--help"], ["version"]):
+    for args in (["--help"], ["version"], ["investigate", "--help"]):
         r = _run([bindir / "voidaccess", *args], cwd, 300, env)
         assert r.returncode == 0, f"voidaccess {' '.join(args)} failed:\n{(r.stdout + r.stderr)[-1500:]}"
+    assert "quiet" in r.stdout.lower()  # `investigate --help` lists the flag
+
+    # The pipeline modules the CLI imports lazily resolve from the wheel alone.
+    r = _run([vpy, "-I", "-c",
+              "from utils import cancel; from sources import source_control as s; "
+              "from voidaccess.llm import SummaryUnavailable; "
+              "from voidaccess.summary_fallback import summarize_with_fallback; "
+              "print(len(s.all_source_ids()))"], cwd, 300, env)
+    assert r.returncode == 0, (r.stdout + r.stderr)[-1500:]

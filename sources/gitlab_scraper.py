@@ -55,6 +55,7 @@ from urllib.parse import quote
 import aiohttp
 
 import pacing
+from sources.source_control import request_trace_config, source_gate
 
 from utils.content_safety import (
     is_blocked_query,
@@ -168,6 +169,7 @@ class GitLabScraper:
         self._session = aiohttp.ClientSession(
             headers=self._headers,
             timeout=aiohttp.ClientTimeout(total=pacing.scale_timeout(REQUEST_TIMEOUT)),
+            trace_configs=[request_trace_config("gitlab")],
         )
         return self
 
@@ -634,6 +636,8 @@ async def scrape_gitlab(
     """
     if not _is_gitlab_scraping_enabled():
         logger.info("GitLab scraping disabled")
+        return []
+    if not source_gate("gitlab"):
         return []
 
     async with GitLabScraper() as scraper:

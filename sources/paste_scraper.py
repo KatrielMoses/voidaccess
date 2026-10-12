@@ -45,6 +45,7 @@ from urllib.parse import quote_plus
 import aiohttp
 
 import pacing
+from sources.source_control import is_source_disabled, note_gate_refusal, STATUS_DISABLED
 from sources import http_pool
 from sources.proxy_client import clearnet_fetch
 from utils.content_safety import is_blocked_query, sanitize_content
@@ -152,6 +153,24 @@ _TECH_PATTERNS = [
 ]
 
 
+# Stable source ids (VOIDACCESS_DISABLED_SOURCES) for each configured paste site.
+PASTE_SOURCE_IDS = {
+    "Pastebin": "pastebin",
+    "Rentry": "rentry",
+    "dpaste": "dpaste",
+    "paste.ee": "paste_ee",
+}
+
+
+def _paste_source_disabled(source: dict) -> bool:
+    """True when the deny-list covers this paste site (own id or ``paste_sites``)."""
+    source_id = PASTE_SOURCE_IDS.get(source.get("name", ""))
+    if source_id and is_source_disabled(source_id):
+        note_gate_refusal(source_id, STATUS_DISABLED)
+        return True
+    return False
+
+
 def _is_paste_scraping_enabled() -> bool:
     """Return True if PASTE_SCRAPING_ENABLED env var is unset or truthy."""
     return os.getenv("PASTE_SCRAPING_ENABLED", "true").lower() == "true"
@@ -217,6 +236,8 @@ class PasteScraper:
         tasks: list = []
         for source in PASTE_SOURCES:
             if not source.get("search_url"):
+                continue
+            if _paste_source_disabled(source):
                 continue
             for term in search_terms[:2]:
                 tasks.append(self._scrape_source(source, term))
