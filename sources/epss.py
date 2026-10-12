@@ -22,6 +22,9 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -74,6 +77,8 @@ async def enrich_epss(cve_ids: list[str]) -> dict[str, dict[str, Any]]:
     Deduped/validated/capped. Cached per-CVE; only the cache-miss CVEs are fetched,
     in a single batched request. Never raises — returns whatever it has on error.
     """
+    if not is_enrichment_source_enabled("epss"):
+        return {}  # VOIDACCESS_ENRICHMENT_SOURCES: no cache read, no network
     cves = _normalize_cves(cve_ids)
     if not cves:
         return {}

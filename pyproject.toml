@@ -124,6 +124,7 @@ include = [
     "monitor*",
     "crawler*",
     "pacing*",
+    "progress*",
     "owned_index*",
     "index_population*",
     "freshness*",
@@ -131,6 +132,19 @@ include = [
     "voidaccess*",
     "api*",
     "data*",
+    "shared_corpus*",
+    "trust_gate*",
+    "netpool*",
+    "jobqueue*",
+    "hygiene*",
+    "sanitizer*",
+    "ratelimit*",
+    "observability*",
+    "snapshot_store*",
+    "credential_presence*",
+    "feeds*",
+    "ingest*",
+    "benchmark*",
 ]
 exclude = [
     "tests*",
@@ -161,6 +175,11 @@ exclude = [
 [tool.setuptools.package-data]
 "sources" = ["data/onion_seeds.json"]
 "sources.data" = ["onion_seeds.json"]
+
+# Benchmark query set is read at runtime (benchmark/queries.py).  The
+# artifacts/ directory holds generated reports and is intentionally not shipped.
+"benchmark" = ["data/benchmark_queries.json"]
+"benchmark.data" = ["benchmark_queries.json"]
 
 # v2.0.2 — ship the top-level reference data bundle inside the installed
 # package.  The runtime resolves each of these via

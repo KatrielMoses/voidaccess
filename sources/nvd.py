@@ -33,6 +33,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -200,6 +204,8 @@ async def fetch_nvd_cve(cve_id: str, session: Optional[aiohttp.ClientSession] = 
     """
     if not _CVE_RE.match(cve_id or ""):
         return None
+    if not is_enrichment_source_enabled("nvd"):
+        return None  # VOIDACCESS_ENRICHMENT_SOURCES: no cache read, no network
     cve_id = cve_id.upper()
 
     cache = await _get_enrichment_cache()
@@ -316,6 +322,8 @@ async def fetch_nvd_cpe(
     product_name = (product_name or "").strip()
     if len(product_name) < 4:
         return None
+    if not is_enrichment_source_enabled("nvd"):
+        return None  # VOIDACCESS_ENRICHMENT_SOURCES: no cache read, no network
 
     cache = await _get_enrichment_cache()
     cached = await cache.get("CPE_PRODUCT_LOOKUP", product_name, "nvd_cpe")
@@ -393,6 +401,9 @@ async def enrich_nvd(entities: list[dict]) -> list[dict]:
     soft time budget so a CVE-heavy investigation returns partial results rather
     than blowing the enclosing Phase-A deadline.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+    if not is_enrichment_source_enabled("nvd"):
+        return []
     cve_ids: list[str] = []
     seen: set[str] = set()
     for e in entities:

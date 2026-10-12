@@ -17,6 +17,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from config import MAX_IPS_PER_INVESTIGATION, SHODAN_RATE_LIMIT_DELAY
 
 logger = logging.getLogger(__name__)
@@ -31,8 +35,11 @@ async def enrich_shodan_ip(ip_address: str, extracted_cves: set[str]) -> dict | 
     Query Shodan InternetDB for *ip_address*.
 
     Returns a dict with open_ports, vulns, tags, hostnames, and
-    high_confidence_c2 flag, or None on error / no data.
+    high_confidence_c2 flag, or None on error / no data (or when
+    ``shodan_internetdb`` is not in VOIDACCESS_ENRICHMENT_SOURCES).
     """
+    if not is_enrichment_source_enabled("shodan_internetdb"):
+        return None
     try:
         timeout = aiohttp.ClientTimeout(total=5)
         async with http_pool.clearnet_session() as session:
@@ -77,6 +84,9 @@ async def enrich_shodan(entities: list[dict]) -> list[dict]:
     Rate-limited to SHODAN_RATE_LIMIT_DELAY between requests.
     Capped at MAX_IPS_PER_INVESTIGATION IPs.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+    if not is_enrichment_source_enabled("shodan_internetdb"):
+        return []
     ip_entities = [
         e for e in entities
         if (e.get("type") or e.get("entity_type", "")) == "IP_ADDRESS"

@@ -33,6 +33,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from utils.enrichment_cache import DEFAULT_TTL, get_enrichment_cache
 
 logger = logging.getLogger(__name__)
@@ -393,10 +397,20 @@ async def check_ip_reputation(
     abuseipdb_key = (os.getenv("ABUSEIPDB_API_KEY") or "").strip()
     greynoise_key = (os.getenv("GREYNOISE_API_KEY") or "").strip()
 
+    # VOIDACCESS_ENRICHMENT_SOURCES gate: a disabled source makes no call and
+    # behaves exactly like a missing key / empty feed.
+    if not is_enrichment_source_enabled("abuseipdb"):
+        abuseipdb_key = ""
+    if not is_enrichment_source_enabled("greynoise"):
+        greynoise_key = ""
+
     # Load local feeds (both are cached — near-instant after first load)
+    async def _no_feed() -> dict:
+        return {}
+
     feodo_data, c2feeds_data = await asyncio.gather(
-        load_feodo_feed(),
-        load_c2_feeds(),
+        load_feodo_feed() if is_enrichment_source_enabled("feodo_tracker") else _no_feed(),
+        load_c2_feeds() if is_enrichment_source_enabled("c2_tracker") else _no_feed(),
     )
 
     # --- Feodo Tracker check ---
@@ -570,6 +584,8 @@ async def enrich_ip_entities(
 
     Returns (filtered_extraction_results, stats_dict).
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
+
     # Collect unique IPs → (first_entity, confidence)
     seen: dict[str, float] = {}
     for exr in extraction_results:

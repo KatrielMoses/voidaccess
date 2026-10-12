@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 
 import hygiene
 from sources.cache import CachedFeed
+from sources.enrichment_allowlist import is_enrichment_source_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -235,8 +236,22 @@ class BlocklistFeed:
         )
         return await feed.fetch()
 
+    def _enabled(self) -> bool:
+        """VOIDACCESS_ENRICHMENT_SOURCES gate: the feed's own id (``sslbl``,
+        ``openphish``, ``phishtank``, ``ransomwhere``) or the umbrella id
+        ``blocklists`` enables it. Unset allowlist => always enabled."""
+        return (
+            is_enrichment_source_enabled(self.name)
+            or is_enrichment_source_enabled("blocklists")
+        )
+
     async def index(self) -> set:
         """Return the (cached, memoized) membership set. Never raises."""
+        if not self._enabled():
+            # No fetch and the memoized index is not consulted, so a restricted
+            # run never reuses (or leaks) an index built under another allowlist.
+            self._status = "disabled"
+            return set()
         if self.requires_key and not self._has_key():
             self._status = "skipped_no_key"
             return set()

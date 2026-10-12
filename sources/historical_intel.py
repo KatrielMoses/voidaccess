@@ -20,6 +20,10 @@ from typing import Optional
 
 import pacing
 from sources.cache import CachedFeed
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,8 @@ ENTITY_REQUEST_DELAY = 0.5
 
 
 async def _fetch_mitre_index() -> dict:
+    if not is_enrichment_source_enabled("mitre_attack"):
+        return {}
     data = await _mitre_feed.fetch()
     if data is None:
         return {}
@@ -91,6 +97,8 @@ async def _fetch_mitre_index() -> dict:
 
 
 async def _fetch_fbi_results(entity_value: str) -> list[dict]:
+    if not is_enrichment_source_enabled("fbi_doj_press"):
+        return []
     data = await _fbi_feed.fetch()
     if data is None:
         return []
@@ -117,8 +125,11 @@ async def get_techniques_for_actor(actor_name: str) -> list[str]:
 
     Searches group names and aliases in the local STIX cache, then follows
     ``uses`` relationships to attack-pattern objects to collect T-codes.
-    Returns [] when the actor is not found or the cache is unavailable.
+    Returns [] when the actor is not found or the cache is unavailable, or
+    when ``mitre_attack`` is not in VOIDACCESS_ENRICHMENT_SOURCES.
     """
+    if not is_enrichment_source_enabled("mitre_attack"):
+        return []
     data = await _mitre_feed.fetch()
     if data is None:
         return []
@@ -183,7 +194,12 @@ async def enrich_historical(entities_by_type: dict[str, list[dict]]) -> list[dic
     list of entity dicts that had no enrichment results.
 
     Only processes THREAT_ACTOR, RANSOMWARE_GROUP, MALWARE_FAMILY.
+
+    Gated per sub-source by VOIDACCESS_ENRICHMENT_SOURCES: ``mitre_attack``
+    (STIX index), ``fbi_doj_press`` (justice.gov RSS) and ``cisa_kev`` (CISA
+    advisories feed). A disabled one contributes nothing.
     """
+    validate_enrichment_allowlist()
     fallback_types = {"THREAT_ACTOR", "RANSOMWARE_GROUP", "MALWARE_FAMILY"}
     relevant_entities = []
     for et in fallback_types:
@@ -229,12 +245,18 @@ async def enrich_historical(entities_by_type: dict[str, list[dict]]) -> list[dic
         if cisa_adv:
             results.append(cisa_adv)
 
-        await asyncio.sleep(pacing.scale_delay_floor(ENTITY_REQUEST_DELAY))
+        if any(
+            is_enrichment_source_enabled(_sid)
+            for _sid in ("mitre_attack", "fbi_doj_press", "cisa_kev")
+        ):
+            await asyncio.sleep(pacing.scale_delay_floor(ENTITY_REQUEST_DELAY))
 
     return results
 
 
 async def _cisa_advisory_for_entity(entity_value: str, entity_type: str) -> Optional[dict]:
+    if not is_enrichment_source_enabled("cisa_kev"):
+        return None
     try:
         from sources.cisa import _adv_feed
     except Exception:

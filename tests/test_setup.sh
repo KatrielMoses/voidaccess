@@ -4,7 +4,7 @@
 [ -x setup.sh ] && echo "✓ setup.sh executable" || (chmod +x setup.sh && echo "✓ Made executable")
 
 # Step 2.2 — Run setup.sh non-interactively
-printf "2\n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\n\n\nn\ny\ny\nadmin@voidaccess.tech\nVoidAccess2024!\nVoidAccess2024!\n" \
+printf "2\nsk-or-v1-TEST-NOT-A-REAL-KEY\n\n\nn\ny\ny\nadmin@voidaccess.tech\ntest-password-not-real\ntest-password-not-real\n" \
   | bash setup.sh 2>&1 | tee /tmp/setup_log.txt
 
 SETUP_EXIT=$?

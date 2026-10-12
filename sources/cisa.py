@@ -16,6 +16,10 @@ from __future__ import annotations
 import logging
 
 from sources.cache import CachedFeed
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +37,11 @@ async def enrich_cisa_cve(cve_id: str) -> list[dict]:
     """
     Check if *cve_id* appears in the CISA KEV catalog.
 
-    Returns a list with one EnrichmentResult dict if found, empty list otherwise.
+    Returns a list with one EnrichmentResult dict if found, empty list otherwise
+    (also empty when ``cisa_kev`` is not in VOIDACCESS_ENRICHMENT_SOURCES).
     """
+    if not is_enrichment_source_enabled("cisa_kev"):
+        return []
     data = await _kev_feed.fetch()
     if data is None:
         return []
@@ -68,6 +75,8 @@ async def enrich_cisa_advisories(entity_value: str, entity_type: str) -> list[di
     """
     if entity_type not in ("THREAT_ACTOR", "RANSOMWARE_GROUP", "MALWARE_FAMILY"):
         return []
+    if not is_enrichment_source_enabled("cisa_kev"):
+        return []
 
     data = await _adv_feed.fetch()
     if data is None:
@@ -99,6 +108,7 @@ async def enrich_cisa(query: str, entities: list[dict]) -> list[dict]:
     For each CVE entity, checks KEV.
     For each THREAT_ACTOR / RANSOMWARE_GROUP / MALWARE_FAMILY entity, searches advisories.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
     results: list[dict] = []
     for ent in entities:
         et = ent.get("type") or ent.get("entity_type", "")

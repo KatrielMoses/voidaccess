@@ -83,6 +83,15 @@ def run(
     depth: str = typer.Option("normal", "--depth", help="shallow | normal | deep"),
     fmt: str = typer.Option("both", "--format", help="json | md | both"),
     quiet: bool = typer.Option(False, "--quiet", help="No live display; print final summary only"),
+    events_jsonl: Optional[Path] = typer.Option(
+        None,
+        "--events-jsonl",
+        help=(
+            "Append one JSON progress event per line to this file (stage start/end "
+            "with numeric counts, refined queries, completion). Does not change the "
+            "terminal display."
+        ),
+    ),
 ) -> None:
     """Run an investigation: query → search → scrape → extract → enrich → report."""
     from voidaccess_cli import config as cli_config
@@ -182,7 +191,22 @@ def run(
     blocked, reason = is_blocked_query(query)
     if blocked:
         console.print(f"[red]Query blocked:[/red] {reason}")
+        if events_jsonl is not None:
+            from progress import JsonlSink, ProgressEmitter
+
+            _emitter = ProgressEmitter([JsonlSink(events_jsonl)])
+            _emitter.failed("blocked_query", "query blocked by content policy")
+            _emitter.close()
         raise typer.Exit(code=1)
+
+    # A bad VOIDACCESS_ENRICHMENT_SOURCES must fail before any network work.
+    from sources.enrichment_allowlist import EnrichmentAllowlistError, validate_enrichment_allowlist
+
+    try:
+        validate_enrichment_allowlist()
+    except EnrichmentAllowlistError as exc:
+        console.print(f"[red]Invalid VOIDACCESS_ENRICHMENT_SOURCES:[/red] {exc}")
+        raise typer.Exit(code=2)
 
     if not cli_config.is_configured() and not no_llm:
         console.print("[yellow]No LLM configured.[/yellow] Run [bold]voidaccess configure[/bold] first, or pass --no-llm.")
@@ -210,6 +234,7 @@ def run(
                 depth=depth,
                 fmt=fmt,
                 quiet=quiet,
+                events_jsonl=events_jsonl,
             )
         )
     except DatabaseSchemaError as exc:
@@ -230,6 +255,55 @@ DEPTH_PRESETS = {
     "normal":  {"top_n": 20, "max_workers": 5, "extract_concurrency": 5},
     "deep":    {"top_n": 40, "max_workers": 8, "extract_concurrency": 6},
 }
+
+# Opt-in speed controls (all unset by default, so self-hosters see no change).
+# Each overrides one DEPTH_PRESETS value; the preset stays the named default.
+SCRAPE_WORKERS_ENV = "VOIDACCESS_SCRAPE_WORKERS"
+SEARCH_WORKERS_ENV = "VOIDACCESS_SEARCH_WORKERS"
+EXTRACT_CONCURRENCY_ENV = "VOIDACCESS_EXTRACT_CONCURRENCY"
+# Run the side sources (paste, GitHub, GitLab, RSS, Torch/Haystack, Telegram)
+# concurrently with the Tor engine fan-out instead of after it.
+CONCURRENT_COLLECT_ENV = "VOIDACCESS_CONCURRENT_COLLECT"
+# The extraction LLM-page cap; the same variable and default the API path reads.
+MAX_LLM_PAGES_ENV = "MAX_LLM_PAGES_PER_INV"
+MAX_LLM_PAGES_DEFAULT = 10
+
+# Summary phase: the first attempt gets this share of the phase budget, the
+# retry (reduced context) gets the rest.
+SUMMARY_FIRST_ATTEMPT_SHARE = 0.67
+SUMMARY_RETRY_TOP_PAGES = 4
+SUMMARY_RETRY_MAX_CHARS = 4000
+
+
+def _env_positive_int(name: str) -> Optional[int]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r - ignoring", name, raw)
+        return None
+    return value if value > 0 else None
+
+
+def _preset_workers(preset: dict, key: str, env_name: str) -> int:
+    """A DEPTH_PRESETS value, overridden by *env_name* when set."""
+    return _env_positive_int(env_name) or preset[key]
+
+
+def _max_llm_pages() -> int:
+    return _env_positive_int(MAX_LLM_PAGES_ENV) or MAX_LLM_PAGES_DEFAULT
+
+
+def _explicit_enrichment_timeout() -> Optional[int]:
+    """The enrichment phase cap, only when the operator set it explicitly.
+
+    The default (120 s) was documented but never applied on the CLI path.
+    Applying it by default would change self-hoster results, so it is opt-in.
+    """
+    return _env_positive_int(_CLI_PHASE_TIMEOUT_ENV_VARS["enrichment"])
+
 
 # Pages kept after LLM relevance filter (must match voidaccess.llm.filter_results cap).
 LLM_FILTER_TOP_N = 15
@@ -442,8 +516,49 @@ async def _run_investigation(
     depth: str,
     fmt: str,
     quiet: bool,
+    events_jsonl: Optional[Path] = None,
+    sinks: Optional[list] = None,
 ) -> None:
+    """Run the pipeline, reporting progress to the Rich display and any extra
+    sinks (``events_jsonl`` path, or ``sinks`` such as a ``CallbackSink``)."""
+    from progress import JsonlSink, ProgressEmitter
+
+    emitter = ProgressEmitter()
+    extra_sinks = list(sinks or [])
+    if events_jsonl is not None:
+        extra_sinks.append(JsonlSink(events_jsonl))
+    for sink in extra_sinks:
+        emitter.add_sink(sink)
+    try:
+        await _run_investigation_impl(
+            query, out_dir, model, no_tor, no_llm, depth, fmt, quiet, emitter
+        )
+    except BaseException as exc:
+        if not emitter.terminal_sent:
+            reason = "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)) else "error"
+            if reason == "cancelled":
+                emitter.cancelled()
+            else:
+                emitter.failed(reason, type(exc).__name__)
+        raise
+    finally:
+        emitter.close()
+
+
+async def _run_investigation_impl(
+    query: str,
+    out_dir: Path,
+    model: Optional[str],
+    no_tor: bool,
+    no_llm: bool,
+    depth: str,
+    fmt: str,
+    quiet: bool,
+    emitter: Any,
+) -> None:
+    from progress import Stage
     from voidaccess_cli import config as cli_config
+    from voidaccess_cli.reporter import PipelineReporter
     from voidaccess_cli.adapters import sqlite as sqlite_adapter
     from voidaccess_cli.display import InvestigationDisplay
     from voidaccess_cli.tor_detect import detect_tor, tor_unavailable_message
@@ -462,7 +577,10 @@ async def _run_investigation(
         # default to 0 so absence is safe.
         pass
 
-    display = InvestigationDisplay(quiet=quiet)
+    from voidaccess_cli.display import RichDisplaySink
+
+    emitter.add_sink(RichDisplaySink(InvestigationDisplay(quiet=quiet)))
+    display = PipelineReporter(emitter)
 
     # v1.6.2 — set the rotating-proxies indicator row BEFORE start() so
     # it's visible from the first refresh of the live display, not
@@ -517,6 +635,7 @@ async def _run_investigation(
             os.environ["TOR_PROXY_PORT"] = str(status.port or 9050)
         else:
             display.error(tor_unavailable_message())
+            emitter.failed("error", "tor unavailable")
             return
 
     # --- LLM instance -----------------------------------------------------
@@ -560,6 +679,7 @@ async def _run_investigation(
 
     # --- Step 1 — refine query -------------------------------------------
     _metric_start("query_refinement")
+    display.stage_start(Stage.REFINE)
     display.update_step("Refining query", "active")
     refined = query
     if llm is not None:
@@ -575,9 +695,12 @@ async def _run_investigation(
         display.update_step("Refining query", "skip", "--no-llm")
     sqlite_adapter.update_investigation(investigation_id, {"refined_query": refined})
     _metric_finish("query_refinement")
+    emitter.refined([refined])
+    display.stage_end(Stage.REFINE, "skipped" if llm is None else "end")
 
     # --- Step 2 — search fan-out -----------------------------------------
     _metric_start("source_gathering")
+    display.stage_start(Stage.COLLECT)
     display.update_step("Searching dark web", "active")
     search_links: list[dict] = []
     paste_pages: list[dict] = []
@@ -588,21 +711,34 @@ async def _run_investigation(
     onion_pages: list[dict] = []
     search_summary: dict[str, int] = {}
 
-    if not no_tor:
-        try:
-            from search import get_last_search_summary, get_search_results_async
-            display.update_substep("Searching dark web", "Tor engines", "active")
-            search_links = await asyncio.to_thread(get_search_results_async, refined, preset["max_workers"], llm)
-            display.update_substep("Searching dark web", "Tor engines", "ok")
-            search_summary = get_last_search_summary()
-            sources_used["tor_search"] = {"status": "ok", "count": len(search_links)}
-        except Exception as exc:
-            display.update_substep("Searching dark web", "Tor engines", "fail")
-            search_summary = {}
-            sources_used["tor_search"] = {"status": "fail", "error": str(exc)}
-    else:
-        display.update_substep("Searching dark web", "Tor engines", "skip")
-        sources_used["tor_search"] = {"status": "skipped"}
+    async def _tor_search() -> None:
+        nonlocal search_links, search_summary
+        if not no_tor:
+            try:
+                from search import get_last_search_summary, get_search_results_async
+                display.update_substep("Searching dark web", "Tor engines", "active")
+                search_links = await asyncio.to_thread(
+                    get_search_results_async,
+                    refined,
+                    _preset_workers(preset, "max_workers", SEARCH_WORKERS_ENV),
+                    llm,
+                )
+                display.update_substep("Searching dark web", "Tor engines", "ok")
+                search_summary = get_last_search_summary()
+                sources_used["tor_search"] = {"status": "ok", "count": len(search_links)}
+            except Exception as exc:
+                display.update_substep("Searching dark web", "Tor engines", "fail")
+                search_summary = {}
+                sources_used["tor_search"] = {"status": "fail", "error": str(exc)}
+        else:
+            display.update_substep("Searching dark web", "Tor engines", "skip")
+            sources_used["tor_search"] = {"status": "skipped"}
+
+    # Opt-in: overlap the Tor engine fan-out with the side sources.
+    concurrent_collect = (os.getenv(CONCURRENT_COLLECT_ENV) or "").strip().lower() in ("1", "true", "on", "yes")
+    tor_task = asyncio.ensure_future(_tor_search()) if concurrent_collect else None
+    if tor_task is None:
+        await _tor_search()
 
     # Parallel clearnet sources
     async def _safe(coro_factory, label, key):
@@ -645,6 +781,8 @@ async def _run_investigation(
         _safe(_telegram, "Telegram", "telegram"),
     )
     paste_pages, github_pages, gitlab_pages, rss_pages, onion_pages, telegram_pages = side_tasks
+    if tor_task is not None:
+        await tor_task
     for onion in onion_pages:
         search_links.append({
             "link": onion.get("url", ""),
@@ -697,8 +835,20 @@ async def _run_investigation(
         )
     else:
         display.update_step("Searching dark web", "ok", f"{len(search_links)} links + side sources")
+    _side_attempted = 4 + (0 if no_tor else 1) + (
+        1 if os.getenv("TELEGRAM_API_ID", "").strip() and os.getenv("TELEGRAM_API_HASH", "").strip() else 0
+    )
+    display.stage_end(
+        Stage.COLLECT,
+        sources_queried=(0 if no_tor else int(search_summary.get("active", 0))) + _side_attempted,
+        results_found=(
+            len(search_links) + len(paste_pages) + len(github_pages)
+            + len(gitlab_pages) + len(rss_pages) + len(telegram_pages)
+        ),
+    )
 
     # --- Step 3 — filter results ------------------------------------------
+    display.stage_start(Stage.FILTER)
     display.update_step("Filtering results", "active")
     filter_top_n = LLM_FILTER_TOP_N
     filtered_links = search_links[: filter_top_n * 2] if search_links else []
@@ -752,6 +902,11 @@ async def _run_investigation(
         "ok" if (search_links or clearnet_pages) else ("skip" if no_llm else "ok"),
         f"{len(filtered_links) + len(filtered_clearnet_pages)} kept",
     )
+    display.stage_end(
+        Stage.FILTER,
+        "skipped" if (no_llm or llm is None) else "end",
+        message=f"{len(filtered_links) + len(filtered_clearnet_pages)} kept",
+    )
 
     _metric_finish("source_gathering")
 
@@ -760,6 +915,7 @@ async def _run_investigation(
     # content, query-relevant seeds, and pre-extracted entities — reading ONLY
     # user-agnostic shared tables. Served content skips the Tor re-scrape.
     # Consent-gated + non-fatal; a $0/no-corpus install serves nothing.
+    display.stage_start(Stage.FETCH)
     shared_served_pages: dict[str, str] = {}
     shared_entities: list[dict] = []
     try:
@@ -811,7 +967,7 @@ async def _run_investigation(
                 )
                 return await scrape_multiple(
                     filtered_links,
-                    max_workers=preset["max_workers"],
+                    max_workers=_preset_workers(preset, "max_workers", SCRAPE_WORKERS_ENV),
                     investigation_id=investigation_id,
                     extract_typed_relationships=no_llm,
                 )
@@ -960,9 +1116,11 @@ async def _run_investigation(
         logger.debug("Usage-seeded indexing failed (non-fatal): %s", exc)
 
     page_count_by_url = {p["url"]: p for p in scraped_pages}
+    display.stage_end(Stage.FETCH, pages_fetched=len(scraped_pages))
 
     # --- Step 5 — extract entities ---------------------------------------
     _metric_start("entity_extraction")
+    display.stage_start(Stage.EXTRACT)
     display.update_step("Extracting entities", "active")
     extraction_results = []
     try:
@@ -972,163 +1130,196 @@ async def _run_investigation(
             investigation_id=inv_uuid,
             llm=llm,
             run_llm_extraction=llm is not None,
-            max_concurrent=preset["extract_concurrency"],
+            max_concurrent=_preset_workers(preset, "extract_concurrency", EXTRACT_CONCURRENCY_ENV),
+            max_llm_pages=_max_llm_pages(),
         )
         total_entities = sum(len(r.entity_ids) for r in extraction_results)
         display.update_step("Extracting entities", "ok", f"{total_entities} entities")
+        extract_failed = False
     except Exception as exc:
         display.update_step("Extracting entities", "fail", str(exc))
+        extract_failed = True
     _metric_finish("entity_extraction")
+    _extracted_actors = sum(
+        count
+        for _r in extraction_results
+        for _etype, count in (getattr(_r, "entities_by_type", {}) or {}).items()
+        if "ACTOR" in str(_etype).upper() or str(_etype).upper() == "RANSOMWARE_GROUP"
+    )
+    display.stage_end(
+        Stage.EXTRACT,
+        "failed" if extract_failed else "end",
+        entities_found=sum(len(r.entity_ids) for r in extraction_results),
+        actors_found=_extracted_actors,
+    )
 
     # --- Step 6 — enrich intelligence (OTX + IP) ---------------------------
     _metric_start("enrichment")
-    display.update_step("Enriching intelligence", "active")
+    display.stage_start(Stage.ENRICH)
     enrichment_pages: list[dict] = []
-    try:
-        from sources.enrichment import enrich_investigation as _enrich_inv
-        otx_key = os.getenv("OTX_API_KEY", "") or ""
-        entity_dicts = sqlite_adapter.get_entities(investigation_id)
-        enrichment_pages = await _enrich_inv(refined, otx_api_key=otx_key, entities=entity_dicts)
-        sources_used["enrichment"] = {"status": "ok", "count": len(enrichment_pages)}
-        for _source_name in ("nvd", "ransomlook", "cve_intel", "sslbl", "openphish", "phishtank", "ransomwhere"):
-            _count = sum(
-                1 for _page in enrichment_pages
-                if (_page.get("source") or _page.get("source_type")) == _source_name
+    async def _enrichment_phase() -> None:
+        nonlocal enrichment_pages, extraction_results
+        display.update_step("Enriching intelligence", "active")
+        try:
+            from sources.enrichment import enrich_investigation as _enrich_inv
+            otx_key = os.getenv("OTX_API_KEY", "") or ""
+            entity_dicts = sqlite_adapter.get_entities(investigation_id)
+            enrichment_pages = await _enrich_inv(refined, otx_api_key=otx_key, entities=entity_dicts)
+            sources_used["enrichment"] = {"status": "ok", "count": len(enrichment_pages)}
+            for _source_name in ("nvd", "ransomlook", "cve_intel", "sslbl", "openphish", "phishtank", "ransomwhere"):
+                _count = sum(
+                    1 for _page in enrichment_pages
+                    if (_page.get("source") or _page.get("source_type")) == _source_name
+                )
+                sources_used[_source_name] = {"status": "ok", "count": _count}
+            display.update_step("Enriching intelligence", "ok", f"{len(enrichment_pages)} pages added")
+        except Exception as exc:
+            sources_used["enrichment"] = {"status": "fail", "error": str(exc)}
+            sources_used["nvd"] = {"status": "error"}
+            sources_used["ransomlook"] = {"status": "error"}
+            display.update_step("Enriching intelligence", "fail", str(exc))
+
+        # --- HIBP Pwned Passwords (k-anonymity, presence-only) ----------------
+        # Runs after extraction (email entities exist) on the in-memory scraped text;
+        # the raw credential is hashed-and-discarded, only a presence flag+count persist.
+        try:
+            from credential_presence import scan_pages_for_pwned_credentials
+            _hibp_page, _hibp_stats = await scan_pages_for_pwned_credentials(scraped_pages)
+            if _hibp_page is not None:
+                enrichment_pages.append(_hibp_page)
+            sources_used["hibp_pwned_passwords"] = {
+                "status": _hibp_stats.get("status", "ok"),
+                "count": _hibp_stats.get("pwned", 0),
+            }
+        except Exception as _hibp_exc:
+            logger.debug("HIBP pwned-password scan skipped: %s", _hibp_exc)
+
+        try:
+            from sources.ip_reputation import enrich_ip_entities
+            await enrich_ip_entities(extraction_results, investigation_id=inv_uuid)
+        except Exception as ip_exc:
+            logger.debug("ip_reputation skipped: %s", ip_exc)
+
+        # --- Step 6.2–6.4 — domain / hash / email (before graph) -------------
+        # Phase 6.2 — per-step timeouts so a hung reputation source doesn't
+        # wedge the whole CLI run.  The outer enrichment cap (CLI_PHASE_TIMEOUTS
+        # ["enrichment"]) is a defence-in-depth safety net applied around the
+        # whole cluster further down.
+        display.update_step("Enriching domains", "active")
+        try:
+            from sources.domain_reputation import enrich_domain_entities
+            # enrich_*_entities return (extraction_results, stats) — unpack so the
+            # threaded list isn't clobbered into a tuple for the next step.
+            extraction_results, _ = await asyncio.wait_for(
+                enrich_domain_entities(extraction_results, inv_uuid),
+                timeout=60,
             )
-            sources_used[_source_name] = {"status": "ok", "count": _count}
-        display.update_step("Enriching intelligence", "ok", f"{len(enrichment_pages)} pages added")
-    except Exception as exc:
-        sources_used["enrichment"] = {"status": "fail", "error": str(exc)}
-        sources_used["nvd"] = {"status": "error"}
-        sources_used["ransomlook"] = {"status": "error"}
-        display.update_step("Enriching intelligence", "fail", str(exc))
+            domain_count = sum(
+                1
+                for e in sqlite_adapter.get_entities(investigation_id)
+                if (e.get("entity_type") or "").upper() == "DOMAIN"
+            )
+            detail = f"{domain_count} domains enriched" if domain_count else ""
+            display.update_step("Enriching domains", "ok", detail)
+        except asyncio.TimeoutError:
+            logger.warning("[%s] Domain enrichment timed out after 60s", inv_uuid)
+            display.update_step("Enriching domains", "fail", "timeout")
+        except Exception as exc:
+            logger.debug("Domain enrichment: %s", exc)
+            display.update_step("Enriching domains", "fail", str(exc))
 
-    # --- HIBP Pwned Passwords (k-anonymity, presence-only) ----------------
-    # Runs after extraction (email entities exist) on the in-memory scraped text;
-    # the raw credential is hashed-and-discarded, only a presence flag+count persist.
-    try:
-        from credential_presence import scan_pages_for_pwned_credentials
-        _hibp_page, _hibp_stats = await scan_pages_for_pwned_credentials(scraped_pages)
-        if _hibp_page is not None:
-            enrichment_pages.append(_hibp_page)
-        sources_used["hibp_pwned_passwords"] = {
-            "status": _hibp_stats.get("status", "ok"),
-            "count": _hibp_stats.get("pwned", 0),
-        }
-    except Exception as _hibp_exc:
-        logger.debug("HIBP pwned-password scan skipped: %s", _hibp_exc)
+        display.update_step("Enriching hashes", "active")
+        try:
+            from sources.hash_reputation import enrich_hash_entities
+            extraction_results, _ = await asyncio.wait_for(
+                enrich_hash_entities(extraction_results, inv_uuid),
+                timeout=45,
+            )
+            display.update_step("Enriching hashes", "ok")
+        except asyncio.TimeoutError:
+            logger.warning("[%s] Hash enrichment timed out after 45s", inv_uuid)
+            display.update_step("Enriching hashes", "fail", "timeout")
+        except Exception as exc:
+            logger.debug("Hash enrichment: %s", exc)
+            display.update_step("Enriching hashes", "fail", str(exc))
 
-    try:
-        from sources.ip_reputation import enrich_ip_entities
-        await enrich_ip_entities(extraction_results, investigation_id=inv_uuid)
-    except Exception as ip_exc:
-        logger.debug("ip_reputation skipped: %s", ip_exc)
+        display.update_step("Enriching emails", "active")
+        try:
+            from sources.email_reputation import enrich_email_entities
+            extraction_results, _ = await asyncio.wait_for(
+                enrich_email_entities(extraction_results, inv_uuid),
+                timeout=30,
+            )
+            display.update_step("Enriching emails", "ok")
+        except asyncio.TimeoutError:
+            logger.warning("[%s] Email enrichment timed out after 30s", inv_uuid)
+            display.update_step("Enriching emails", "fail", "timeout")
+        except Exception as exc:
+            logger.debug("Email enrichment: %s", exc)
+            display.update_step("Enriching emails", "fail", str(exc))
 
-    # --- Step 6.2–6.4 — domain / hash / email (before graph) -------------
-    # Phase 6.2 — per-step timeouts so a hung reputation source doesn't
-    # wedge the whole CLI run.  The outer enrichment cap (CLI_PHASE_TIMEOUTS
-    # ["enrichment"]) is a defence-in-depth safety net applied around the
-    # whole cluster further down.
-    display.update_step("Enriching domains", "active")
-    try:
-        from sources.domain_reputation import enrich_domain_entities
-        # enrich_*_entities return (extraction_results, stats) — unpack so the
-        # threaded list isn't clobbered into a tuple for the next step.
-        extraction_results, _ = await asyncio.wait_for(
-            enrich_domain_entities(extraction_results, inv_uuid),
-            timeout=60,
-        )
-        domain_count = sum(
-            1
-            for e in sqlite_adapter.get_entities(investigation_id)
-            if (e.get("entity_type") or "").upper() == "DOMAIN"
-        )
-        detail = f"{domain_count} domains enriched" if domain_count else ""
-        display.update_step("Enriching domains", "ok", detail)
-    except asyncio.TimeoutError:
-        logger.warning("[%s] Domain enrichment timed out after 60s", inv_uuid)
-        display.update_step("Enriching domains", "fail", "timeout")
-    except Exception as exc:
-        logger.debug("Domain enrichment: %s", exc)
-        display.update_step("Enriching domains", "fail", str(exc))
+        display.update_step("Breach exposure lookup", "active")
+        try:
+            from sources.breach_lookup import enrich_breach_entities
+            extraction_results, _breach_stats = await asyncio.wait_for(
+                enrich_breach_entities(extraction_results, inv_uuid),
+                timeout=60,
+            )
+            sources_used["xposedornot"] = {
+                "status": "ok",
+                "count": _breach_stats.get("xon_breached", 0),
+            }
+            sources_used["leakcheck"] = {
+                "status": "ok",
+                "count": _breach_stats.get("leakcheck_breached", 0),
+            }
+            display.update_step("Breach exposure lookup", "ok")
+        except asyncio.TimeoutError:
+            logger.warning("[%s] Breach lookup timed out after 60s", inv_uuid)
+            sources_used["xposedornot"] = {"status": "timed_out"}
+            sources_used["leakcheck"] = {"status": "timed_out"}
+            display.update_step("Breach exposure lookup", "fail", "timeout")
+        except Exception as exc:
+            logger.debug("Breach lookup: %s", exc)
+            sources_used["xposedornot"] = {"status": "error"}
+            sources_used["leakcheck"] = {"status": "error"}
+            display.update_step("Breach exposure lookup", "fail", str(exc))
 
-    display.update_step("Enriching hashes", "active")
-    try:
-        from sources.hash_reputation import enrich_hash_entities
-        extraction_results, _ = await asyncio.wait_for(
-            enrich_hash_entities(extraction_results, inv_uuid),
-            timeout=45,
-        )
-        display.update_step("Enriching hashes", "ok")
-    except asyncio.TimeoutError:
-        logger.warning("[%s] Hash enrichment timed out after 45s", inv_uuid)
-        display.update_step("Enriching hashes", "fail", "timeout")
-    except Exception as exc:
-        logger.debug("Hash enrichment: %s", exc)
-        display.update_step("Enriching hashes", "fail", str(exc))
+        display.update_step("Infostealer intel", "active")
+        try:
+            from sources.infostealer import enrich_infostealer_entities
+            extraction_results, _infostealer_stats = await asyncio.wait_for(
+                enrich_infostealer_entities(extraction_results, inv_uuid),
+                timeout=60,
+            )
+            sources_used["hudsonrock"] = {
+                "status": "ok",
+                "count": _infostealer_stats.get("emails_infected", 0),
+            }
+            display.update_step("Infostealer intel", "ok")
+        except asyncio.TimeoutError:
+            logger.warning("[%s] Infostealer enrichment timed out after 60s", inv_uuid)
+            sources_used["hudsonrock"] = {"status": "timed_out"}
+            display.update_step("Infostealer intel", "fail", "timeout")
+        except Exception as exc:
+            logger.debug("Infostealer enrichment: %s", exc)
+            sources_used["hudsonrock"] = {"status": "error"}
+            display.update_step("Infostealer intel", "fail", str(exc))
 
-    display.update_step("Enriching emails", "active")
-    try:
-        from sources.email_reputation import enrich_email_entities
-        extraction_results, _ = await asyncio.wait_for(
-            enrich_email_entities(extraction_results, inv_uuid),
-            timeout=30,
-        )
-        display.update_step("Enriching emails", "ok")
-    except asyncio.TimeoutError:
-        logger.warning("[%s] Email enrichment timed out after 30s", inv_uuid)
-        display.update_step("Enriching emails", "fail", "timeout")
-    except Exception as exc:
-        logger.debug("Email enrichment: %s", exc)
-        display.update_step("Enriching emails", "fail", str(exc))
 
-    display.update_step("Breach exposure lookup", "active")
-    try:
-        from sources.breach_lookup import enrich_breach_entities
-        extraction_results, _breach_stats = await asyncio.wait_for(
-            enrich_breach_entities(extraction_results, inv_uuid),
-            timeout=60,
-        )
-        sources_used["xposedornot"] = {
-            "status": "ok",
-            "count": _breach_stats.get("xon_breached", 0),
-        }
-        sources_used["leakcheck"] = {
-            "status": "ok",
-            "count": _breach_stats.get("leakcheck_breached", 0),
-        }
-        display.update_step("Breach exposure lookup", "ok")
-    except asyncio.TimeoutError:
-        logger.warning("[%s] Breach lookup timed out after 60s", inv_uuid)
-        sources_used["xposedornot"] = {"status": "timed_out"}
-        sources_used["leakcheck"] = {"status": "timed_out"}
-        display.update_step("Breach exposure lookup", "fail", "timeout")
-    except Exception as exc:
-        logger.debug("Breach lookup: %s", exc)
-        sources_used["xposedornot"] = {"status": "error"}
-        sources_used["leakcheck"] = {"status": "error"}
-        display.update_step("Breach exposure lookup", "fail", str(exc))
-
-    display.update_step("Infostealer intel", "active")
-    try:
-        from sources.infostealer import enrich_infostealer_entities
-        extraction_results, _infostealer_stats = await asyncio.wait_for(
-            enrich_infostealer_entities(extraction_results, inv_uuid),
-            timeout=60,
-        )
-        sources_used["hudsonrock"] = {
-            "status": "ok",
-            "count": _infostealer_stats.get("emails_infected", 0),
-        }
-        display.update_step("Infostealer intel", "ok")
-    except asyncio.TimeoutError:
-        logger.warning("[%s] Infostealer enrichment timed out after 60s", inv_uuid)
-        sources_used["hudsonrock"] = {"status": "timed_out"}
-        display.update_step("Infostealer intel", "fail", "timeout")
-    except Exception as exc:
-        logger.debug("Infostealer enrichment: %s", exc)
-        sources_used["hudsonrock"] = {"status": "error"}
-        display.update_step("Infostealer intel", "fail", str(exc))
+    _enrich_cap = _explicit_enrichment_timeout()
+    if _enrich_cap is None:
+        await _enrichment_phase()
+    else:
+        # Opt-in cap (VOIDACCESS_ENRICHMENT_TIMEOUT): keep partial results.
+        try:
+            await asyncio.wait_for(_enrichment_phase(), timeout=_enrich_cap)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[%s] Enrichment phase timed out after %ds - continuing with partial results",
+                inv_uuid, _enrich_cap,
+            )
+            display.update_step("Enriching intelligence", "fail", "timeout")
 
     if enrichment_pages:
         try:
@@ -1149,6 +1340,7 @@ async def _run_investigation(
     # also contains enrichment-provenance entities and edges.
     _append_enrichment_pages_to_manifest(scraped_pages, enrichment_pages)
     _metric_finish("enrichment")
+    display.stage_end(Stage.ENRICH)
 
     # --- Step 6.9 — Update persistent actor profiles (non-blocking) -------
     # Aggregate THREAT_ACTOR_HANDLE / RANSOMWARE_GROUP entities from the
@@ -1185,6 +1377,7 @@ async def _run_investigation(
     # Phase 6.2 — capped by CLI_PHASE_TIMEOUTS["graph_build"] so a large
     # entity table doesn't pin the CLI thread indefinitely.
     _metric_start("graph_build")
+    display.stage_start(Stage.GRAPH)
     display.update_step("Building graph", "active")
     loop = asyncio.get_running_loop()
 
@@ -1257,6 +1450,7 @@ async def _run_investigation(
         logger.warning("Community detection failed: %s", exc)
         display.update_step("Community detection", "fail", str(exc))
     _metric_finish("graph_build")
+    display.stage_end(Stage.GRAPH)
 
     # --- Step 7.5 — promote observed entities into the shared corpus (P4.1) ---
     # Byproduct of normal use: each observed entity/IOC runs through the full
@@ -1288,31 +1482,64 @@ async def _run_investigation(
     # Phase 6.2 — capped by CLI_PHASE_TIMEOUTS["summary"] so a slow LLM
     # call never holds the CLI process open past its budget.
     _metric_start("summary_generation")
+    display.stage_start(Stage.SUMMARIZE)
     display.update_step("Generating summary", "active")
     summary_text = ""
+    summary_kind = "none"
+    pages_to_summarize = scraped_pages[:10]
     if llm is not None:
         try:
             from voidaccess.llm import generate_summary
-            pages_to_summarize = scraped_pages[:10]
             if pages_to_summarize:
-                summary_text = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        generate_summary, llm, refined, pages_to_summarize, "threat_intel"
-                    ),
-                    timeout=CLI_PHASE_TIMEOUTS["summary"],
-                )
+                summary_budget = CLI_PHASE_TIMEOUTS["summary"]
+                first_budget = summary_budget * SUMMARY_FIRST_ATTEMPT_SHARE
+                try:
+                    summary_text = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            generate_summary, llm, refined, pages_to_summarize, preset="threat_intel"
+                        ),
+                        timeout=first_budget,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[%s] Summary generation timed out after %.0fs - retrying with reduced context",
+                        inv_uuid, first_budget,
+                    )
+                    summary_text = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            generate_summary,
+                            llm,
+                            refined,
+                            pages_to_summarize[:SUMMARY_RETRY_TOP_PAGES],
+                            max_summary_chars=SUMMARY_RETRY_MAX_CHARS,
+                            preset="threat_intel",
+                        ),
+                        timeout=max(summary_budget - first_budget, 1),
+                    )
+                if (summary_text or "").strip():
+                    summary_kind = "llm"
             display.update_step("Generating summary", "ok")
         except asyncio.TimeoutError:
             logger.warning(
-                "[%s] Summary generation timed out after %ds",
+                "[%s] Summary generation (retry) timed out within the %ds budget",
                 inv_uuid, CLI_PHASE_TIMEOUTS["summary"],
             )
             display.update_step("Generating summary", "fail", "timeout")
         except Exception as exc:
             display.update_step("Generating summary", "fail", str(exc))
+        if pages_to_summarize and not (summary_text or "").strip():
+            # Never ship an empty summary when pages were found.
+            from voidaccess.summary_fallback import build_fallback_summary
+
+            summary_text = build_fallback_summary(
+                refined, sqlite_adapter.get_entities(investigation_id), pages_to_summarize
+            )
+            summary_kind = "fallback"
+            display.update_step("Generating summary", "ok", "fallback (no AI summary)")
     else:
         display.update_step("Generating summary", "skip", "--no-llm")
     _metric_finish("summary_generation")
+    display.stage_end(Stage.SUMMARIZE, "skipped" if llm is None else "end")
 
     # --- Step 9 — finalize & write outputs --------------------------------
     _metric_start("finalization")
@@ -1384,6 +1611,7 @@ async def _run_investigation(
         "status": "completed" if final_entities or scraped_pages else "completed_no_results",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "summary": summary_text,
+        "summary_kind": summary_kind,
         "sources_used": sources_used,
         "entities": final_entities,
         "relationships": final_relationships,
@@ -1496,6 +1724,16 @@ async def _run_investigation(
             "proxy_summary": proxy_summary,
         }
     )
+
+    emitter.set_counts(
+        pages_fetched=len(scraped_pages),
+        entities_found=len(final_entities),
+        actors_found=actor_count,
+    )
+    if final_entities or scraped_pages:
+        emitter.completed()
+    else:
+        emitter.failed("no_results", "no entities or pages found")
 
     # Close any cached aiohttp sessions so the event loop exits cleanly
     # (otherwise aiohttp prints "Unclosed client session" warnings).

@@ -18,6 +18,10 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from sources.enrichment_allowlist import (
+    is_enrichment_source_enabled,
+    validate_enrichment_allowlist,
+)
 from config import VT_API_KEY, VT_API_TIER
 
 logger = logging.getLogger(__name__)
@@ -65,6 +69,8 @@ def _vt_delay() -> float:
 
 
 def _is_enabled() -> bool:
+    if not is_enrichment_source_enabled("virustotal"):
+        return False
     key = getattr(VT_API_KEY, "strip", lambda: "")()
     return bool(key)
 
@@ -113,8 +119,9 @@ async def enrich_virustotal(entities: list[dict]) -> list[dict]:
     For each FILE_HASH_MD5 / FILE_HASH_SHA1 / FILE_HASH_SHA256 entity,
     query VirusTotal and return detection stats.
     """
+    validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
     if not _is_enabled():
-        logger.debug("VirusTotal skipped — no API key configured")
+        logger.debug("VirusTotal skipped — no API key configured or source disabled")
         return []
 
     hash_type_map = {

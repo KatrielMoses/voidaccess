@@ -4,6 +4,44 @@ All notable changes to VoidAccess are documented here.
 
 ## Unreleased
 
+### Default changes (self-hosters will notice these)
+
+- **Packaging:** `pip install voidaccess` now ships 13 packages it previously
+  omitted (`shared_corpus`, `trust_gate`, `netpool`, `jobqueue`, `hygiene`,
+  `sanitizer`, `ratelimit`, `observability`, `snapshot_store`,
+  `credential_presence`, `feeds`, `ingest`, `benchmark`) plus the new
+  `progress` package. A wheel install used to crash on import. `tests/test_packaging.py`
+  builds a wheel and checks it from a clean venv.
+- **CLI page cap:** `voidaccess investigate` now honours `MAX_LLM_PAGES_PER_INV`
+  (default unchanged at 10); it was silently ignored before.
+- **Summary loss:** the CLI summary phase now retries once with a reduced context
+  after a timeout, then falls back to a deterministic non-LLM summary. The first
+  attempt gets 67% of `VOIDACCESS_SUMMARY_TIMEOUT` (60 of 90 s by default) so the
+  retry fits in the same budget. The report JSON gains `summary_kind`
+  (`llm` | `fallback` | `none`). The CLI also passes `preset="threat_intel"` by
+  keyword; it was being passed in the `entities` position.
+- **Search engines:** `OSS` and `TorNet` are quarantined (excluded from the
+  fan-out, retained for re-probe). Live Tor probe, 4 samples each: p90 latency
+  48.6 s / 76.1 s and unique-result share 0% / 7.2%
+  (`benchmark/artifacts/E1B_engine_probe.json`). Kaizer, Anima, Tornado and
+  Find Tor were already quarantined and probed at 0% success again.
+- **Tests:** `tests/test_setup.sh` no longer contains a real-looking OpenRouter
+  key or admin password.
+
+### New, opt-in (no change unless set)
+
+- Official progress hook (`progress/`): 8-stage events with numeric counts, Rich /
+  JSONL / callback sinks, `voidaccess investigate --events-jsonl PATH`.
+- `VOIDACCESS_ENRICHMENT_SOURCES` allowlist for enrichment sources.
+- `VOIDACCESS_SEARCH_WORKERS`, `VOIDACCESS_SCRAPE_WORKERS`,
+  `VOIDACCESS_EXTRACT_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_TIMEOUT`, `VOIDACCESS_SEARCH_DEADLINE`,
+  `VOIDACCESS_CONCURRENT_COLLECT`; `VOIDACCESS_ENRICHMENT_TIMEOUT` is now applied
+  on the CLI path when set. See docs/architecture.md section 13.17.
+- `benchmark probe` artifacts report `latency_p90_ms` and `unique_result_share`
+  per engine.
+
+### Earlier unreleased changes
+
 - Align CLI and API content-safety gates: Tor and side-source page text is
   scanned via shared `gate_pages()` before persistence, vector cache, extraction,
   or summarization; URL and entity gates fail closed on errors.

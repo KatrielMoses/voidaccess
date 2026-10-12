@@ -80,6 +80,8 @@ async def _netpool_isolation():
 
 @pytest.fixture(autouse=True)
 def reset_source_state(monkeypatch):
+    # An ambient allowlist in a developer shell must not change unrelated tests.
+    monkeypatch.delenv("VOIDACCESS_ENRICHMENT_SOURCES", raising=False)
     """Give each test a fresh in-memory enrichment cache and reset semaphores."""
     reset_default_cache()
 
