@@ -462,6 +462,23 @@ async def _build_graph_phase(
 SUMMARY_ENTITY_LIMIT = 50
 
 
+# The shared summary helper runs up to two attempts inside one budget; keep it
+# under the outer phase cap so the helper, not the cap, ends the phase.
+API_SUMMARY_BUDGET_SHARE = 0.9
+
+
+def _entity_as_dict(entity) -> dict:
+    """An entity object or dict as the plain dict the fallback summary reads."""
+    if isinstance(entity, dict):
+        return entity
+    return {
+        "entity_type": getattr(entity, "entity_type", None),
+        "value": getattr(entity, "value", None),
+        "confidence": getattr(entity, "confidence", 0.0),
+        "suppressed": getattr(entity, "suppressed", False),
+    }
+
+
 async def _generate_summary_phase(
     extraction_results,
     page_records,
@@ -486,6 +503,7 @@ async def _generate_summary_phase(
         )
     try:
         from voidaccess.llm import generate_summary
+        from voidaccess.summary_fallback import summarize_with_fallback
 
         summary_entities = []
         if extraction_results:
@@ -501,21 +519,44 @@ async def _generate_summary_phase(
                 summary_entities, limit=SUMMARY_ENTITY_LIMIT
             )
 
-        summary = await _llm_with_backoff(
-            generate_summary,
-            llm=llm_client,
+        async def _summary_call(pages, **kwargs):
+            # generate_summary raises SummaryUnavailable when the LLM fails;
+            # summarize_with_fallback retries once with reduced context and then
+            # builds the deterministic summary.
+            return await _llm_with_backoff(
+                generate_summary,
+                llm=llm_client,
+                query=refined_query,
+                content=pages,
+                entities=summary_entities if summary_entities else None,
+                investigation_id=inv_uuid,
+                **kwargs,
+            )
+
+        outcome = await summarize_with_fallback(
+            _summary_call,
+            list(page_records or []),
             query=refined_query,
-            content=page_records,
-            entities=summary_entities if summary_entities else None,
-            investigation_id=inv_uuid,
+            budget_s=PHASE_TIMEOUTS["summary"] * API_SUMMARY_BUDGET_SHARE,
+            fallback_entities=lambda: [_entity_as_dict(e) for e in summary_entities],
+            log_id=str(inv_uuid),
         )
-        logger.info("[%s] Summary generated (%d chars)", inv_uuid, len(summary or ""))
-        return summary
+        logger.info(
+            "[%s] Summary %s (%d chars, %d attempt(s))",
+            inv_uuid, outcome.kind, len(outcome.text or ""), outcome.attempts,
+        )
+        if outcome.kind == "none":
+            return (
+                f"Investigation completed without a summary. "
+                f"Scraped {scraped_count} pages; extracted {total_entities} entities."
+            )
+        return outcome.text
     except Exception as exc:
+        # Never put the raw exception text in a user-facing summary.
         logger.exception("[%s] Summary generation failed, using fallback summary: %s", inv_uuid, exc)
         return (
             f"Investigation complete for '{refined_query}'. "
-            f"Analysis pipeline completed successfully, but summary generation failed: {exc}."
+            f"Analysis pipeline completed successfully, but summary generation failed."
         )
 
 

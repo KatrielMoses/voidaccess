@@ -26,6 +26,8 @@ from typing import Any, Callable, Optional
 import typer
 from rich.console import Console
 
+from utils import cancel
+
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -269,10 +271,13 @@ MAX_LLM_PAGES_ENV = "MAX_LLM_PAGES_PER_INV"
 MAX_LLM_PAGES_DEFAULT = 10
 
 # Summary phase: the first attempt gets this share of the phase budget, the
-# retry (reduced context) gets the rest.
-SUMMARY_FIRST_ATTEMPT_SHARE = 0.67
-SUMMARY_RETRY_TOP_PAGES = 4
-SUMMARY_RETRY_MAX_CHARS = 4000
+# retry (reduced context) gets the rest. The values live next to the shared
+# helper so the CLI and the API use the same ones.
+from voidaccess.summary_fallback import (  # noqa: E402
+    SUMMARY_FIRST_ATTEMPT_SHARE,
+    SUMMARY_RETRY_MAX_CHARS,
+    SUMMARY_RETRY_TOP_PAGES,
+)
 
 
 def _env_positive_int(name: str) -> Optional[int]:
@@ -1488,54 +1493,38 @@ async def _run_investigation_impl(
     summary_kind = "none"
     pages_to_summarize = scraped_pages[:10]
     if llm is not None:
-        try:
-            from voidaccess.llm import generate_summary
-            if pages_to_summarize:
-                summary_budget = CLI_PHASE_TIMEOUTS["summary"]
-                first_budget = summary_budget * SUMMARY_FIRST_ATTEMPT_SHARE
-                try:
-                    summary_text = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            generate_summary, llm, refined, pages_to_summarize, preset="threat_intel"
-                        ),
-                        timeout=first_budget,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "[%s] Summary generation timed out after %.0fs - retrying with reduced context",
-                        inv_uuid, first_budget,
-                    )
-                    summary_text = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            generate_summary,
-                            llm,
-                            refined,
-                            pages_to_summarize[:SUMMARY_RETRY_TOP_PAGES],
-                            max_summary_chars=SUMMARY_RETRY_MAX_CHARS,
-                            preset="threat_intel",
-                        ),
-                        timeout=max(summary_budget - first_budget, 1),
-                    )
-                if (summary_text or "").strip():
-                    summary_kind = "llm"
-            display.update_step("Generating summary", "ok")
-        except asyncio.TimeoutError:
-            logger.warning(
-                "[%s] Summary generation (retry) timed out within the %ds budget",
-                inv_uuid, CLI_PHASE_TIMEOUTS["summary"],
-            )
-            display.update_step("Generating summary", "fail", "timeout")
-        except Exception as exc:
-            display.update_step("Generating summary", "fail", str(exc))
-        if pages_to_summarize and not (summary_text or "").strip():
-            # Never ship an empty summary when pages were found.
-            from voidaccess.summary_fallback import build_fallback_summary
+        from voidaccess.llm import generate_summary
+        from voidaccess.summary_fallback import summarize_with_fallback
 
-            summary_text = build_fallback_summary(
-                refined, sqlite_adapter.get_entities(investigation_id), pages_to_summarize
+        async def _summary_call(call_pages: list, **kwargs: Any) -> str:
+            # generate_summary raises SummaryUnavailable on a failed LLM, which
+            # summarize_with_fallback turns into a retry and then the fallback.
+            return await asyncio.to_thread(
+                generate_summary, llm, refined, call_pages, preset="threat_intel", **kwargs
             )
-            summary_kind = "fallback"
+
+        outcome = await cancel.run_cancellable(
+            summarize_with_fallback(
+                _summary_call,
+                pages_to_summarize,
+                query=refined,
+                budget_s=CLI_PHASE_TIMEOUTS["summary"],
+                fallback_entities=lambda: sqlite_adapter.get_entities(investigation_id),
+                first_share=SUMMARY_FIRST_ATTEMPT_SHARE,
+                retry_top_pages=SUMMARY_RETRY_TOP_PAGES,
+                retry_max_chars=SUMMARY_RETRY_MAX_CHARS,
+                log_id=str(inv_uuid),
+            ),
+            "summarize",
+        )
+        summary_text, summary_kind = outcome.text, outcome.kind
+        if outcome.kind == "llm":
+            display.update_step("Generating summary", "ok")
+        elif outcome.kind == "fallback":
+            # Generic text only: never the raw provider/exception message.
             display.update_step("Generating summary", "ok", "fallback (no AI summary)")
+        else:
+            display.update_step("Generating summary", "ok", "nothing to summarise")
     else:
         display.update_step("Generating summary", "skip", "--no-llm")
     _metric_finish("summary_generation")

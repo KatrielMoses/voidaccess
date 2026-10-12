@@ -1058,6 +1058,21 @@ PRESET_PROMPTS = {
 }
 
 
+class SummaryUnavailable(Exception):
+    """The LLM could not produce a summary.
+
+    Raised by :func:`generate_summary` instead of returning an error string, so a
+    failed LLM can never be mistaken for a real summary. ``reason`` is a short
+    machine-readable tag (``llm_error`` or ``no_content``); the underlying
+    exception is chained as ``__cause__`` for logs. The message deliberately
+    carries no provider text, so ``str(exc)`` is safe to surface.
+    """
+
+    def __init__(self, reason: str = "llm_error"):
+        super().__init__(f"summary unavailable ({reason})")
+        self.reason = reason
+
+
 def generate_summary(
     llm,
     query: str,
@@ -1072,6 +1087,10 @@ def generate_summary(
 
     Automatically selects the most relevant pages that fit within
     the context budget before sending to the LLM.
+
+    Raises :class:`SummaryUnavailable` when the LLM fails or there is no page
+    content to summarise; callers retry with reduced context and then fall back
+    to the deterministic summary (``voidaccess.summary_fallback``).
     """
     from utils.investigation_metrics import record_llm_call
     # Normalize content to list of dicts
@@ -1096,8 +1115,8 @@ def generate_summary(
     )
 
     if not selected_pages:
-        logging.warning("generate_summary: no pages with content, returning fallback")
-        return f"Investigation complete for '{query}'. No extractable content found."
+        logging.warning("generate_summary: no pages with content")
+        raise SummaryUnavailable("no_content")
 
     logging.info(
         f"generate_summary: using {len(selected_pages)}/{len(pages)} "
@@ -1221,4 +1240,4 @@ Be specific. Reference actual entity names found. Avoid generic statements."""
             return chain.invoke({"query": query})
         except Exception as inner_e:
             logging.error(f"LLM fallback also failed: {inner_e}")
-            return f"Summary unavailable — LLM error: {str(e)}"
+            raise SummaryUnavailable("llm_error") from inner_e

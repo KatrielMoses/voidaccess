@@ -136,14 +136,16 @@ def test_generate_summary_with_json_content():
     assert result == "test summary"
 
 
-def test_generate_summary_fallback_on_llm_error():
-    """generate_summary returns a string error message when LLM fails."""
+def test_generate_summary_raises_summary_unavailable_on_llm_error():
+    """A failed LLM raises SummaryUnavailable; it never returns an error string."""
     from unittest.mock import MagicMock, patch
 
-    from voidaccess.llm import generate_summary
+    import pytest
+
+    from voidaccess.llm import SummaryUnavailable, generate_summary
 
     failing_llm = MagicMock()
-    failing_llm.side_effect = Exception("LLM API error")
+    failing_llm.side_effect = Exception("LLM API error sk-secret-123")
 
     pages = [
         {"url": "http://test.onion", "content": "lockbit ransomware bitcoin payment"},
@@ -151,11 +153,15 @@ def test_generate_summary_fallback_on_llm_error():
     ]
 
     with patch("voidaccess.llm.select_relevant_pages", return_value=pages):
-        result = generate_summary(
-            llm=failing_llm,
-            query="ransomware",
-            content=pages,
-        )
+        with pytest.raises(SummaryUnavailable) as excinfo:
+            generate_summary(
+                llm=failing_llm,
+                query="ransomware",
+                content=pages,
+            )
 
-    assert isinstance(result, str)
-    assert "unavailable" in result.lower() or "error" in result.lower()
+    assert excinfo.value.reason == "llm_error"
+    assert excinfo.value.__cause__ is not None
+    # The message carries no provider text, so it is safe to surface.
+    assert "sk-secret-123" not in str(excinfo.value)
+    assert "LLM API error" not in str(excinfo.value)
