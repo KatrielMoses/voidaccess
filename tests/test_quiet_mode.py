@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 
 from typer.testing import CliRunner
 
@@ -112,3 +113,26 @@ def test_quiet_failed_run_does_not_leak_secrets_or_query(tmp_path, monkeypatch, 
     # The source error is reported by class name only, never the message.
     assert payload["sources_used"]["rss"]["status"] == "error"
     assert secret not in str(payload["sources_used"])
+
+
+def test_quiet_suppresses_the_banner_and_the_config_warning(monkeypatch):
+    """The group callback must not print the banner or log warnings under --quiet."""
+    import logging
+
+    import voidaccess_cli.main as main_mod
+
+    banners = []
+    monkeypatch.setattr(main_mod, "show_banner", lambda console: banners.append(1))
+    root = logging.getLogger()
+    before = root.level
+    try:
+        monkeypatch.setattr(sys, "argv", ["voidaccess", "investigate", "ab", "--quiet"])
+        CliRunner().invoke(main_mod.app, ["investigate", "ab", "--quiet"])
+        assert banners == []
+        assert root.level == logging.ERROR
+    finally:
+        root.setLevel(before)
+
+    monkeypatch.setattr(sys, "argv", ["voidaccess", "investigate", "ab"])
+    CliRunner().invoke(main_mod.app, ["investigate", "ab"])
+    assert banners == [1]  # without --quiet the banner is unchanged

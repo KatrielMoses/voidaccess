@@ -46,7 +46,8 @@ All notable changes to VoidAccess are documented here.
 - **`--quiet` is now silent:** it used to print a `VoidAccess — <query>` header,
   every step line, and then the full result panel. It now prints nothing at all
   except fatal errors, and those never echo the query (a too-short query used to
-  be quoted back). Library warnings are suppressed too. Output files are still
+  be quoted back). Library warnings, the startup banner (on a terminal) and the
+  optional-keys configuration warning are suppressed too. Output files are still
   written; their paths are in the `completed` event of `--events-jsonl` (file
   names embed the query, so they are not printed). JSONL and callback sinks are
   unaffected.

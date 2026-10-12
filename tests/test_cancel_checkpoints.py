@@ -486,10 +486,12 @@ _DRIVER = textwrap.dedent(
     inv._scrape_github = none
     inv._scrape_gitlab = none
 
-    from voidaccess_cli.main import app
-    app(["investigate", "lockbit ransomware", "--no-tor", "--no-llm",
-         "--depth", "shallow", "--quiet",
-         "--events-jsonl", {events!r}, "--output", {out!r}])
+    # The real console-script entry point, with the real argv.
+    sys.argv = ["voidaccess", "investigate", "lockbit ransomware", "--no-tor",
+                "--no-llm", "--depth", "shallow", "--quiet",
+                "--events-jsonl", {events!r}, "--output", {out!r}]
+    from voidaccess_cli.main import run
+    run()
     """
 )
 
@@ -547,5 +549,6 @@ def test_sigterm_on_the_cli_cancels_cleanly(tmp_path):
     assert lines[-1]["stages_completed"] == ["refine"]
     assert sum(1 for e in lines if e["type"] in ("completed", "failed", "cancelled")) == 1
     assert not out.exists() or list(out.iterdir()) == []
-    # --quiet: a cancel is silent too, and never echoes the query.
-    assert stdout.strip() == "" and "lockbit" not in stderr.lower()
+    # --quiet: a cancel is silent too (not even the config warning or banner),
+    # and never echoes the query.
+    assert stdout.strip() == "" and stderr.strip() == "", (stdout, stderr)
