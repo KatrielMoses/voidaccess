@@ -20,6 +20,7 @@ from typing import Optional
 
 import pacing
 from sources.cache import CachedFeed
+from utils import cancel
 from sources.enrichment_allowlist import (
     is_enrichment_source_enabled,
     validate_enrichment_allowlist,
@@ -212,6 +213,8 @@ async def enrich_historical(entities_by_type: dict[str, list[dict]]) -> list[dic
     mitre_index: dict = {}
 
     for ent in relevant_entities:
+        if cancel.is_cancelled():
+            break  # cancel checkpoint between entities
         ev = ent.get("value") or ent.get("entity_value", "")
         if not ev:
             continue

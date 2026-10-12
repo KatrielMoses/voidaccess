@@ -28,6 +28,11 @@ from typing import AsyncIterator
 import aiohttp
 
 import netpool
+from sources.source_control import (
+    is_failure_status,
+    record_failure_for_url,
+    record_request_for_url,
+)
 
 # Lazily bound to sources.enrichment.is_onion_url. Lazy because enrichment.py
 # itself imports this module (for the shared session), so a top-level import
@@ -44,6 +49,44 @@ def _refuse_onion(url: str) -> None:
         raise ValueError(
             f"clearnet pool refuses .onion URLs — routing bug upstream: {str(url)[:60]}"
         )
+
+
+class _TrackedRequest:
+    """Wraps an aiohttp request context so a failed call is counted.
+
+    Delegates everything; adds only failure accounting (an exception, or a
+    401/403/429/5xx answer) so ``sources_used`` can say ``error`` when every call
+    a source made failed, instead of reporting a silent zero as ``ok``.
+    """
+
+    def __init__(self, ctx, url):
+        self._ctx = ctx
+        self._url = url
+
+    async def __aenter__(self):
+        try:
+            resp = await self._ctx.__aenter__()
+        except BaseException:
+            record_failure_for_url(self._url)
+            raise
+        if is_failure_status(getattr(resp, "status", 200)):
+            record_failure_for_url(self._url)
+        return resp
+
+    async def __aexit__(self, *exc_info):
+        return await self._ctx.__aexit__(*exc_info)
+
+    def __await__(self):
+        return self._ctx.__await__()
+
+    def __getattr__(self, name):
+        return getattr(self._ctx, name)
+
+
+def _track(ctx, url):
+    """Wrap *ctx* for failure accounting; pass through anything that is not an
+    async request context (a test double, say) untouched."""
+    return _TrackedRequest(ctx, url) if hasattr(ctx, "__aenter__") else ctx
 
 
 class _GuardedClearnetSession:
@@ -63,19 +106,23 @@ class _GuardedClearnetSession:
 
     def get(self, url, **kwargs):
         _refuse_onion(url)
-        return self._session().get(url, **kwargs)
+        record_request_for_url(url)
+        return _track(self._session().get(url, **kwargs), url)
 
     def post(self, url, **kwargs):
         _refuse_onion(url)
-        return self._session().post(url, **kwargs)
+        record_request_for_url(url)
+        return _track(self._session().post(url, **kwargs), url)
 
     def head(self, url, **kwargs):
         _refuse_onion(url)
-        return self._session().head(url, **kwargs)
+        record_request_for_url(url)
+        return _track(self._session().head(url, **kwargs), url)
 
     def request(self, method, url, **kwargs):
         _refuse_onion(url)
-        return self._session().request(method, url, **kwargs)
+        record_request_for_url(url)
+        return _track(self._session().request(method, url, **kwargs), url)
 
 
 _guarded_singleton = _GuardedClearnetSession()

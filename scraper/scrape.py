@@ -41,6 +41,7 @@ from urllib3.util.retry import Retry
 
 import pacing
 import netpool
+from utils import cancel as _cancel
 from config import TOR_PROXY_HOST, TOR_PROXY_PORT, PLAYWRIGHT_ENABLED
 from scraper import tor_pool
 
@@ -559,6 +560,10 @@ async def _fetch_one_impl(
 
     async with semaphore:
         for attempt in range(max_retries + 1):
+            if _cancel.is_cancelled():
+                # Cancel checkpoint between pages: queued fetches never start,
+                # and a page that is mid-retry is not retried.
+                return url, title, None, None, None
             if attempt > 0:
                 await asyncio.sleep(retry_delays[attempt - 1])
 

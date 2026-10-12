@@ -508,6 +508,12 @@ async def clearnet_fetch(
 # ---------------------------------------------------------------------------
 
 
+def _count_source_request(url: str) -> None:
+    from sources.source_control import record_request_for_url
+
+    record_request_for_url(url)
+
+
 async def _fetch_via_proxy_mode(
     url: str,
     *,
@@ -531,6 +537,10 @@ async def _fetch_via_proxy_mode(
 
     Returns None on any failure (caller falls through).  Never raises.
     """
+    from sources.http_pool import _GuardedClearnetSession
+
+    if not isinstance(fallback_session, _GuardedClearnetSession):
+        _count_source_request(url)  # the shared handle counts its own
     try:
         async with fallback_session.request(
             method,
@@ -586,6 +596,7 @@ async def _fetch_via_scrapingant(
     api_key = _get_api_key()
     if not api_key:
         return None
+    _count_source_request(url)
 
     # Fold caller params into the target URL.  ScrapingAnt's API
     # expects a single ``url=`` query param, not nested params.
@@ -675,6 +686,12 @@ async def _fetch_direct(
     This is the always-present last-resort fallback.  Behavior here
     matches the caller's pre-v1.6 self._session.get() call exactly.
     """
+    # The shared clearnet handle counts its own requests; count only sessions
+    # that bypass it so one fetch is never counted twice.
+    from sources.http_pool import _GuardedClearnetSession
+
+    if not isinstance(fallback_session, _GuardedClearnetSession):
+        _count_source_request(url)
     async with fallback_session.request(
         method,
         url,

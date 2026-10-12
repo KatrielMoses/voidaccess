@@ -31,6 +31,8 @@ from bs4 import BeautifulSoup
 
 import pacing
 from scraper import tor_pool
+from sources.source_control import record_request, source_gate
+from utils import cancel
 
 _logger = logging.getLogger(__name__)
 
@@ -111,6 +113,12 @@ async def search_onionsearch(query: str) -> List[dict]:
         for engine in _ONIONSEARCH_ENGINES:
             url = engine["url"].replace("{query}", encoded)
             name = engine["name"]
+            if not source_gate(name.lower()):
+                _LAST_ONIONSEARCH_STATUS[name] = "disabled"
+                continue
+            if cancel.is_cancelled():
+                _LAST_ONIONSEARCH_STATUS[name] = "cancelled"
+                break
             # Acquired per engine, not once for the loop.  Torch and Haystack
             # are different onion services; sharing one session put them on one
             # circuit, which let either operator correlate our queries to the
@@ -118,6 +126,7 @@ async def search_onionsearch(query: str) -> List[dict]:
             # same engine still reuses its circuit.
             session, iso_key = tor_pool.acquire_tor_session(url)
             try:
+                record_request(name.lower())
                 async with session.get(
                     url, headers={"User-Agent": _ua()}, timeout=_timeout()
                 ) as resp:

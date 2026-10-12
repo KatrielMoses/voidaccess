@@ -120,6 +120,10 @@ async def fetch_telegram_messages(
     Telethon errors per channel are logged and skipped; the function never
     raises.
     """
+    from sources.source_control import source_gate
+
+    if not source_gate("telegram"):
+        return []
     # Lazy import credentials here so config changes in tests propagate
     try:
         from config import TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_PHONE

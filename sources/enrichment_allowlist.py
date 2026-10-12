@@ -21,6 +21,13 @@ from __future__ import annotations
 import logging
 import os
 
+from sources.source_control import (
+    STATUS_DISABLED,
+    STATUS_SKIPPED_BY_ALLOWLIST,
+    is_source_disabled,
+    note_gate_refusal,
+)
+
 logger = logging.getLogger(__name__)
 
 ENV_VAR = "VOIDACCESS_ENRICHMENT_SOURCES"
@@ -107,7 +114,8 @@ def validate_enrichment_allowlist() -> frozenset[str] | None:
 
 
 def is_enrichment_source_enabled(source_id: str) -> bool:
-    """True when the allowlist is unset or contains *source_id*.
+    """True when the source may run: not on the deny-list
+    (``VOIDACCESS_DISABLED_SOURCES``) and the allowlist is unset or contains it.
 
     Raises KeyError-style EnrichmentAllowlistError if *source_id* itself is not
     registered, so call sites cannot use unregistered ids.
@@ -117,9 +125,13 @@ def is_enrichment_source_enabled(source_id: str) -> bool:
             f"unregistered enrichment source id {source_id!r}; "
             f"register it in sources/enrichment_allowlist.py"
         )
+    if is_source_disabled(source_id):
+        note_gate_refusal(source_id, STATUS_DISABLED)
+        return False
     allow = get_enrichment_allowlist()
     if allow is None or source_id in allow:
         return True
+    note_gate_refusal(source_id, STATUS_SKIPPED_BY_ALLOWLIST)
     if source_id not in _logged_disabled:
         _logged_disabled.add(source_id)
         logger.debug("enrichment source %s disabled by %s", source_id, ENV_VAR)

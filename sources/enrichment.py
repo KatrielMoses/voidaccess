@@ -20,6 +20,7 @@ import aiohttp
 
 import pacing
 from sources import http_pool
+from utils import cancel
 from sources.enrichment_allowlist import (
     is_enrichment_source_enabled,
     validate_enrichment_allowlist,
@@ -985,9 +986,18 @@ async def _gather_with_partial_results(
     tasks: dict[str, asyncio.Task] = {
         name: asyncio.ensure_future(coro) for name, coro in named_coros
     }
-    done, pending = await asyncio.wait(tasks.values(), timeout=timeout)
+    done, pending = await cancel.wait_cancellable(set(tasks.values()), timeout=timeout)
 
-    if pending:
+    if pending and cancel.is_cancelled():
+        # Cancel checkpoint between sources: keep what finished, drop the rest.
+        logger.info(
+            "%s: cancelled — keeping %d finished source(s), stopping %d",
+            phase_label, len(done), len(pending),
+        )
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    elif pending:
         unfinished = [name for name, t in tasks.items() if t in pending]
         logger.warning(
             "%s: deadline (%.0fs) hit — preserving %d finished source(s), "
@@ -1346,6 +1356,8 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
     if _actor_ents and not _has_cve_or_mitre and is_enrichment_source_enabled("mitre_attack"):
         from sources.historical_intel import get_techniques_for_actor
         for _actor_ent in _actor_ents:
+            if cancel.is_cancelled():
+                break
             _actor_name = (
                 _actor_ent.get("value")
                 or _actor_ent.get("canonical_value")
@@ -1668,6 +1680,9 @@ async def enrich_investigation(
     # Fail loudly (outside the gather) on an unknown VOIDACCESS_ENRICHMENT_SOURCES id.
     validate_enrichment_allowlist()
 
+    if cancel.is_cancelled():
+        return []
+
     logger.info("Starting threat intel enrichment for: %s", query)
 
     _entities = entities if entities is not None else []
@@ -1785,6 +1800,8 @@ async def enrich_investigation(
             async def _run_overlay():
                 _results = []
                 for _aname in _prioritized:
+                    if cancel.is_cancelled():
+                        break
                     try:
                         _techs = await get_techniques_for_actor(_aname)
                     except Exception as _oexc:

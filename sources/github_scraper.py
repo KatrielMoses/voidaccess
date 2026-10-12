@@ -55,6 +55,7 @@ from typing import Optional
 import aiohttp
 
 import pacing
+from sources.source_control import request_trace_config, source_gate
 from utils.content_safety import (
     is_blocked_query,
     is_blocked_url,
@@ -181,6 +182,7 @@ class GitHubScraper:
         self._session = aiohttp.ClientSession(
             headers=self._headers,
             timeout=aiohttp.ClientTimeout(total=pacing.scale_timeout(REQUEST_TIMEOUT)),
+            trace_configs=[request_trace_config("github")],
         )
         return self
 
@@ -610,6 +612,8 @@ async def scrape_github(
     """
     if not _is_github_scraping_enabled():
         logger.info("GitHub scraping disabled")
+        return []
+    if not source_gate("github"):
         return []
 
     async with GitHubScraper() as scraper:

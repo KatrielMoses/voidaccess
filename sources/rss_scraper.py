@@ -51,6 +51,12 @@ import pacing
 from sources import http_pool
 from sources.enrichment import is_onion_url
 from sources.proxy_client import clearnet_fetch
+from sources.source_control import (
+    STATUS_DISABLED,
+    attribute_requests_to,
+    is_rss_feed_disabled,
+    note_gate_refusal,
+)
 from utils.content_safety import is_blocked_query, sanitize_content
 
 # Timing baselines (`normal` pacing profile); scaled at call time.
@@ -361,7 +367,8 @@ class RSSFeedScraper:
             len(RSS_FEEDS),
         )
 
-        tasks = [self._fetch_feed(feed, search_terms) for feed in RSS_FEEDS]
+        active_feeds = [f for f in RSS_FEEDS if not _rss_feed_disabled(f)]
+        tasks = [self._fetch_feed(feed, search_terms) for feed in active_feeds]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_articles: list[dict] = []
@@ -405,6 +412,18 @@ class RSSFeedScraper:
 
     async def _fetch_feed(self, feed: dict, search_terms: list[str]) -> list[dict]:
         """Fetch one RSS feed and return relevant articles."""
+        # Request counts: every RSS fetch is the ``rss`` source, except the
+        # FBI/DOJ feeds, which are the ``fbi_doj_press`` source.
+        name = feed.get("name", "").lower()
+        owner = (
+            "fbi_doj_press"
+            if "fbi" in name or "department of justice" in name
+            else "rss"
+        )
+        with attribute_requests_to(owner):
+            return await self._fetch_feed_inner(feed, search_terms)
+
+    async def _fetch_feed_inner(self, feed: dict, search_terms: list[str]) -> list[dict]:
         feed_url = feed["url"]
         feed_name = feed["name"]
 
@@ -741,6 +760,18 @@ class RSSFeedScraper:
 # "not cached" from "cached as a failure" without a separate
 # sentinel-key namespace.
 _ARTICLE_FETCH_SENTINEL = object()
+
+
+def _rss_feed_disabled(feed: dict) -> bool:
+    """Deny-list gate (VOIDACCESS_DISABLED_SOURCES): ``rss`` or ``fbi_doj_press``."""
+    if is_rss_feed_disabled(feed.get("name", "")):
+        name = feed.get("name", "").lower()
+        note_gate_refusal(
+            "fbi_doj_press" if ("fbi" in name or "department of justice" in name) else "rss",
+            STATUS_DISABLED,
+        )
+        return True
+    return False
 
 
 async def scrape_rss_feeds(

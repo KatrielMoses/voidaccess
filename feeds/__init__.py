@@ -26,8 +26,10 @@ from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
 import hygiene
+from utils import cancel
 from sources.cache import CachedFeed
 from sources.enrichment_allowlist import is_enrichment_source_enabled
+from sources.source_control import is_source_disabled
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +241,12 @@ class BlocklistFeed:
     def _enabled(self) -> bool:
         """VOIDACCESS_ENRICHMENT_SOURCES gate: the feed's own id (``sslbl``,
         ``openphish``, ``phishtank``, ``ransomwhere``) or the umbrella id
-        ``blocklists`` enables it. Unset allowlist => always enabled."""
+        ``blocklists`` enables it. Unset allowlist => always enabled. The
+        deny-list (``VOIDACCESS_DISABLED_SOURCES``) wins over both: the feed's own
+        id or the ``blocklists`` umbrella there disables it."""
+        if is_source_disabled(self.name):
+            is_enrichment_source_enabled(self.name)  # records the refusal
+            return False
         return (
             is_enrichment_source_enabled(self.name)
             or is_enrichment_source_enabled("blocklists")
@@ -448,6 +455,8 @@ async def enrich_blocklists(entities: list[dict]) -> tuple[list[dict], dict[str,
     updates: list[tuple[str, str, list[str]]] = []
 
     for feed in _FEEDS:
+        if cancel.is_cancelled():
+            break  # cancel checkpoint between feeds
         try:
             matches = await feed.match(entities or [])
         except Exception as exc:
