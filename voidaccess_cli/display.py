@@ -93,7 +93,7 @@ class InvestigationDisplay:
         ]
         self._steps = [StepRow(name=n) for n in names]
         if self.quiet:
-            self.console.print(f"[bold]VoidAccess[/bold] — {query}")
+            # Quiet means quiet: no header (it would echo the query), no spinner.
             return
         self._live = Live(
             self._render(),
@@ -120,10 +120,6 @@ class InvestigationDisplay:
         if detail:
             row.detail = detail
         self._refresh()
-        if self.quiet:
-            icon = STATUS_GLYPH.get(status, ("·", "grey50"))[0]
-            d = f" — {detail}" if detail else ""
-            self.console.print(f"  {icon} {step_name}{d}")
 
     def update_substep(self, step_name: str, label: str, status: str) -> None:
         row = self._find_step(step_name)
@@ -157,6 +153,11 @@ class InvestigationDisplay:
     def complete(self, summary: dict) -> None:
         self._final_summary = summary
         self.stop()
+        if self.quiet:
+            # The flag's contract: nothing on the terminal at all. Even the output
+            # paths stay off it: file names embed the query slug, so printing them
+            # would echo the query. They are in the ``completed`` progress event.
+            return
         self._print_completion(summary)
 
     def error(self, msg: str) -> None:
@@ -319,6 +320,17 @@ class InvestigationDisplay:
                 if status.startswith("ok"):
                     status_text = "[green]ran[/green]"
                     detail = f"{info.get('count', 0)} results"
+                    if info.get("requests"):
+                        detail += f", {info['requests']} requests"
+                elif status == "disabled":
+                    status_text = "[yellow]disabled[/yellow]"
+                    detail = "VOIDACCESS_DISABLED_SOURCES"
+                elif status == "no_key":
+                    status_text = "[yellow]no key[/yellow]"
+                    detail = "API key not configured"
+                elif status == "timed_out":
+                    status_text = "[red]timed out[/red]"
+                    detail = f"{info.get('requests', 0)} requests"
                 elif status.startswith("skipped") or status == "skipped":
                     status_text = "[yellow]skipped[/yellow]"
                     detail = status.removeprefix("skipped_").replace("_", " ") or "disabled"
