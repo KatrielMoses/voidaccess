@@ -27,11 +27,77 @@ All notable changes to VoidAccess are documented here.
   Find Tor were already quarantined and probed at 0% success again.
 - **Tests:** `tests/test_setup.sh` no longer contains a real-looking OpenRouter
   key or admin password.
+- **`generate_summary` raises (library API):** it now raises
+  `voidaccess.llm.SummaryUnavailable` (with the cause chained) when the LLM fails
+  or there is no page content, instead of returning the string
+  `"Summary unavailable — LLM error: …"` or `"… No extractable content found."`.
+  A failed LLM could therefore be stored as, and reported as, a real summary.
+  Callers must catch it; the CLI and the API do.
+- **Summary retry and fallback on every failure, in both entry points:** the CLI
+  retried only after a timeout; now any failure (`SummaryUnavailable`, another
+  exception, an empty answer) retries once with reduced context and then falls
+  back to the deterministic summary. The API now does the same through the shared
+  `voidaccess.summary_fallback.summarize_with_fallback` (it used to store the
+  error text). `summary_kind` is `llm` only when the model produced text. No
+  user-facing text contains a raw exception message any more: the API's stored
+  summary no longer ends in `summary generation failed: <exception>`, the CLI
+  display line shows a generic message, and `sources_used[...].error` is the
+  exception class name rather than its message.
+- **`--quiet` is now silent:** it used to print a `VoidAccess — <query>` header,
+  every step line, and then the full result panel. It now prints nothing at all
+  except fatal errors, and those never echo the query (a too-short query used to
+  be quoted back). Library warnings are suppressed too. Output files are still
+  written; their paths are in the `completed` event of `--events-jsonl` (file
+  names embed the query, so they are not printed). JSONL and callback sinks are
+  unaffected.
+- **`sources_used` is honest and richer (CLI JSON):** statuses are now `ok`,
+  `error`, `timed_out`, `skipped_by_allowlist`, `disabled`, `no_key` (plus
+  `skipped` for "not run in this mode", e.g. `--no-tor`). Renames: `fail` ->
+  `error`, `skipped_no_key` -> `no_key`. A source switched off by
+  `VOIDACCESS_ENRICHMENT_SOURCES` or by its own off switch
+  (`PASTE_SCRAPING_ENABLED=false`, `GITHUB_SCRAPING_ENABLED=false`, ...) no longer
+  reads `ok` with zero results; a source whose every HTTP call failed reads
+  `error`; a side source that raised reads `error` (it used to read `ok`). Every
+  entry gains `requests` (HTTP calls actually made), and any source that made
+  calls but was not reported before now appears. The summary panel's "Sources"
+  count counts `ok` sources only. The API's flat string statuses are unchanged
+  apart from the new `disabled` and `skipped_by_allowlist` strings.
+- **SIGTERM cancels `voidaccess investigate` cleanly:** it used to kill the
+  process with no event and no cleanup. Now the current item finishes (up to
+  `VOIDACCESS_CANCEL_GRACE`, 3 s), the progress hook emits `cancelled` with an
+  accurate `stages_completed`, the investigation row is marked `cancelled`, and the
+  process exits 143 without writing any output file. Ctrl-C (exit 130) also marks
+  the row `cancelled` (it used to stay `running` until the stuck-run sweep failed
+  it).
+- **Output files are written atomically:** the JSON and Markdown reports are
+  staged as dot-prefixed temp files and renamed into place after the last cancel
+  checkpoint, so a cancelled or killed-at-the-wrong-moment run can no longer leave
+  a truncated report.
+- **Cancel checkpoints inside the long stages** (API and CLI): a cancel request is
+  now honoured between engines in the search fan-out, between pages in fetch and
+  scrape, and between sources in enrichment, not only at stage boundaries. With no
+  cancel requested nothing changes.
+- **Tests:** `tests/test_progress.py::test_rich_display_output_unchanged` compares
+  the live display (not `quiet=True`, which is now silent).
 
 ### New, opt-in (no change unless set)
 
 - Official progress hook (`progress/`): 8-stage events with numeric counts, Rich /
   JSONL / callback sinks, `voidaccess investigate --events-jsonl PATH`.
+- `VOIDACCESS_ENRICHMENT_SOURCES` allowlist for enrichment sources.
+- `VOIDACCESS_DISABLED_SOURCES`: a cloud deny-list. The named sources make no
+  network call in any stage (Tor engines, paste sites, GitHub, GitLab, RSS,
+  Telegram, blocklist feeds, historical intel, Pwned Passwords, enrichment) and
+  report `disabled`. Unknown ids are a hard error. Recommended cloud value:
+  `openphish,sslbl,phishtank,ransomwhere,hibp_pwned_passwords,fbi_doj_press,pastebin,paste_ee,dpaste,rentry,gitlab,telegram`
+  (`sources.source_control.CLOUD_DISABLED_SOURCES`). Source ids are listed in
+  docs/architecture.md section 13.18.
+- `VOIDACCESS_CANCEL_GRACE` and `VOIDACCESS_CANCEL_POLL_INTERVAL` tune the cancel
+  helper (`utils/cancel.py`); `_run_investigation(..., cancel_token=...)` lets an
+  embedding runner cancel cooperatively.
+- Per-source HTTP request counts: `sources_used[...].requests`, and
+  `source_requests`, `source_requests_by_step`, `sources_status` and the output
+  paths in the `completed` progress event's `metrics`.
 - `VOIDACCESS_ENRICHMENT_SOURCES` allowlist for enrichment sources.
 - `VOIDACCESS_SEARCH_WORKERS`, `VOIDACCESS_SCRAPE_WORKERS`,
   `VOIDACCESS_EXTRACT_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_TIMEOUT`, `VOIDACCESS_SEARCH_DEADLINE`,

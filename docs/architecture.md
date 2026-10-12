@@ -246,7 +246,7 @@ pip install voidaccess
 
 | Command | Common flags | Notes |
 |---|---|---|
-| `voidaccess investigate "<query>"` | `--output`, `--model`, `--no-tor`, `--no-llm`, `--depth`, `--format`, `--quiet`, `--no-banner`, `--events-jsonl PATH` | Runs the full local pipeline and writes report files |
+| `voidaccess investigate "<query>"` | `--output`, `--model`, `--no-tor`, `--no-llm`, `--depth`, `--format`, `--quiet`, `--no-banner`, `--events-jsonl PATH` | Runs the full local pipeline and writes report files. `--quiet` prints nothing at all except fatal errors (which never echo the query); the output paths are in the `completed` event of `--events-jsonl`. SIGTERM cancels the run cleanly (exit 143, see 2.5). |
 | `voidaccess show [target]` | `--no-tui` | Opens the entity browser, or prints a summary table for scripted use |
 | `voidaccess export <target>` | `--format stix|misp|sigma|yara|snort|suricata|package|csv|md|json`, `--output`, `--tlp`, `--redact-credentials`, `--include-raw` | Exports a saved investigation or JSON report |
 | `voidaccess package <target>` | `--output`, `--tlp`, `--redact-credentials`, `--include-raw` | Shortcut for `voidaccess export <target> --format package`; writes an IOC ZIP bundle |
@@ -445,6 +445,8 @@ The API and CLI wrap the major long-running phases in configurable timeouts:
 
 On the CLI, the enrichment cap is applied only when `VOIDACCESS_ENRICHMENT_TIMEOUT` is set explicitly (partial results are kept); the 120 s default is not enforced there. The CLI summary phase splits its budget: the first attempt gets 67% of it; if that times out, one retry runs with a reduced context (top 4 pages, 4000 characters) in the remaining 33%. If that also fails, a deterministic fallback summary built from the top entities and sources is used and the report JSON carries `"summary_kind": "fallback"` (`"llm"` for a model summary, `"none"` for `--no-llm`).
 
+`voidaccess.llm.generate_summary` never returns an error string: when the LLM fails (or there is no page content) it raises `SummaryUnavailable` (`.reason` is `llm_error` or `no_content`, the underlying exception is `__cause__`, and the message carries no provider text). The CLI and the API both go through `voidaccess.summary_fallback.summarize_with_fallback`, which treats a `SummaryUnavailable`, any other exception, a timeout and an empty answer identically: retry once with reduced context, then build the deterministic fallback. `summary_kind` is `llm` only when the model produced text. The API uses 90% of its `summary` phase cap for the two attempts so the helper, not the outer cap, ends the phase. No user-facing text (display line, summary, log line) contains a raw exception message.
+
 Pipeline metadata that used to live only in process memory now survives restarts through the investigation metadata JSON column:
 
 - `sources_used`
@@ -456,7 +458,17 @@ At API startup, and every `VOIDACCESS_SWEEP_INTERVAL_SECONDS` seconds thereafter
 
 `POST /investigations/{id}/cancel` sets `_cancel_flags[investigation_id] = True`.
 
-Checkpoints (where the pipeline actually honours the flag): after Step 1, after the parallel phase, after Step 5, and after Step 6.
+Checkpoints (where the pipeline actually honours the flag): after Step 1, after the parallel phase, after Step 5, and after Step 6. Inside the long stages the same request is honoured between items through one shared helper, `utils/cancel.py` (a `CancelToken` plus `checkpoint()`, `is_cancelled()`, `wait_cancellable()` and `run_cancellable()`):
+
+| Stage | In-stage checkpoint |
+|---|---|
+| Search fan-out (`search/search.py`) | between engines: an engine that has not started returns `cancelled`; in-flight engines get a grace period; cancelled engines are not recorded against the circuit breaker |
+| Fetch and scrape (`scraper/scrape.py`) | between pages: a queued page never starts and a page mid-retry is not retried; the fetches already in flight finish |
+| Enrichment (`sources/enrichment.py`, `historical_intel.py`, `feeds/`) | between sources, between the sequential enrichment sub-steps, and between entities in the historical and MITRE loops; sources that already finished keep their results |
+
+The API binds a token per investigation (`_cancel_tokens`, set together with the flag in `_set_cancelled`); an in-stage loop sees it through a context variable, and a cancel recorded only in the database is picked up at the next stage boundary. A cancel never leaves a half-written state beyond what the checkpoint rules above already say.
+
+**CLI.** `voidaccess investigate` routes SIGTERM to a token (installed in the CLI entry point only, never in `_run_investigation`, so an embedding runner keeps its own signal handling; `_run_investigation(..., cancel_token=...)` is the library hook). On a cancel the current item finishes (up to `VOIDACCESS_CANCEL_GRACE`, default 3 s, then the in-flight work is cancelled), the progress hook emits the terminal `cancelled` event with `stages_completed` listing only the stages that finished, the investigation row is marked `cancelled`, and the process exits 143 (130 for Ctrl-C). The JSON and Markdown outputs are written to dot-prefixed temp files and renamed into place after the last checkpoint, so a cancelled run leaves no output file, partial or otherwise.
 
 When cancelled:
 - The DB `status` is set to `cancelled`.
@@ -1474,9 +1486,9 @@ GET /admin/enrichment-cache/stats
 
 **Unset or blank: behaviour is unchanged.** Every enrichment source runs exactly as before, subject to its own key and feature checks.
 
-**Set: restricts, never widens.** A source in the list still needs its own API key (where it has one). A source not in the list is never called: no HTTP request, no cache read, and no coroutine is created for it. It contributes the same empty result the code already returns when a key is missing or a call fails. Reported statuses read `disabled` where the code reports a per-source status (`hudsonrock`, `xposedornot`, `leakcheck`, blocklist feeds, Pwned Passwords).
+**Set: restricts, never widens.** A source in the list still needs its own API key (where it has one). A source not in the list is never called: no HTTP request, no cache read, and no coroutine is created for it. It contributes the same empty result the code already returns when a key is missing or a call fails. In the CLI report an allowlisted-off source reads `skipped_by_allowlist` in `sources_used` (never `ok`; see 13.18). The modules' own stats still say `disabled` internally (`hudsonrock`, `xposedornot`, `leakcheck`, blocklist feeds, Pwned Passwords); the CLI translates them.
 
-The gate sits inside the `sources/` modules (and `feeds/`, `credential_presence/`), so it applies on every path that runs enrichment: `voidaccess investigate`, `voidaccess enrich`, the API, and the monitor seed refresh. Search-stage sources (onion engines, paste sites, GitHub/GitLab, RSS, Telegram, proxy) are not enrichment sources and are not affected.
+The gate sits inside the `sources/` modules (and `feeds/`, `credential_presence/`), so it applies on every path that runs enrichment: `voidaccess investigate`, `voidaccess enrich`, the API, and the monitor seed refresh. Search-stage sources (onion engines, paste sites, GitHub/GitLab, RSS, Telegram, proxy) are not enrichment sources and are not affected by the allowlist; switch those off with the deny-list in 13.18.
 
 **Unknown id: hard error.** A typo never silently enables or disables a source. The process raises `EnrichmentAllowlistError` (a `ValueError`) naming the unknown id(s) and listing every valid id, for example `VOIDACCESS_ENRICHMENT_SOURCES contains unknown source id(s): nvdd. Valid ids: ...`. The CLI validates the variable at startup; library callers hit the same error on the first enrichment call.
 
@@ -1603,6 +1615,74 @@ All of these are unset by default and change nothing for self-hosters. Each over
 | `VOIDACCESS_ENRICHMENT_TIMEOUT` | not enforced on the CLI | Seconds; caps the whole enrichment cluster on the CLI and keeps partial results. |
 | `VOIDACCESS_ENRICHMENT_SOURCES` | all | See 13.16. |
 | `MAX_LLM_PAGES_PER_INV` | `10` | Pages that get an LLM extraction call. The CLI now honours it (as the API already did). |
-| `--events-jsonl PATH` | off | Writes one JSON progress event per line; see `progress/README.md`. |
+| `--events-jsonl PATH` | off | Writes one JSON progress event per line; see `progress/README.md`. The `completed` event's `metrics` carry `source_requests`, `source_requests_by_step`, `sources_status`, `summary_kind` and the output paths. |
+| `VOIDACCESS_DISABLED_SOURCES` | none | Cloud deny-list; see 13.18. |
+| `VOIDACCESS_CANCEL_GRACE` | `3` | Seconds an in-flight item may keep running after a cancel before it is stopped (see 2.5). |
+| `VOIDACCESS_CANCEL_POLL_INTERVAL` | `0.25` | Seconds between looks at the cancel token while a stage waits. |
 
 Why enrichment is not run concurrently with scraping or extraction: the query-only fetchers (OTX, abuse.ch, ransomware.live, RansomLook) have no data dependency and could overlap scraping, but they are exactly the sources a licence-restricted deployment turns off, and the remaining sources (NVD, CISA KEV, RDAP, crt.sh, Wayback, MITRE) are driven by entities that only exist after extraction. The entity enrichers share and rewrite the extraction result list and the entity rows, so they stay sequential.
+
+### 13.18 Source Deny-List and Source Status
+
+| Variable | Default | Notes |
+|---|---|---|
+| `VOIDACCESS_DISABLED_SOURCES` | unset | Comma-separated source ids (tables below and in 13.16). Ids are case-insensitive and whitespace is ignored. The named sources make no network call in any stage. |
+
+**Unset or blank: behaviour is unchanged.** Setting it only removes sources.
+
+**Every stage is covered.** The deny-list is applied inside the modules, so it holds on the CLI, the API and `voidaccess enrich`: the Tor engine fan-out (`tor_search`, `torch`, `haystack`), the paste, GitHub, GitLab, RSS and Telegram scrapers, the blocklist feed matchers, historical intel (justice.gov press), credential presence (Pwned Passwords) and every enrichment source. A denied source is not called, not read from its cache, and no coroutine is created for it. It composes with the allowlist in 13.16: a source runs only if the deny-list does not name it **and** the allowlist (when set) permits it. When both exclude a source, `disabled` wins.
+
+**Unknown id: hard error**, like the allowlist, because a typo would leave a source running that the operator meant to switch off. The CLI validates it at startup (exit code 2); the API validates it when an investigation starts (`SourceControlError`, a `ValueError`).
+
+**Umbrella ids.** `paste_sites` denies `pastebin`, `paste_ee`, `dpaste` and `rentry`; `blocklists` denies `sslbl`, `openphish`, `phishtank` and `ransomwhere`; `rss` denies every RSS feed including the FBI and DOJ ones. `fbi_doj_press` on its own denies both the justice.gov press-release lookup in historical intel and the two FBI/DOJ feeds in the RSS scraper.
+
+Search-stage source ids (enrichment ids are in 13.16):
+
+| id | What it is | Module | Licence-table verdict (E0, 2026-10-11) |
+|---|---|---|---|
+| `tor_search` | the 16-engine Tor onion search fan-out | `search/search.py` | on our keys (row 36; needs a legal and abuse-handling decision) |
+| `torch` | Torch onion search engine | `sources/engines.py` | on our keys (row 36) |
+| `haystack` | Haystack onion search engine | `sources/engines.py` | on our keys (row 36) |
+| `paste_sites` | umbrella for the four clearnet paste sites | `sources/paste_scraper.py` | off (row 38) |
+| `pastebin` | Pastebin search and raw fetch | `sources/paste_scraper.py` | off (row 38) |
+| `paste_ee` | paste.ee search and fetch | `sources/paste_scraper.py` | off (row 38) |
+| `dpaste` | dpaste.org search and fetch | `sources/paste_scraper.py` | off (row 38) |
+| `rentry` | Rentry raw fetch (no search endpoint) | `sources/paste_scraper.py` | off (row 38) |
+| `github` | GitHub code and repository search | `sources/github_scraper.py` | on our keys with one token and caching (row 31) |
+| `gitlab` | GitLab snippet and project search | `sources/gitlab_scraper.py` | BYO only until terms are read (row 32) |
+| `rss` | umbrella for the 21 security RSS and press feeds | `sources/rss_scraper.py` | conditional: headline, link and short snippet only (row 39) |
+| `telegram` | Telegram channels through Telethon (needs `TELEGRAM_API_ID`/`TELEGRAM_API_HASH`) | `sources/telegram.py` | off (row 40) |
+
+**Recommended cloud value** (exported as `sources.source_control.CLOUD_DISABLED_SOURCES`; not applied by default). It denies every source whose commercial terms are unverified or non-commercial on the licence table and that the allowlist in 13.16 does not already remove:
+
+```
+VOIDACCESS_DISABLED_SOURCES=openphish,sslbl,phishtank,ransomwhere,hibp_pwned_passwords,fbi_doj_press,pastebin,paste_ee,dpaste,rentry,gitlab,telegram
+```
+
+Use it together with `VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack`. Still running under both values, and not on the licence table's "fine on our keys" list: `rss` (conditional: the scraper also fetches each matching article's body and passes it to extraction and the summary, which is more than "headline, link and short snippet"), `github` (fine only with one token and caching, never token pooling), `torch`/`haystack`/`tor_search` (no terms, a legal decision), and the non-source services ScrapingAnt (a paid proxy, resale terms unread) and DeepL (a free key is off; only a paid plan is fine).
+
+**`sources_used` (CLI JSON and the `sources_status` metric).** Each entry is `{"status", "count", "requests"}` (plus `"error"` carrying an exception class name, never its message):
+
+| status | Meaning |
+|---|---|
+| `ok` | the source ran; `count` is the pages or matches it produced (zero is a real zero) |
+| `error` | it raised, or every HTTP call it made failed (an exception, 401, 403, 429 or 5xx) |
+| `timed_out` | the stage or call hit its cap |
+| `skipped_by_allowlist` | `VOIDACCESS_ENRICHMENT_SOURCES` excludes it |
+| `disabled` | `VOIDACCESS_DISABLED_SOURCES` names it, or its own off switch is set (`PASTE_SCRAPING_ENABLED=false` and friends) |
+| `no_key` | it needs an API key that is not set and it made no request |
+| `skipped` | not run in this mode, for example the onion engines under `--no-tor` |
+
+`requests` is the number of HTTP calls the source actually made (a cache hit is zero). It is counted at the shared HTTP chokepoints by mapping the URL to a source id (`sources/source_control.py::SOURCE_URL_RULES`), so no module keeps its own tally. The same counts are in the `completed` progress event: `metrics.source_requests` (total per source id) and `metrics.source_requests_by_step` (per pipeline step, so a runner can report `enrichment_calls` per source). In the API, `sources_used` keeps its flat string form and gains the strings `disabled` and `skipped_by_allowlist` for those sources.
+
+```json
+"sources_used": {
+  "nvd":          {"status": "ok", "count": 3, "requests": 2},
+  "otx":          {"status": "no_key", "count": 0, "requests": 0},
+  "openphish":    {"status": "disabled", "count": 0, "requests": 0},
+  "pastebin":     {"status": "disabled", "count": 0, "requests": 0},
+  "ransomlook":   {"status": "skipped_by_allowlist", "count": 0, "requests": 0},
+  "github":       {"status": "error", "count": 0, "requests": 4, "error": "ClientConnectorError"},
+  "tor_search":   {"status": "skipped", "count": 0, "requests": 0}
+}
+```
