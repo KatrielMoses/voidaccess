@@ -85,16 +85,32 @@ def allow(key: str, limit: int, window: float) -> bool:
 
 
 def client_key(request) -> str:
-    """Best-effort client identifier for keying limits (proxy-aware).
+    """Select the right-most untrusted hop; forwarding is opt-in.
 
-    Prefers the left-most ``X-Forwarded-For`` hop (the stack sits behind a
-    reverse proxy in the documented deploys), else the socket peer.
+    A numeric setting trusts that many proxy hops including the socket peer.
+    CIDRs trust only matching addresses, walking the chain from the peer.
+    Invalid configuration or malformed headers falls back to the direct peer.
     """
-    xff = request.headers.get("x-forwarded-for") if hasattr(request, "headers") else None
-    if xff:
-        return xff.split(",")[0].strip()
-    client = getattr(request, "client", None)
-    return getattr(client, "host", None) or "unknown"
+    import ipaddress
+
+    peer = getattr(getattr(request, "client", None), "host", None) or "unknown"
+    trusted = (os.getenv("VOIDACCESS_TRUSTED_PROXIES", "0") or "0").strip()
+    xff = request.headers.get("x-forwarded-for", "")
+    if not xff or trusted == "0":
+        return peer
+    try:
+        chain = [str(ipaddress.ip_address(h.strip())) for h in xff.split(",")]
+        chain.append(str(ipaddress.ip_address(peer)))
+        if trusted.isdecimal():
+            count = int(trusted)
+            # An incomplete chain cannot establish a client identity.
+            return chain[-count - 1] if 0 < count < len(chain) else peer
+        networks = [ipaddress.ip_network(c.strip()) for c in trusted.split(",")]
+        while len(chain) > 1 and any(ipaddress.ip_address(chain[-1]) in n for n in networks):
+            chain.pop()
+        return chain[-1]
+    except ValueError:
+        return peer
 
 
 def reset() -> None:

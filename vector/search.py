@@ -17,7 +17,7 @@ def find_related_pages(query: str, n_results: int = 10) -> list[dict]:
     return store.search_similar(query, n_results=n_results)
 
 
-def find_pages_similar_to(reference_url: str, n_results: int = 10) -> list[dict]:
+def find_pages_similar_to(reference_url: str, n_results: int = 10, user_id: int | None = None) -> list[dict]:
     """
     Find pages similar to *reference_url* using its stored embedding.
     Returns [] if the URL is not in the collection.
@@ -29,15 +29,16 @@ def find_pages_similar_to(reference_url: str, n_results: int = 10) -> list[dict]
         import hashlib
 
         pid = hashlib.sha256(reference_url.encode("utf-8")).hexdigest()
-        got = col.get(ids=[pid], include=["embeddings"])
-        embs = got.get("embeddings") or []
-        if not embs or embs[0] is None:
+        got = col.get(where={"$and": [{"url": reference_url}, {"user_id": str(user_id)}]}, include=["embeddings"]) if user_id is not None else col.get(ids=[pid], include=["embeddings"])
+        embs = got.get("embeddings")
+        if embs is None or len(embs) == 0 or embs[0] is None:
             return []
         emb = list(embs[0])
         n = max(1, int(n_results))
         res = col.query(
             query_embeddings=[emb],
             n_results=n + 1,
+            where={"user_id": str(user_id)} if user_id is not None else None,
             include=["distances", "metadatas"],
         )
         ids = (res.get("ids") or [[]])[0]
@@ -45,7 +46,7 @@ def find_pages_similar_to(reference_url: str, n_results: int = 10) -> list[dict]
         metas = (res.get("metadatas") or [[]])[0]
         out: list[dict] = []
         for i, _eid in enumerate(ids):
-            if _eid == pid:
+            if _eid in (got.get("ids") or [pid]):
                 continue
             m = metas[i] if i < len(metas) and metas[i] else {}
             md = dict(m) if isinstance(m, dict) else {}
@@ -76,6 +77,7 @@ def find_pages_similar_to(reference_url: str, n_results: int = 10) -> list[dict]
 def cross_investigation_recall(
     query: str,
     exclude_investigation_id: int | None = None,
+    user_id: int | None = None,
 ) -> list[dict]:
     """
     Similar pages across investigations; optionally exclude one investigation_id.
@@ -84,4 +86,4 @@ def cross_investigation_recall(
     if exclude_investigation_id is not None:
         ex = str(exclude_investigation_id)
         where = {"investigation_id": {"$ne": ex}}
-    return store.search_similar(query, n_results=10, where=where)
+    return store.search_similar(query, n_results=10, where=where, **({"user_id": user_id} if user_id is not None else {}))

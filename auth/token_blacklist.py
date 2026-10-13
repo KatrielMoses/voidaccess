@@ -131,10 +131,8 @@ def _db_is_revoked_sync(jti: str) -> bool:
                 return False
             return True
     except Exception as e:  # noqa: BLE001
-        # Fail-OPEN for the DB backend: a transient DB/schema error must not take
-        # down JWT auth on a box whose whole point is running without Redis.
-        logger.warning("DB revocation check degraded (fail-open): %s", e)
-        return False
+        logger.warning("DB revocation check unavailable (failing closed)")
+        raise BlacklistUnavailableError("Database revocation unavailable") from e
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +152,7 @@ async def is_token_revoked(jti: str) -> bool:
     """True if *jti* has been revoked.
 
     Redis unset + DB unset → False (disabled). Redis set + unreachable →
-    BlacklistUnavailableError (fail closed). DB backend → real result, fail-open
-    on transient error.
+    BlacklistUnavailableError (fail closed). DB backend → real result, fail-closed on transient error.
     """
     global _logged_disabled
     if REDIS_URL is not None:

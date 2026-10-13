@@ -51,7 +51,7 @@ async def semantic_search(
     try:
         from vector import search_similar
 
-        results = search_similar(q, n_results=n)
+        results = search_similar(q, n_results=n, user_id=current_user.user.id)
         return _search_payload(results, warnings)
     except Exception as exc:
         warnings.append(
@@ -76,7 +76,7 @@ async def similar_to(
     try:
         from vector import find_pages_similar_to
 
-        return _search_payload(find_pages_similar_to(url, n_results=n), warnings)
+        return _search_payload(find_pages_similar_to(url, n_results=n, user_id=current_user.user.id), warnings)
     except Exception as exc:
         warnings.append(
             safe_detail(
@@ -98,7 +98,7 @@ async def cross_investigation(
         from vector import cross_investigation_recall
 
         return _search_payload(
-            cross_investigation_recall(q, exclude_investigation_id=exclude_investigation),
+            cross_investigation_recall(q, exclude_investigation_id=exclude_investigation, user_id=current_user.user.id),
             warnings,
         )
     except Exception as exc:
@@ -121,7 +121,7 @@ async def stats(current_user: CurrentUser = Depends(get_current_user)) -> dict:
         from vector import get_collection, get_collection_stats, count_pages
 
         chromadb_available = get_collection() is not None
-        total_documents = count_pages()
+        total_documents = count_pages(user_id=None if current_user.user.role == "admin" else current_user.user.id)
         stats = get_collection_stats()
         persist_directory = str(stats.get("persist_directory", ""))
     except Exception as exc:
@@ -172,8 +172,11 @@ async def search_entities(
             )
             if body.entity_types:
                 q = q.filter(Entity.entity_type.in_(body.entity_types))
-            total = q.count()
-            entities = q.order_by(Entity.created_at.desc()).offset(offset).limit(limit).all()
+            from db.entity_views import entity_views
+            entities = entity_views(session, q.all(), user_id=current_user.user.id)
+            entities.sort(key=lambda e: e.created_at.isoformat() if e.created_at else "", reverse=True)
+            total = len(entities)
+            entities = entities[offset:offset + limit]
             return {
                 "items": [
                     {

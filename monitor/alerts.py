@@ -307,6 +307,7 @@ def _persist_alert_record(
         create_monitor_alert(
             session=session,
             monitor_name=str(watch.get("name", "watch")),
+            user_id=watch.get("user_id"),
             change_type=change_type,
             summary=summary,
             diff_data=_sanitize_diff(diff_result),

@@ -74,6 +74,11 @@ class TestGraphIntegration(unittest.TestCase):
 
     def test_api_graph_endpoints(self):
         from api.main import app
+        from api.ownership import require_resource_owner
+        session_patch = patch("db.session.get_session")
+        session_patch.start()
+        self.addCleanup(session_patch.stop)
+        app.dependency_overrides[require_resource_owner] = lambda: None
         from api.auth import get_current_user
 
         mock_user = MagicMock()
@@ -114,6 +119,11 @@ class TestGraphIntegration(unittest.TestCase):
 
     def test_pending_and_missing_node(self):
         from api.main import app
+        from api.ownership import require_resource_owner
+        session_patch = patch("db.session.get_session")
+        session_patch.start()
+        self.addCleanup(session_patch.stop)
+        app.dependency_overrides[require_resource_owner] = lambda: None
         from api.auth import get_current_user
 
         mock_user = MagicMock()

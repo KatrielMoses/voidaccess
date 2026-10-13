@@ -850,6 +850,9 @@ def build_graph_from_db(
             all_entities: list[Entity] = []
 
             entity_rows = list(query.yield_per(2000))
+            if investigation_id is not None and entity_rows:
+                from db.entity_views import entity_views
+                entity_rows = entity_views(session, entity_rows, investigation_id=investigation_id)
             if not entity_rows and not isinstance(matching_entities_count, int):
                 fallback_rows = query.all()
                 entity_rows = (
@@ -1000,6 +1003,9 @@ def build_graph_from_db(
                             .filter(EntityModel.id.in_(all_missing_ids))
                             .all()
                         )
+                        if investigation_id is not None:
+                            from db.entity_views import entity_views
+                            missing_entities = entity_views(session, missing_entities, investigation_id=investigation_id)
                         for me in missing_entities:
                             me_page_url = me.page.url if me.page else ""
                             me_node_id = _make_node_id(me.entity_type, me.value, me_page_url)

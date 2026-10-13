@@ -28,7 +28,7 @@ def _onion_key_for_url(url: str) -> str:
     return u[:255]
 
 
-def get_last_cleaned_text_for_url(url: str) -> str:
+def get_last_cleaned_text_for_url(url: str, investigation_id=None) -> str:
     """Return latest cleaned_text for *url* from pages table, or ''. Never raises."""
     if not os.getenv("DATABASE_URL"):
         return ""
@@ -37,7 +37,7 @@ def get_last_cleaned_text_for_url(url: str) -> str:
         from db.session import get_session  # noqa: PLC0415
 
         with get_session() as session:
-            page = get_page_by_url(session, url)
+            page = get_page_by_url(session, url, investigation_id=investigation_id)
             if page is None or not page.cleaned_text:
                 return ""
             return str(page.cleaned_text)

@@ -262,6 +262,7 @@ class MonitorAlert(Base):
     __tablename__ = "monitor_alerts"
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[int]] = mapped_column(sa.Integer, sa.ForeignKey("users.id"), nullable=True, index=True)
     monitor_name: Mapped[str] = mapped_column(sa.String, nullable=False, index=True)
     triggered_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
@@ -310,6 +311,10 @@ class InvestigationEntityLink(Base):
     investigation_id: Mapped[uuid.UUID] = mapped_column(
         sa.UUID(as_uuid=True), sa.ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False
     )
+    context_snippet: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True)
+    page_id: Mapped[Optional[uuid.UUID]] = mapped_column(sa.UUID(as_uuid=True), sa.ForeignKey("pages.id"), nullable=True)
+    extraction_method: Mapped[Optional[str]] = mapped_column(sa.String(10), nullable=True)
     linked_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -349,6 +354,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    role: Mapped[str] = mapped_column(sa.String(10), nullable=False, default="user", server_default="user")
     email: Mapped[str] = mapped_column(sa.String(255), nullable=False, unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(sa.String, nullable=False)
     is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, nullable=False)
@@ -529,6 +535,7 @@ class Page(Base):
     Individual scraped page from a source.
     """
     __tablename__ = "pages"
+    investigation_id: Mapped[Optional[uuid.UUID]] = mapped_column(sa.UUID(as_uuid=True), sa.ForeignKey("investigations.id"), nullable=True)
 
     id: Mapped[uuid.UUID] = mapped_column(
         sa.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -558,7 +565,8 @@ class Page(Base):
     )
 
     __table_args__ = (
-        sa.UniqueConstraint("url"),
+        sa.UniqueConstraint("url", "investigation_id"),
+        sa.Index("uq_pages_cli_url", "url", unique=True, sqlite_where=sa.text("investigation_id IS NULL"), postgresql_where=sa.text("investigation_id IS NULL")),
         sa.Index("ix_pages_source_id", "source_id"),
         sa.Index("ix_pages_raw_content_hash", "raw_content_hash"),
         sa.Index("ix_pages_posted_at", "posted_at"),
@@ -760,6 +768,26 @@ class ActorProfile(Base):
     )
 
 
+class ActorNote(Base):
+    __tablename__ = "actor_notes"
+    id: Mapped[uuid.UUID] = mapped_column(sa.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_id: Mapped[uuid.UUID] = mapped_column(sa.UUID(as_uuid=True), sa.ForeignKey("actor_profiles.id"), nullable=False)
+    user_id: Mapped[Optional[int]] = mapped_column(sa.Integer, sa.ForeignKey("users.id"), nullable=True, index=True)
+    text: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class Monitor(Base):
+    __tablename__ = "monitors"
+    deleted: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False, server_default=sa.false())
+    id: Mapped[uuid.UUID] = mapped_column(sa.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[Optional[int]] = mapped_column(sa.Integer, sa.ForeignKey("users.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    config: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    enabled: Mapped[bool] = mapped_column(sa.Boolean, default=True, nullable=False)
+    __table_args__ = (sa.UniqueConstraint("user_id", "name"),)
+
+
 class ActorAlias(Base):
     """
     An alternate spelling / variant handle linked to an actor profile.
@@ -781,6 +809,7 @@ class ActorAlias(Base):
         nullable=False,
         index=True,
     )
+    user_id: Mapped[Optional[int]] = mapped_column(sa.Integer, sa.ForeignKey("users.id"), nullable=True, index=True)
     alias_value: Mapped[str] = mapped_column(
         sa.String(500), nullable=False
     )
@@ -796,7 +825,7 @@ class ActorAlias(Base):
     confidence: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True)
 
     __table_args__ = (
-        sa.UniqueConstraint("actor_id", "alias_value"),
+        sa.UniqueConstraint("actor_id", "alias_value", "user_id"),
     )
 
     actor: Mapped["ActorProfile"] = relationship(
@@ -839,7 +868,7 @@ class ActorInfrastructure(Base):
     confidence: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True)
 
     __table_args__ = (
-        sa.UniqueConstraint("actor_id", "entity_type", "entity_value"),
+        sa.UniqueConstraint("actor_id", "entity_type", "entity_value", "source_investigation_id"),
         sa.Index("ix_actor_infra_actor", "actor_id"),
         sa.Index("ix_actor_infra_type_value", "entity_type", "entity_value"),
     )

@@ -23,13 +23,14 @@ import re
 import uuid
 import zipfile
 
+from api.ownership import require_resource_owner
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from api.auth import CurrentUser, get_current_user
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_resource_owner)])
 
 
 class ExportSelectedBody(BaseModel):
@@ -59,7 +60,7 @@ def _check_investigation_owner(investigation_id: str, current_user: CurrentUser)
             if inv is None:
                 raise HTTPException(status_code=404, detail="Investigation not found")
             if str(inv.user_id) != str(current_user.user.id):
-                raise HTTPException(status_code=403, detail="Forbidden")
+                raise HTTPException(status_code=404, detail="Not found")
     except HTTPException:
         raise
     except Exception as exc:

@@ -13,7 +13,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from api.auth import get_current_user
+from api.auth import require_admin
 from api.errors import log_exception
 from search.search import SEARCH_ENGINES
 from search.circuit_breaker import record_success, is_open, _engine_failures
@@ -28,7 +28,7 @@ router = APIRouter(tags=["admin"])
 _seed_validation_jobs: dict[str, dict] = {}
 
 
-@router.get("/enrichment-cache/stats", dependencies=[Depends(get_current_user)])
+@router.get("/enrichment-cache/stats", dependencies=[Depends(require_admin)])
 async def get_enrichment_cache_stats() -> dict:
     """
     Return cross-investigation enrichment cache stats.
@@ -53,7 +53,7 @@ async def get_enrichment_cache_stats() -> dict:
         }
 
 
-@router.get("/corpus-health", dependencies=[Depends(get_current_user)])
+@router.get("/corpus-health", dependencies=[Depends(require_admin)])
 async def get_corpus_health(window_seconds: int = 3600) -> dict:
     """Corpus-health vital signs for the single maintainer (P4.4 / CC-5).
 
@@ -81,7 +81,7 @@ async def get_corpus_health(window_seconds: int = 3600) -> dict:
         return {"available": False, "error": "unavailable", "correlation_id": correlation_id}
 
 
-@router.post("/enrichment-cache/invalidate", dependencies=[Depends(get_current_user)])
+@router.post("/enrichment-cache/invalidate", dependencies=[Depends(require_admin)])
 async def invalidate_enrichment_cache_entry(
     entity_type: str,
     value: str,
@@ -103,7 +103,7 @@ async def invalidate_enrichment_cache_entry(
 
 
 @router.get("/circuit-breakers")
-async def get_circuit_breakers(current_user=Depends(get_current_user)) -> dict:
+async def get_circuit_breakers(current_user=Depends(require_admin)) -> dict:
     """
     Get the current state of all search engine circuit breakers.
     Returns state, failure count, and last success timestamp for each engine.
@@ -121,14 +121,14 @@ async def get_circuit_breakers(current_user=Depends(get_current_user)) -> dict:
     return {"engines": engines}
 
 
-@router.post("/circuit-breakers/{engine_name}/reset", dependencies=[Depends(get_current_user)])
+@router.post("/circuit-breakers/{engine_name}/reset", dependencies=[Depends(require_admin)])
 async def reset_circuit_breaker(engine_name: str) -> dict:
     """Reset a circuit breaker to closed state manually."""
     await record_success(engine_name)
     return {"engine": engine_name, "state": "closed", "message": "Circuit breaker reset"}
 
 
-@router.post("/circuit-breakers/reset-all", dependencies=[Depends(get_current_user)])
+@router.post("/circuit-breakers/reset-all", dependencies=[Depends(require_admin)])
 async def reset_all_circuit_breakers() -> dict:
     """Reset all circuit breakers to closed state."""
     from search.search import SEARCH_ENGINES
@@ -137,7 +137,7 @@ async def reset_all_circuit_breakers() -> dict:
     return {"reset_count": len(SEARCH_ENGINES), "state": "all closed"}
 
 
-@router.get("/content-safety/events", dependencies=[Depends(get_current_user)])
+@router.get("/content-safety/events", dependencies=[Depends(require_admin)])
 async def get_content_safety_events() -> dict:
     """
     Return content safety block event counts for operator review.
@@ -224,7 +224,7 @@ async def _run_seed_validation_job(job_id: str) -> None:
         job["finished_at"] = datetime.now(timezone.utc).isoformat()
 
 
-@router.get("/seeds", dependencies=[Depends(get_current_user)])
+@router.get("/seeds", dependencies=[Depends(require_admin)])
 async def get_seeds_summary() -> dict:
     """Return a summary of the seed list: counts by category and status."""
     try:
@@ -235,7 +235,7 @@ async def get_seeds_summary() -> dict:
         return {"total": 0, "by_category": {}, "by_status": {}, "last_validated": None}
 
 
-@router.get("/seeds/list", dependencies=[Depends(get_current_user)])
+@router.get("/seeds/list", dependencies=[Depends(require_admin)])
 async def list_all_seeds() -> dict:
     """Return the full seed list (admin only)."""
     try:
@@ -246,7 +246,7 @@ async def list_all_seeds() -> dict:
         return {"seeds": []}
 
 
-@router.post("/seeds/validate", dependencies=[Depends(get_current_user)])
+@router.post("/seeds/validate", dependencies=[Depends(require_admin)])
 async def trigger_seed_validation() -> dict:
     """
     Trigger a background validation of every seed over Tor.
@@ -267,7 +267,7 @@ async def trigger_seed_validation() -> dict:
     }
 
 
-@router.get("/seeds/validate/{job_id}", dependencies=[Depends(get_current_user)])
+@router.get("/seeds/validate/{job_id}", dependencies=[Depends(require_admin)])
 async def get_seed_validation_status(job_id: str) -> dict:
     """Poll the status of a seed-validation job."""
     job = _seed_validation_jobs.get(job_id)
@@ -276,7 +276,7 @@ async def get_seed_validation_status(job_id: str) -> dict:
     return {"job_id": job_id, **job}
 
 
-@router.post("/seeds/add", dependencies=[Depends(get_current_user)])
+@router.post("/seeds/add", dependencies=[Depends(require_admin)])
 async def add_seed(body: AddSeedBody) -> dict:
     """Manually add a seed URL to the catalogue."""
     seed_manager = get_seed_manager()
@@ -294,7 +294,7 @@ async def add_seed(body: AddSeedBody) -> dict:
     return {"added": True, "url": body.url, "category": body.category}
 
 
-@router.get("/seeds/discovered", dependencies=[Depends(get_current_user)])
+@router.get("/seeds/discovered", dependencies=[Depends(require_admin)])
 async def list_discovered_seeds(
     only_pending: bool = True,
     limit: int = 100,

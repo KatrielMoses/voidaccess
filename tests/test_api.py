@@ -51,6 +51,8 @@ def _make_client():
     )
 
     current = CurrentUser(user=mock_user, jti="test-jti")
+    from api.ownership import require_resource_owner
+    app.dependency_overrides[require_resource_owner] = lambda: None  # Unit handlers; real guards covered in test_multiuser_security.
     app.dependency_overrides[get_current_user] = lambda: current
     app.dependency_overrides[require_password_not_reset_pending] = lambda: current
     client = TestClient(app, raise_server_exceptions=False)
@@ -475,34 +477,8 @@ class TestExportPackage(unittest.TestCase):
 # ===========================================================================
 
 
-class TestMonitors(unittest.TestCase):
-
-    @patch("api.routes.monitors.load_watches", return_value=[], create=True)
-    def test_monitors_get_returns_list(self, mock_load):
-        with patch("monitor.config.load_watches", return_value=[], create=True):
-            client = _make_client()
-            resp = client.get("/monitors")
-            self.assertEqual(resp.status_code, 200)
-            self.assertIsInstance(resp.json(), list)
-
-    def test_monitors_get_empty_when_no_yaml(self):
-        """Returns empty list if monitors.yaml doesn't exist."""
-        client = _make_client()
-        resp = client.get("/monitors")
-        self.assertEqual(resp.status_code, 200)
-        self.assertIsInstance(resp.json(), list)
-
-    def test_monitors_status_returns_list(self):
-        client = _make_client()
-        resp = client.get("/monitors/status")
-        self.assertEqual(resp.status_code, 200)
-        self.assertIsInstance(resp.json(), list)
-
-    def test_monitors_trigger_unknown_watch_404(self):
-        with patch("monitor.config.get_watch_by_name", return_value=None):
-            client = _make_client()
-            resp = client.post("/monitors/nonexistent_watch/trigger")
-            self.assertEqual(resp.status_code, 404)
+# Monitor API integration is covered with real owner-scoped databases in
+# test_api_monitors.py and test_multiuser_security.py.
 
 
 # ===========================================================================
@@ -624,7 +600,8 @@ class TestCsvExport(unittest.TestCase):
         mock_session_instance.query.return_value.filter.return_value.all.return_value = [mock_ent]
 
         client = _make_client()
-        resp = client.get(f"/investigations/{_VALID_UUID}/entities/export/csv")
+        with patch("db.entity_views.entity_views", side_effect=lambda session, entities, **kwargs: entities):
+            resp = client.get(f"/investigations/{_VALID_UUID}/entities/export/csv")
 
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/csv", resp.headers.get("content-type", ""))

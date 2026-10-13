@@ -30,7 +30,7 @@ from rich.table import Table
 
 from voidaccess_cli import __version__
 from voidaccess_cli import config as cli_config
-from voidaccess_cli.commands import actors, benchmark, configure, enrich, export, investigate, show
+from voidaccess_cli.commands import admin, actors, benchmark, configure, enrich, export, investigate, show
 
 console = Console()
 BANNER = """\
@@ -58,6 +58,7 @@ app = typer.Typer(
 )
 
 # Sub-commands
+app.add_typer(admin.app, name="admin")
 app.add_typer(configure.app, name="configure", help="Configure the CLI (LLM, keys, Tor).")
 app.add_typer(benchmark.app, name="benchmark", help="Measurement harness: pipeline metrics + engine health probe.")
 app.command("investigate", help="Run a new investigation.")(investigate.run)

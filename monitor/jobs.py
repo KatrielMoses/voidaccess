@@ -47,9 +47,9 @@ async def run_keyword_watch(watch: dict, llm=None) -> dict[str, Any]:
         from db.session import get_session
 
         with get_session() as session:
-            inv = get_investigation_by_query(session, name)
+            inv = get_investigation_by_query(session, name, user_id=watch.get("user_id"))
             if inv is None:
-                inv = create_investigation(session, query=name)
+                inv = create_investigation(session, query=name, user_id=watch.get("user_id"))
             investigation_id = inv.id
     except Exception as exc:
         logger.warning("keyword watch investigation lookup/create failed for %s: %s", name, exc)
@@ -92,7 +92,7 @@ async def run_keyword_watch(watch: dict, llm=None) -> dict[str, Any]:
     cached_hits: list[dict] = []
     uncached_urls = pending_urls
     try:
-        cached_hits, uncached_urls = vector.bulk_check_cache(pending_urls)
+        cached_hits, uncached_urls = vector.bulk_check_cache(pending_urls, **({"user_id": watch["user_id"]} if watch.get("user_id") is not None else {}))
     except Exception as exc:
         logger.warning("bulk_check_cache failed for keyword watch %s: %s", name, exc)
     for cached in cached_hits:
@@ -107,7 +107,7 @@ async def run_keyword_watch(watch: dict, llm=None) -> dict[str, Any]:
     for url in uncached_urls:
         text = scraped.get(url, "")
         try:
-            if vector.is_duplicate(text):
+            if watch.get("user_id") is None and vector.is_duplicate(text):
                 duplicate_pages_skipped += 1
                 continue
         except Exception as exc:
@@ -116,7 +116,7 @@ async def run_keyword_watch(watch: dict, llm=None) -> dict[str, Any]:
             vector.upsert_page(
                 url,
                 text,
-                metadata={"watch_name": name, "watch_type": "keyword"},
+                metadata={"watch_name": name, "watch_type": "keyword", "investigation_id": str(investigation_id), **({"user_id": str(watch["user_id"])} if watch.get("user_id") is not None else {})},
             )
         except Exception as exc:
             logger.warning("upsert_page failed for %s: %s", url, exc)
@@ -180,13 +180,13 @@ async def run_url_watch(watch: dict, llm=None) -> dict[str, Any]:
         from db.session import get_session
 
         with get_session() as session:
-            inv = get_investigation_by_query(session, name)
+            inv = get_investigation_by_query(session, name, user_id=watch.get("user_id"))
             if inv is None:
-                inv = create_investigation(session, query=name)
+                inv = create_investigation(session, query=name, user_id=watch.get("user_id"))
             investigation_id = inv.id
     except Exception as exc:
         logger.warning("url watch investigation lookup/create failed for %s: %s", name, exc)
-    old_content = _db.get_last_cleaned_text_for_url(url)
+    old_content = _db.get_last_cleaned_text_for_url(url, investigation_id=investigation_id)
 
     try:
         scraped = await scrape.scrape_multiple([{"link": url, "title": ""}])
