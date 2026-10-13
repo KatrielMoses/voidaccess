@@ -14,7 +14,6 @@ import { StylometryPanel } from "@/components/StylometryPanel";
 import { useGraphData } from "@/lib/hooks/useGraphData";
 import { useInvestigationPolling } from "@/lib/hooks/useInvestigationPolling";
 import { InvestigationLoadingScreen } from "@/components/InvestigationLoadingScreen";
-import { getToken } from "@/lib/auth";
 import type {
   EntityCategoryKey,
   GraphNodeJSON,
@@ -96,10 +95,10 @@ export default function InvestigationPage() {
   const handleCancelRequest = useCallback(() => {
     if (!window.confirm("Cancel this investigation? Partial results collected so far will be kept.")) return;
     setCancelling(true);
-    const token = getToken();
+
     fetch(`/api/investigations/${encodeURIComponent(investigationParamId)}/cancel`, {
       method: "POST",
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: {  },
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -117,10 +116,10 @@ export default function InvestigationPage() {
 
   const fetchInvestigation = useCallback(async () => {
     if (!investigationParamId) return;
-    const token = getToken();
+
     const res = await fetch(`/api/investigations/${encodeURIComponent(investigationParamId)}`, {
       cache: "no-store",
-      headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+      headers: {  },
     });
     if (res.ok) {
       const data = (await res.json()) as Inv;
@@ -132,7 +131,7 @@ export default function InvestigationPage() {
     if (!investigationParamId) return;
     setEntitiesLoading(true);
     try {
-      const token = getToken();
+
       const conf = minConf !== undefined ? minConf : entityMinConfidence;
       // Keep the client within the API's paginated maximum.  The previous
       // 1000 request was rejected with HTTP 422 before the sidebar could
@@ -145,7 +144,7 @@ export default function InvestigationPage() {
       }
       const res = await fetch(
         `/api/investigations/${encodeURIComponent(investigationParamId)}/entities?${qs}`,
-        { cache: "no-store", headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) } }
+        { cache: "no-store", headers: {  } }
       );
       if (res.ok) {
         const json = await res.json();
@@ -207,10 +206,10 @@ export default function InvestigationPage() {
   const isNoData = graphData?.graph_status === "no_data";
 
   const handleDownloadCsv = useCallback(() => {
-    const token = getToken();
+
     const url = `/api/investigations/${encodeURIComponent(investigationParamId)}/entities/export/csv`;
     fetch(url, {
-      headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+      headers: {  },
     })
       .then(res => res.blob())
       .then(blob => {

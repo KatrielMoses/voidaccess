@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { InvestigationSummary } from "@/lib/types/investigation";
-import { getToken } from "@/lib/auth";
 
 const POLL_MS = 2000;
 
@@ -17,10 +16,10 @@ export function useInvestigationPolling({ investigationId, enabled, onUpdate }: 
   onUpdateRef.current = onUpdate;
 
   const fetchOne = useCallback(async () => {
-    const token = getToken();
+
     const res = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}`, {
       cache: "no-store",
-      headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+      headers: {  },
     });
     if (!res.ok) return;
     const data = (await res.json()) as InvestigationSummary;

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getToken } from "@/lib/auth";
 import Link from "next/link";
 
 // ---------------------------------------------------------------------------
@@ -151,9 +150,9 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
     setLoadingList(true);
     setListError(null);
     try {
-      const token = getToken();
+
       const res = await fetch("/api/settings/models", {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {  },
       });
       if (!res.ok) throw new Error(`Failed to load models (${res.status})`);
       const data: ModelListResponse = await res.json();
@@ -208,12 +207,12 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
       setValidating(true);
       setValidateResult(null);
       try {
-        const token = getToken();
+
         const res = await fetch("/api/settings/models/validate", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+
           },
           body: JSON.stringify({ model_id: id.trim() }),
         });

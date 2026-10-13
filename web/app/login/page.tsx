@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { login, setToken } from "@/lib/auth"
+import { login } from "@/lib/auth"
 import DarkWebSVG from "@/components/DarkWebSVG"
 import { Eye, EyeOff, Shield } from "lucide-react"
 import { motion } from "framer-motion"
@@ -27,9 +27,8 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const { access_token, must_reset_password } = await login(email, password)
-      setToken(access_token)
-      
+      const { must_reset_password } = await login(email, password)
+
       if (must_reset_password) {
         router.push("/reset-password")
       } else {
@@ -46,11 +45,11 @@ export default function LoginPage() {
 
   return (
     <div className="h-screen w-full flex bg-[#0c0c0e] overflow-hidden font-body">
-      
+
       {/* LEFT SIDE - LOGIN FORM */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center relative z-20 px-4 sm:px-16 md:px-24 xl:px-32">
         {/* Top-level branding */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
@@ -66,7 +65,7 @@ export default function LoginPage() {
 
         <div className="max-w-[420px] w-full mx-auto">
           {/* 3D Card Container matching HexaUI reference */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.2 }}
@@ -134,7 +133,7 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   className="text-[13px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg p-3 flex items-start gap-2"
@@ -164,20 +163,20 @@ export default function LoginPage() {
                   </span>
                 </button>
               </div>
-              
+
 
             </form>
           </motion.div>
 
           {/* Footer stats below the card like HexaUI reference */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 1, delay: 0.8 }}
             className="mt-8 text-center px-4"
           >
              <p className="text-[#a1a1aa] text-[13px] font-medium font-body">
-               Join <span className="text-white font-semibold">thousands</span> of authorized 
+               Join <span className="text-white font-semibold">thousands</span> of authorized
                personnel on the intelligence network.
              </p>
           </motion.div>
@@ -187,9 +186,9 @@ export default function LoginPage() {
       {/* RIGHT SIDE - DARK GRAY BG WITH SVG ANIMATION */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-[#1c1c21] items-center justify-center border-l border-white/[0.02]">
         <DarkWebSVG />
-        
+
         {/* Overlay quote or branding on the SVG */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 1, delay: 0.5 }}

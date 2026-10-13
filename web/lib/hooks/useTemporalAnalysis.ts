@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { getToken } from "@/lib/auth";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,10 +62,10 @@ export function useTemporalAnalysis(investigationId: string | null) {
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const token = getToken();
+
       const res = await fetch(
         `/api/investigations/${encodeURIComponent(investigationId)}/analysis/temporal`,
-        { cache: "no-store", headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) } }
+        { cache: "no-store", headers: {  } }
       );
       const json = (await res.json()) as TemporalAnalysisData & { detail?: unknown };
 

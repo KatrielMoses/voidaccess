@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getToken } from "@/lib/auth";
 import { ModelSelector } from "@/components/ModelSelector";
 
 
@@ -69,12 +68,12 @@ export function InvestigationInput() {
     setError(null);
     setLoading(true);
     try {
-      const token = getToken();
+
       const res = await fetch("/api/investigate", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+
         },
         body: JSON.stringify({ query: q, model, full_intelligence: fullIntel }),
       });

@@ -1,8 +1,8 @@
+import { sessionCookieOptions } from "@/lib/session"
 import { NextResponse } from "next/server"
 import { getBackendUrl } from "@/lib/backend"
 
 export async function POST(request: Request) {
-  const token = request.headers.get("Authorization");
     const body = await request.json()
   const BACKEND_URL = getBackendUrl()
 
@@ -29,16 +29,8 @@ export async function POST(request: Request) {
       return NextResponse.json(data, { status: res.status })
     }
 
-    const response = NextResponse.json(data)
-
-    // Set va_token cookie for middleware
-    // Note: In production, use secure: true, httpOnly: true, sameSite: 'strict'
-    // For now keeping it simple as per instructions
-    response.cookies.set("va_token", data.access_token, {
-      path: "/",
-      maxAge: 8 * 60 * 60, // 8 hours
-      sameSite: "lax",
-    })
+    const response = NextResponse.json({ must_reset_password: data.must_reset_password })
+    response.cookies.set("va_token", data.access_token, sessionCookieOptions)
 
     return response
   } catch (err) {

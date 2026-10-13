@@ -1,9 +1,10 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 /** Proxy GET /api/monitors/{name}/alerts → backend GET /monitors/{name}/alerts */
 export async function GET(request: Request, { params }: { params: { name: string } }) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
     const { name } = params;
   const url = new URL(request.url);
   const qs = url.searchParams.toString();

@@ -11,7 +11,6 @@ import type {
 
 const POLL_INTERVAL_MS = 60_000;
 
-import { getToken } from "@/lib/auth";
 
 function toChannels(w: RawWatch): string[] {
   const ch: string[] = [];
@@ -56,20 +55,20 @@ export function useMonitors() {
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchMonitors = useCallback(async () => {
-    const token = getToken();
+
 
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
     const headers = {
-        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+
     };
 
     try {
       const [watchesRes, statusRes, countRes] = await Promise.all([
-        fetch("/api/monitors", { 
-            signal: ctrl.signal, 
+        fetch("/api/monitors", {
+            signal: ctrl.signal,
             cache: "no-store",
             headers
         }),
@@ -124,13 +123,13 @@ export function useMonitors() {
 
   const createMonitor = useCallback(
     async (input: CreateMonitorInput): Promise<{ error?: string }> => {
-      const token = getToken();
+
       try {
         const res = await fetch("/api/monitors", {
           method: "POST",
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
-            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+
           },
           body: JSON.stringify(input),
         });
@@ -151,14 +150,14 @@ export function useMonitors() {
 
   const deleteMonitor = useCallback(
     async (id: string): Promise<{ error?: string }> => {
-      const token = getToken();
+
       try {
         const res = await fetch(
           `/api/monitors/${encodeURIComponent(id)}`,
-          { 
+          {
             method: "DELETE",
             headers: {
-                ...(token ? { "Authorization": `Bearer ${token}` } : {})
+
             }
           }
         );
@@ -179,14 +178,14 @@ export function useMonitors() {
 
   const triggerMonitor = useCallback(
     async (id: string): Promise<{ error?: string }> => {
-      const token = getToken();
+
       try {
         const res = await fetch(
           `/api/monitors/${encodeURIComponent(id)}/trigger`,
-          { 
+          {
             method: "POST",
             headers: {
-                ...(token ? { "Authorization": `Bearer ${token}` } : {})
+
             }
           }
         );

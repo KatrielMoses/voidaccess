@@ -1,10 +1,11 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ key_name: string }> }
 ) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
   const { key_name } = await params;
   try {
     const res = await fetch(

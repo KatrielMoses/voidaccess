@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { getToken } from "@/lib/auth";
 import { InvestigationSummary as Inv } from "@/lib/types/investigation";
 
 interface Props {
@@ -107,10 +106,10 @@ export function InvestigationSummary({
     setExporting(format);
     setExportOpen(false);
     try {
-      const token = getToken();
+
       const res = await fetch(
         `/api/export/${encodeURIComponent(investigationParamId)}/${format}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        { headers: {} }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();

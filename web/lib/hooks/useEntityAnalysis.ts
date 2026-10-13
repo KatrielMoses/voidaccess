@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { getToken } from "@/lib/auth";
 
 // ── Stylometry types ────────────────────────────────────────────────────────
 
@@ -96,10 +95,10 @@ export function useEntityAnalysis(entityId: string | null) {
     setStylometry((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const token = getToken();
+
       const res = await fetch(
         `/api/entities/${encodeURIComponent(entityId)}/analysis/stylometry`,
-        { cache: "no-store", headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) } }
+        { cache: "no-store", headers: {  } }
       );
       const json = (await res.json()) as StylometryData & { detail?: unknown };
 
@@ -134,10 +133,10 @@ export function useEntityAnalysis(entityId: string | null) {
     setOpsec((prev) => ({ ...prev, loading: true, error: null }));
 
     try {
-      const token = getToken();
+
       const res = await fetch(
         `/api/entities/${encodeURIComponent(entityId)}/analysis/opsec`,
-        { cache: "no-store", headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) } }
+        { cache: "no-store", headers: {  } }
       );
       const json = (await res.json()) as OpsecData & { detail?: unknown };
 

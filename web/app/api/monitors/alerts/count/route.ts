@@ -1,10 +1,11 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(request: Request) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
   const backendUrl = getBackendUrl();
-  
+
   try {
     const res = await fetch(`${backendUrl}/monitors/alerts/count`, {
       method: "GET",

@@ -5,3 +5,6 @@ out
 *.log
 .DS_Store
 tsconfig.tsbuildinfo
+
+!__tests__/
+!__tests__/*.test.ts

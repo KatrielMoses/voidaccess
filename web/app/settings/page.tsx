@@ -17,36 +17,36 @@ interface ApiKeyStatus {
   description: string;
 }
 
-async function fetchApiKeys(token: string): Promise<ApiKeyStatus[]> {
+async function fetchApiKeys(): Promise<ApiKeyStatus[]> {
   const res = await fetch("/api/settings/api-keys", {
-    headers: { Authorization: token },
+
   });
   if (!res.ok) throw new Error("Failed to load keys");
   const data = await res.json();
   return data.keys;
 }
 
-async function saveKey(token: string, keyName: string, value: string): Promise<void> {
+async function saveKey(keyName: string, value: string): Promise<void> {
   const res = await fetch("/api/settings/api-keys", {
     method: "POST",
-    headers: { Authorization: token, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key_name: keyName, value }),
   });
   if (!res.ok) throw new Error("Failed to save key");
 }
 
-async function deleteKey(token: string, keyName: string): Promise<void> {
+async function deleteKey(keyName: string): Promise<void> {
   const res = await fetch(`/api/settings/api-keys/${keyName}`, {
     method: "DELETE",
-    headers: { Authorization: token },
+
   });
   if (!res.ok) throw new Error("Failed to delete key");
 }
 
-async function testKey(token: string, keyName: string, value: string): Promise<{ valid: boolean; message: string }> {
+async function testKey(keyName: string, value: string): Promise<{ valid: boolean; message: string }> {
   const res = await fetch("/api/settings/api-keys/test", {
     method: "POST",
-    headers: { Authorization: token, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key_name: keyName, value }),
   });
   if (!res.ok) throw new Error("Failed to test key");
@@ -92,10 +92,7 @@ const API_KEY_DEFS: ApiKeyDef[] = [
 ];
 
 export default function SettingsPage() {
-  const [token] = useState<string>(() => {
-    if (typeof window === "undefined") return "";
-    return document.cookie.replace(/(?:(?:^|.*;\s*)va_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-  });
+
 
   const [keys, setKeys] = useState<ApiKeyStatus[]>([]);
   const [loading, setLoading] = useState(false);
@@ -106,11 +103,10 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState<string | null>(null);
 
   const loadKeys = async () => {
-    if (!token) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchApiKeys(`Bearer ${token}`);
+      const data = await fetchApiKeys();
       setKeys(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -124,7 +120,7 @@ export default function SettingsPage() {
     if (!value) return;
     setSaving(keyName);
     try {
-      await saveKey(`Bearer ${token}`, keyName, value);
+      await saveKey(keyName, value);
       setInputValues((prev) => ({ ...prev, [keyName]: "" }));
       await loadKeys();
     } catch (e) {
@@ -136,7 +132,7 @@ export default function SettingsPage() {
 
   const handleDelete = async (keyName: string) => {
     try {
-      await deleteKey(`Bearer ${token}`, keyName);
+      await deleteKey(keyName);
       await loadKeys();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete");
@@ -149,7 +145,7 @@ export default function SettingsPage() {
     setTestingKey(keyName);
     setTestResult(null);
     try {
-      const result = await testKey(`Bearer ${token}`, keyName, value);
+      const result = await testKey(keyName, value);
       setTestResult({ keyName, valid: result.valid, message: result.message });
     } catch (e) {
       setTestResult({ keyName, valid: false, message: e instanceof Error ? e.message : "Test failed" });

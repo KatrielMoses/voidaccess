@@ -1,10 +1,11 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
 
   const backendRes = await fetch(
     `${getBackendUrl()}/investigations/${params.id}/progress`,

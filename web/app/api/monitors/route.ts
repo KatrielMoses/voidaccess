@@ -1,10 +1,11 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(request: Request) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
   const backendUrl = getBackendUrl();
-  
+
   try {
     const res = await fetch(`${backendUrl}/monitors`, {
       method: "GET",
@@ -30,10 +31,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
   const backendUrl = getBackendUrl();
   const body = await request.json();
-  
+
   try {
     const res = await fetch(`${backendUrl}/monitors`, {
       method: "POST",

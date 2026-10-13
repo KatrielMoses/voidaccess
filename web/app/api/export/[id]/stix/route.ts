@@ -1,8 +1,9 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
     const { id } = params;
   try {
     const res = await fetch(`${getBackendUrl()}/export/${encodeURIComponent(id)}/stix`, {cache: "no-store",

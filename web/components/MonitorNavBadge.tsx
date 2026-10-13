@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getToken } from "@/lib/auth";
 
 const POLL_MS = 60_000;
 
@@ -17,11 +16,11 @@ export function MonitorNavBadge() {
     let cancelled = false;
 
     const load = () => {
-      const token = getToken();
-      fetch("/api/monitors/alerts/count", { 
+
+      fetch("/api/monitors/alerts/count", {
         cache: "no-store",
         headers: {
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+
         }
       })
         .then((r) => (r.ok ? r.json() : null))
