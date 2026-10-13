@@ -1,3 +1,4 @@
+# 2.1.0: read-only legacy import, owned by the first administrator. API edits use the database.
 # Copy to monitors.yaml in this directory and adjust. Loaded by monitor.config.load_watches().
 #
 # --- Field reference (all keys per watch) ---

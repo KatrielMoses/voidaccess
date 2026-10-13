@@ -1627,6 +1627,7 @@ Why enrichment is not run concurrently with scraping or extraction: the query-on
 | Variable | Default | Notes |
 |---|---|---|
 | `VOIDACCESS_DISABLED_SOURCES` | unset | Comma-separated source ids (tables below and in 13.16). Ids are case-insensitive and whitespace is ignored. The named sources make no network call in any stage. |
+| `VOIDACCESS_RSS_SNIPPET_ONLY` | unset | Set to `1` to retain only feed headline/link/date/summary and never fetch full RSS-linked article bodies. Unset preserves full-body behavior. Works alongside the E1C deny-list. |
 
 **Unset or blank: behaviour is unchanged.** Setting it only removes sources.
 
