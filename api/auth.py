@@ -13,7 +13,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -109,6 +109,7 @@ class CurrentUser(BaseModel):
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> CurrentUser:
@@ -129,7 +130,7 @@ async def get_current_user(
     )
     try:
         token_payload = decode_token(credentials.credentials)
-    except JWTError:
+    except (JWTError, ValueError, KeyError):
         raise credentials_exception
 
     if token_payload.jti:
@@ -165,6 +166,12 @@ async def get_current_user(
     if not user:
         raise credentials_exception
 
+    import os
+    import ratelimit
+    if not ratelimit.allow(
+        f"user:{user.id}", int(os.getenv("VOIDACCESS_USER_RATE_LIMIT", "120") or "120"), 60,
+    ):
+        raise HTTPException(429, "Too many requests", headers={"Retry-After": "60"})
     return CurrentUser(user=user, jti=token_payload.jti, exp=token_payload.exp)
 
 
@@ -185,3 +192,9 @@ async def require_password_not_reset_pending(
             },
         )
     return current_user
+
+
+async def require_admin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if current.user.role != "admin":
+        raise HTTPException(403, "Administrator role required")
+    return current

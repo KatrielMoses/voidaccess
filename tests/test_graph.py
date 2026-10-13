@@ -530,7 +530,8 @@ class TestBuilder(unittest.TestCase):
 
         with patch("db.session.get_session", return_value=mock_session), \
              patch.dict(os.environ, {"DATABASE_URL": "sqlite://"}):
-            graph = build_graph_from_db(investigation_id=inv1_id)
+            with patch("db.entity_views.entity_views", side_effect=lambda session, entities, **kwargs: entities):
+                graph = build_graph_from_db(investigation_id=inv1_id)
 
         inv2_node_ids = {e.value for e in inv2_entities}
 

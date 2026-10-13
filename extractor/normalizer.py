@@ -1757,6 +1757,9 @@ def merge_with_db(
             return db_entity, created
 
         with get_session() as session:
+            from db.models import Investigation
+            origin = session.get(Investigation, investigation_id) if investigation_id else None
+            page_scope = investigation_id if origin and origin.user_id is not None else None
             page_cache: dict[str, object] = {}
 
             def _page_text(entity: NormalizedEntity) -> str:
@@ -1782,11 +1785,12 @@ def merge_with_db(
                 if page is None:
                     try:
                         with session.begin_nested():
-                            page = get_page_by_url(session, url)
+                            page = get_page_by_url(session, url, investigation_id=page_scope)
                             if page is None:
                                 page = create_page(
                                     session,
                                     url=url,
+                                    investigation_id=page_scope,
                                     cleaned_text=_page_text(entity) or None,
                                 )
                             else:
@@ -1796,7 +1800,7 @@ def merge_with_db(
                         # Concurrent page insert — re-read the now-committed row.
                         try:
                             with session.begin_nested():
-                                page = get_page_by_url(session, url)
+                                page = get_page_by_url(session, url, investigation_id=page_scope)
                             if page is not None:
                                 page_cache[url] = page
                         except Exception as _pexc:

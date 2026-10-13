@@ -166,6 +166,9 @@ def _flatten_metadata(
                 meta[str(k)] = v
             else:
                 meta[str(k)] = str(v)
+    for key in ("user_id", "investigation_id"):
+        if key in meta:
+            meta[key] = str(meta[key])
     return meta
 
 
@@ -186,7 +189,18 @@ def upsert_page(
     if emb is None:
         return False
     try:
+        metadata = dict(metadata or {})
+        if metadata.get("investigation_id") and "user_id" not in metadata:
+            from db.session import get_session
+            from db.models import Investigation
+            import uuid
+            with get_session() as session:
+                inv = session.get(Investigation, uuid.UUID(str(metadata["investigation_id"])))
+                if inv and inv.user_id is not None:
+                    metadata["user_id"] = str(inv.user_id)
         pid = _stable_id(page_url)
+        if "user_id" in metadata:
+            pid = _stable_id(f"{metadata['user_id']}:{metadata.get('investigation_id', '')}:{page_url}")
         ts = datetime.now(timezone.utc).isoformat()
         meta = _flatten_metadata(page_url, page_id, ts, metadata)
         col.upsert(
@@ -206,6 +220,7 @@ def search_similar(
     n_results: int = 10,
     where: dict | None = None,
     offset: int = 0,
+    user_id: int | None = None,
 ) -> list[dict]:
     """
     Semantic search; results sorted by distance ascending. Never raises.
@@ -220,6 +235,9 @@ def search_similar(
     try:
         n = max(1, int(n_results))
         total_needed = offset + n
+        if user_id is not None:
+            owner_filter = {"user_id": str(user_id)}
+            where = {"$and": [owner_filter, where]} if where else owner_filter
         res = col.query(
             query_embeddings=[emb],
             n_results=total_needed,
@@ -263,13 +281,13 @@ def search_similar(
         return []
 
 
-def count_pages() -> int:
+def count_pages(user_id: int | None = None) -> int:
     """Return total page count in vector store."""
     col = get_collection()
     if col is None:
         return 0
     try:
-        return int(col.count())
+        return len(col.get(where={"user_id": str(user_id)}, include=[]) ["ids"]) if user_id is not None else int(col.count())
     except Exception:
         return 0
 
@@ -366,6 +384,7 @@ def store_page(url: str, content: str, metadata: dict | None = None) -> bool:
 def bulk_check_cache(
     urls: list[str],
     max_age_hours: int = 24,
+    user_id: int | None = None,
 ) -> tuple[list[dict], list[str]]:
     """
     Check multiple URLs against cache in a single ChromaDB batch call.
@@ -376,6 +395,9 @@ def bulk_check_cache(
     """
     if not urls:
         return [], []
+    # API pages cannot reuse global CLI/private caches. Fetch under their own investigation.
+    if user_id is not None:
+        return [], list(urls)
 
     collection = get_collection()
     if collection is None:
@@ -528,3 +550,26 @@ def match_actor_profiles(
     except Exception as exc:
         logger.warning("match_actor_profiles failed: %s", exc)
         return []
+
+
+def backfill_owners(first_admin_id: int) -> int:
+    """Assign unowned legacy entries only, preserving ids/documents/embeddings."""
+    count = 0
+    for collection in (get_collection(), get_actor_collection()):
+        if collection is None:
+            continue
+        offset = 0
+        while True:
+            batch = collection.get(limit=500, offset=offset, include=["metadatas"])
+            ids = batch.get("ids") or []
+            if not ids:
+                break
+            for key, meta in zip(ids, batch.get("metadatas") or []):
+                meta = dict(meta or {})
+                if "user_id" not in meta:
+                    meta["user_id"] = str(first_admin_id)
+                    meta.setdefault("investigation_id", "legacy")
+                    collection.update(ids=[key], metadatas=[meta])
+                    count += 1
+            offset += len(ids)
+    return count

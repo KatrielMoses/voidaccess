@@ -84,7 +84,7 @@ def _validate_and_normalize(raw: dict) -> dict | None:
     return out
 
 
-def load_watches() -> list[dict]:
+def load_yaml_watches() -> list[dict]:
     """Parse monitors.yaml; invalid entries are skipped. Returns [] if missing."""
     path = _yaml_path()
     if not path.is_file():
@@ -120,3 +120,16 @@ def get_watch_by_name(name: str) -> dict | None:
         if w.get("name") == name:
             return w
     return None
+
+
+def load_watches() -> list[dict]:
+    if not os.getenv("DATABASE_URL"):
+        return load_yaml_watches()
+    from db.session import get_session
+    from db.models import Monitor
+    from monitor.migration import import_legacy_watches
+    with get_session() as session:
+        import_legacy_watches(session)
+        return [dict(row.config, name=row.name, user_id=row.user_id,
+                     scheduler_id=str(row.id), enabled=row.enabled)
+                for row in session.query(Monitor).filter_by(deleted=False).all()]

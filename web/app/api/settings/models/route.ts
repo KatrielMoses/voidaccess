@@ -1,8 +1,9 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(request: Request) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
   try {
     const res = await fetch(`${getBackendUrl()}/settings/models`, {
       headers: { ...(token ? { Authorization: token } : {}) },

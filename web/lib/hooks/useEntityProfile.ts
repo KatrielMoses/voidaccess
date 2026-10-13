@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { EntityProfile, EntityRelatedResponse } from "@/lib/types/entity";
-import { getToken } from "@/lib/auth";
 
 type ProfileState = {
   entity: EntityProfile | null;
@@ -30,8 +29,8 @@ export function useEntityProfile(entityId: string | null): ProfileState {
     async function load() {
       setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
-        const token = getToken();
-        const authHeader: Record<string, string> = token ? { "Authorization": `Bearer ${token}` } : {};
+
+        const authHeader: Record<string, string> = {};
         const [profileRes, relatedRes] = await Promise.all([
           fetch(`/api/entities/${encodeURIComponent(entityId!)}`, { cache: "no-store", headers: authHeader }),
           fetch(`/api/entities/${encodeURIComponent(entityId!)}/related`, { cache: "no-store", headers: authHeader }),

@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.routes import entities, export, investigations, monitors, search, auth, admin, settings, actors
-from api.auth import get_current_user
+from api.auth import get_current_user, require_admin
 from api.errors import log_exception, safe_error_body
 from api.rate_limit import global_rate_limit_middleware
 from monitor.scheduler import start_scheduler
@@ -570,7 +570,7 @@ app.include_router(
     admin.router,
     prefix="/admin",
     tags=["admin"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_admin)],
 )
 app.include_router(
     settings.router,
@@ -789,7 +789,7 @@ async def search_test(_=Depends(get_current_user)) -> dict:
 
 
 @app.get("/debug/stack", tags=["health"])
-async def debug_stack(_=Depends(get_current_user)) -> dict:
+async def debug_stack(_=Depends(require_admin)) -> dict:
     """Returns a list of all running asyncio tasks and their stack traces.
 
     Authenticated-only: exposes internal runtime state (filenames, coroutine

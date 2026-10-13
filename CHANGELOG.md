@@ -2,6 +2,22 @@
 
 All notable changes to VoidAccess are documented here.
 
+## 2.1.0 (unreleased)
+
+- Fix self-hosted multi-user data exposure: shared ownership dependencies return
+  404 for foreign investigation, entity, graph, analysis, export, actor and monitor resources.
+- Add owned entity link context, investigation-scoped pages, private actor notes
+  and aliases, database monitors and alerts, and user-filtered Chroma search.
+- Add the `user`/`admin` role and `voidaccess admin promote --email`; administrative
+  routes now require an administrator. Existing first users bootstrap as admin.
+- Make forwarded-IP trust opt-in and add authenticated-user request limits.
+- Move web sessions to httpOnly cookies; server proxies forward authentication,
+  and logout revokes backend JWTs. Database revocation errors fail closed.
+- Add opt-in `VOIDACCESS_RSS_SNIPPET_ONLY=1` to avoid fetching article bodies.
+- Add migration `0036_multiuser_security`, idempotent YAML/vector import, two-user
+  API tests, migration tests, route enumeration and browser-session tests.
+- See `docs/SECURITY-ADVISORY-2026-10.md` for upgrade and attribution limitations.
+
 ## Unreleased
 
 ### Default changes (self-hosters will notice these)

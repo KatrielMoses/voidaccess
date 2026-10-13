@@ -453,13 +453,14 @@ class RSSFeedScraper:
             if relevance <= 0:
                 continue
 
-            full_content = await self._fetch_article_content(article.get("url", ""))
+            snippet_only = os.getenv("VOIDACCESS_RSS_SNIPPET_ONLY") == "1"
+            full_content = "" if snippet_only else await self._fetch_article_content(article.get("url", ""))
             content = full_content or article.get("summary", "")
 
-            if not content or len(content.strip()) < 100:
+            if not snippet_only and (not content or len(content.strip()) < 100):
                 continue
 
-            clean, flagged = sanitize_content(content)
+            clean, flagged = sanitize_content(content or article.get("title", ""))
             if flagged or not clean:
                 continue
 

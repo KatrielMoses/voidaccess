@@ -192,6 +192,7 @@ def init_db() -> None:
     # creation and is caught here.  investigate.py keeps its own explicit
     # ``validate_schema()`` call as documentation of intent (harmless re-check).
     validate_schema()
+    _ensure_e2_columns(engine)
 
 
 def validate_schema() -> None:
@@ -1063,3 +1064,33 @@ def get_actor_investigations(handle_or_id: str) -> list[dict[str, Any]]:
             }
             for r in rows
         ]
+
+
+def _ensure_e2_columns(engine) -> None:
+    """Add E2 ORM columns to existing single-user SQLite files, without config changes."""
+    from sqlalchemy import inspect
+    additions = {
+        "pages": {"investigation_id": "CHAR(32)"},
+        "users": {"role": "VARCHAR(10) NOT NULL DEFAULT 'user'"},
+        "actor_aliases": {"user_id": "INTEGER"},
+        "monitor_alerts": {"user_id": "INTEGER"},
+        "investigation_entity_links": {
+            "context_snippet": "TEXT", "confidence": "FLOAT", "page_id": "CHAR(32)",
+            "extraction_method": "VARCHAR(10)",
+        },
+    }
+    with engine.begin() as conn:
+        for table, columns in additions.items():
+            existing = {c["name"] for c in inspect(conn).get_columns(table)}
+            for column, ddl in columns.items():
+                if column not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        # CLI links carry no cross-user boundary. Recover their pre-upgrade context.
+        conn.execute(text("""
+            UPDATE investigation_entity_links SET
+              confidence = (SELECT confidence FROM entities WHERE id=entity_id),
+              context_snippet = (SELECT context_snippet FROM entities WHERE id=entity_id),
+              page_id = (SELECT page_id FROM entities WHERE id=entity_id),
+              extraction_method = (SELECT extraction_method FROM entities WHERE id=entity_id)
+            WHERE confidence IS NULL
+        """))

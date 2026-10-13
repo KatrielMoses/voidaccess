@@ -210,9 +210,11 @@ def create_page(
     byte_size: Optional[int] = None,
     language: Optional[str] = None,
     posted_at: Optional[datetime] = None,
+    investigation_id: Optional[uuid.UUID] = None,
 ) -> Page:
     """Insert a new Page row and flush to populate its id."""
     page = Page(
+        investigation_id=investigation_id,
         url=url,
         source_id=source_id,
         cleaned_text=cleaned_text,
@@ -226,9 +228,12 @@ def create_page(
     return page
 
 
-def get_page_by_url(session: Session, url: str) -> Optional[Page]:
+def get_page_by_url(session: Session, url: str, investigation_id: Optional[uuid.UUID] = None) -> Optional[Page]:
     """Return the Page with the exact URL, or None."""
-    return session.query(Page).filter_by(url=url).first()
+    q = session.query(Page).filter_by(url=url)
+    if investigation_id is not None:
+        q = q.filter_by(investigation_id=investigation_id)
+    return q.first()
 
 
 def get_page_by_hash(session: Session, content_hash: str) -> Optional[Page]:
@@ -347,6 +352,7 @@ def upsert_entity_canonical(
     
     Returns: (entity, was_created)
     """
+    from db.models import InvestigationEntityLink
     from extractor.normalizer import canonicalize_entity_value
     
     canonical = canonicalize_entity_value(entity_type, entity_value)
@@ -363,24 +369,19 @@ def upsert_entity_canonical(
     )
     
     if existing:
-        # Update confidence if new extraction is more confident
-        from extractor.confidence import get_entity_confidence
-        existing.confidence = get_entity_confidence(existing, confidence)
-        # Update context if we have a better snippet
-        if context_snippet and len(context_snippet) > len(existing.context_snippet or ""):
-            existing.context_snippet = context_snippet
-        if extraction_method and not existing.extraction_method:
-            existing.extraction_method = extraction_method
-        # Update last_seen
-        existing.last_seen = datetime.now(timezone.utc)
-        # Update last_seen_at for freshness tracking
-        existing.last_seen_at = datetime.now(timezone.utc)
-        # Link to this investigation if not already linked, including for
-        # legacy rows whose owner column predates the link table backfill.
-        linked = _link_entity_to_investigation(session, existing.id, investigation_id)
-        if linked:
-            session.flush()
-            existing.investigation_count = _entity_investigation_count(session, existing)
+        # The shared row is identity only. Extraction context belongs to a link.
+        _link_entity_to_investigation(session, existing.id, investigation_id)
+        session.flush()
+        link = session.query(InvestigationEntityLink).filter_by(
+            entity_id=existing.id, investigation_id=investigation_id,
+        ).one()
+        link.confidence = max(link.confidence or 0, confidence)
+        if context_snippet:
+            link.context_snippet = context_snippet
+        if source_page_id:
+            link.page_id = source_page_id
+        if extraction_method:
+            link.extraction_method = extraction_method
         return existing, False
     else:
         # Create new entity
@@ -399,6 +400,14 @@ def upsert_entity_canonical(
         session.add(entity)
         session.flush()  # populate entity.id before creating the link
         _link_entity_to_investigation(session, entity.id, investigation_id)
+        session.flush()
+        link = session.query(InvestigationEntityLink).filter_by(
+            entity_id=entity.id, investigation_id=investigation_id,
+        ).one()
+        link.confidence = confidence
+        link.context_snippet = context_snippet
+        link.page_id = source_page_id
+        link.extraction_method = extraction_method
         entity.investigation_count = 1
         return entity, True
 
@@ -528,10 +537,13 @@ def get_entities_for_investigation(
     entity_type: Optional[str] = None,
 ) -> List[Entity]:
     """Return all entities linked to an investigation, optionally filtered by type."""
-    q = session.query(Entity).filter_by(investigation_id=investigation_id)
+    from db.models import InvestigationEntityLink
+    linked = sa.select(InvestigationEntityLink.entity_id).where(InvestigationEntityLink.investigation_id == investigation_id)
+    q = session.query(Entity).filter((Entity.investigation_id == investigation_id) | Entity.id.in_(linked))
     if entity_type:
         q = q.filter_by(entity_type=entity_type)
-    return q.order_by(Entity.created_at.desc()).all()
+    from db.entity_views import entity_views
+    return entity_views(session, q.order_by(Entity.created_at.desc()).all(), investigation_id=investigation_id)
 
 
 # ---------------------------------------------------------------------------
@@ -673,6 +685,7 @@ def get_entity_neighbors_db(
     entity_id: uuid.UUID,
     investigation_id: Optional[uuid.UUID] = None,
     session: Optional[Session] = None,
+    user_id: Optional[int] = None,
 ) -> List[dict]:
     """
     Return direct neighbors of an entity with relationship metadata.
@@ -725,6 +738,9 @@ def get_entity_neighbors_db(
         if investigation_id is not None:
             query = query.filter(EntityRelationship.investigation_id == investigation_id)
 
+        if user_id is not None:
+            owned_ids = sa.select(Investigation.id).where(Investigation.user_id == user_id)
+            query = query.filter(EntityRelationship.investigation_id.in_(owned_ids))
         rows = query.all()
 
         neighbors: dict[str, dict] = {}
@@ -811,12 +827,14 @@ def create_monitor_alert(
     severity: str = "info",
     entity_count_delta: int = 0,
     delivery_channels: Optional[List[str]] = None,
+    user_id: Optional[int] = None,
 ) -> MonitorAlert:
     """
     Persist a new alert record.
     Called immediately when a monitor detects a change.
     """
     alert = MonitorAlert(
+        user_id=user_id,
         monitor_name=monitor_name,
         triggered_at=datetime.now(timezone.utc),
         change_type=change_type,

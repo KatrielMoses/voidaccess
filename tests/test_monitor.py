@@ -21,7 +21,7 @@ class TestConfig(unittest.TestCase):
         import monitor.config as cfg
 
         with patch.object(cfg, "_yaml_path", return_value=Path("/___nonexistent___/m.yaml")):
-            self.assertEqual(cfg.load_watches(), [])
+            self.assertEqual(cfg.load_yaml_watches(), [])
 
     def test_load_valid(self):
         import monitor.config as cfg
@@ -42,7 +42,7 @@ watches:
             path = f.name
         try:
             with patch.object(cfg, "_yaml_path", return_value=Path(path)):
-                watches = cfg.load_watches()
+                watches = cfg.load_yaml_watches()
         finally:
             os.unlink(path)
         self.assertEqual(len(watches), 1)
@@ -67,7 +67,7 @@ watches:
         try:
             with patch.object(cfg, "_yaml_path", return_value=Path(path)):
                 with self.assertLogs("monitor.config", level="WARNING"):
-                    watches = cfg.load_watches()
+                    watches = cfg.load_yaml_watches()
         finally:
             os.unlink(path)
         self.assertEqual(watches, [])

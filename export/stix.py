@@ -539,7 +539,8 @@ def _load_entities_for_investigation(
                 )
                 .filter(InvestigationEntityLink.investigation_id == inv.id)
             )
-            db_entities = direct_q.union(linked_q).all()
+            from db.entity_views import entity_views
+            db_entities = entity_views(sess, direct_q.union(linked_q).all(), investigation_id=inv.id)
 
             if entity_ids is not None:
                 want = frozenset(entity_ids)

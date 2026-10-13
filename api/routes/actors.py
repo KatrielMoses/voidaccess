@@ -20,14 +20,23 @@ import os
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import Request, APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 
 from api.auth import CurrentUser, get_current_user
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from api.ownership import require_resource_owner
+
+async def require_owned_actor(request: Request, current: CurrentUser = Depends(get_current_user)):
+    if "handle" in request.path_params:
+        from api.actor_views import ScopedActorManager
+        profile = await ScopedActorManager(current).get_profile(request.path_params["handle"])
+        if profile is None:
+            raise HTTPException(404, "Actor profile not found")
+
+router = APIRouter(dependencies=[Depends(require_owned_actor), Depends(require_resource_owner)])
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +105,11 @@ def _user_owned_investigation_ids_select(user_id: int):
 
 def _profile_accessible(session, profile_id: str, user_id: int) -> bool:
     """True when at least one investigation linked to the profile is owned by the user."""
-    from db.models import ActorAlias, ActorInfrastructure
-
+    from db.models import ActorAlias, ActorInfrastructure, User
+    user = session.get(User, user_id)
+    if user and user.role == "admin":
+        return True
+    profile_id = uuid.UUID(str(profile_id))
     inv_ids_select = _user_owned_investigation_ids_select(user_id)
     alias_match = (
         session.query(ActorAlias.id)
@@ -166,10 +178,13 @@ async def list_actors(
                     ActorProfile.id.in_(visible_infra),
                 )
             )
+            if current_user.user.role == "admin":
+                q = session.query(ActorProfile)
             if search:
                 pattern = f"%{search.lower()}%"
                 alias_select = select(ActorAlias.actor_id).where(
-                    ActorAlias.alias_value.ilike(pattern)
+                    ActorAlias.alias_value.ilike(pattern),
+                    ActorAlias.user_id == current_user.user.id,
                 )
                 q = q.filter(
                     or_(
@@ -187,20 +202,12 @@ async def list_actors(
             )
             items: list[dict] = []
             for r in rows:
-                alias_count = (
-                    session.query(ActorAlias)
-                    .filter(ActorAlias.actor_id == r.id)
-                    .count()
-                )
-                items.append({
-                    "id": str(r.id),
-                    "canonical_handle": r.canonical_handle,
-                    "first_seen_at": _iso(r.first_seen_at),
-                    "last_seen_at": _iso(r.last_seen_at),
-                    "investigation_count": int(r.investigation_count or 0),
-                    "confidence": float(r.confidence) if r.confidence is not None else None,
-                    "alias_count": int(alias_count),
-                })
+                from api.actor_views import ScopedActorManager
+                profile = await ScopedActorManager(current_user).get_profile(r.canonical_handle)
+                if profile:
+                    items.append({k: profile.get(k) for k in (
+                        "id", "canonical_handle", "first_seen_at", "last_seen_at", "investigation_count", "confidence", "alias_count"
+                    )})
             return {
                 "items": items,
                 "total": total,
@@ -225,7 +232,8 @@ async def get_actor(
         raise HTTPException(status_code=422, detail="Handle is required")
     try:
         mgr_cls = _actor_manager_class()
-        manager = mgr_cls()
+        from api.actor_views import ScopedActorManager
+        manager = ScopedActorManager(current_user)
         profile = await manager.get_profile(handle.strip())
     except HTTPException:
         raise
@@ -270,7 +278,7 @@ async def get_actor_profile_by_node(
         if inv is None:
             raise HTTPException(status_code=404, detail="Investigation not found")
         if str(inv.user_id) != str(current_user.user.id):
-            raise HTTPException(status_code=403, detail="Forbidden")
+            raise HTTPException(status_code=404, detail="Actor profile not found")
         graph = build_graph_from_db_cached(investigation_id=inv.id)
 
     profile = get_actor_profile(graph, node_id)
@@ -290,7 +298,8 @@ async def get_actor_investigations(
         raise HTTPException(status_code=422, detail="Handle is required")
     try:
         mgr_cls = _actor_manager_class()
-        manager = mgr_cls()
+        from api.actor_views import ScopedActorManager
+        manager = ScopedActorManager(current_user)
         profile = await manager.get_profile(handle.strip())
     except HTTPException:
         raise
@@ -356,7 +365,8 @@ async def add_actor_note(
         raise HTTPException(status_code=422, detail="Handle is required")
     try:
         mgr_cls = _actor_manager_class()
-        manager = mgr_cls()
+        from api.actor_views import ScopedActorManager
+        manager = ScopedActorManager(current_user)
         profile = await manager.get_profile(handle.strip())
     except HTTPException:
         raise
@@ -372,7 +382,7 @@ async def add_actor_note(
             if not _profile_accessible(
                 session, profile["id"], current_user.user.id
             ):
-                raise HTTPException(status_code=403, detail="Forbidden")
+                raise HTTPException(status_code=404, detail="Actor profile not found")
 
         from db.models import ActorProfile
         from datetime import datetime, timezone
@@ -386,18 +396,16 @@ async def add_actor_note(
             row = session.query(ActorProfile).filter_by(id=profile_uuid).one_or_none()
             if row is None:
                 raise HTTPException(status_code=404, detail="Actor profile not found")
-            existing = (row.notes or "").strip()
+            from db.models import ActorNote
             ts = datetime.now(timezone.utc).isoformat()
-            row.notes = (
-                f"{existing}\n[{ts}] {body.note}".strip() if existing else f"[{ts}] {body.note}"
-            )
-            row.updated_at = datetime.now(timezone.utc)
+            note_text = f"[{ts}] {body.note}"
+            session.add(ActorNote(actor_id=profile_uuid, user_id=current_user.user.id, text=note_text))
             session.commit()
 
         return {
             "id": profile["id"],
             "canonical_handle": profile["canonical_handle"],
-            "notes": row.notes,
+            "notes": note_text,
             "appended_at": ts,
         }
     except HTTPException:
@@ -457,7 +465,8 @@ async def get_actor_timeline(
 
     try:
         mgr_cls = _actor_manager_class()
-        manager = mgr_cls()
+        from api.actor_views import ScopedActorManager
+        manager = ScopedActorManager(current_user)
         profile = await manager.get_profile(handle.strip())
     except HTTPException:
         raise
@@ -567,7 +576,8 @@ async def get_actor_aliases(
         raise HTTPException(status_code=422, detail="Handle is required")
     try:
         mgr_cls = _actor_manager_class()
-        manager = mgr_cls()
+        from api.actor_views import ScopedActorManager
+        manager = ScopedActorManager(current_user)
         profile = await manager.get_profile(handle.strip())
     except HTTPException:
         raise
@@ -658,7 +668,8 @@ async def add_actor_alias(
         raise HTTPException(status_code=422, detail="Alias is required")
     try:
         mgr_cls = _actor_manager_class()
-        manager = mgr_cls()
+        from api.actor_views import ScopedActorManager
+        manager = ScopedActorManager(current_user)
         profile = await manager.get_profile(handle.strip())
     except HTTPException:
         raise
@@ -674,7 +685,7 @@ async def add_actor_alias(
             if not _profile_accessible(
                 session, profile["id"], current_user.user.id
             ):
-                raise HTTPException(status_code=403, detail="Forbidden")
+                raise HTTPException(status_code=404, detail="Actor profile not found")
     except HTTPException:
         raise
 

@@ -558,16 +558,19 @@ class ActorProfileManager:
         if not alias_value_norm:
             return
 
-        from db.models import ActorAlias
+        from db.models import ActorAlias, Investigation
 
         inv_uuid = _coerce_uuid(investigation_id)
 
         with self._session_scope() as session:
+            inv = session.get(Investigation, inv_uuid) if inv_uuid else None
+            owner = inv.user_id if inv else None
             existing = (
                 session.query(ActorAlias)
                 .filter(
                     ActorAlias.actor_id == actor_uuid,
                     ActorAlias.alias_value == alias_value_norm,
+                    ActorAlias.user_id == owner,
                 )
                 .one_or_none()
             )
@@ -586,6 +589,7 @@ class ActorProfileManager:
                     id=uuid.uuid4(),
                     actor_id=actor_uuid,
                     alias_value=alias_value_norm,
+                    user_id=owner,
                     alias_type=alias_type,
                     source_investigation_id=inv_uuid,
                     first_seen_at=_now_utc(),
@@ -624,6 +628,7 @@ class ActorProfileManager:
                     ActorInfrastructure.actor_id == actor_uuid,
                     ActorInfrastructure.entity_type == entity_type,
                     ActorInfrastructure.entity_value == entity_value_norm,
+                    ActorInfrastructure.source_investigation_id == inv_uuid,
                 )
                 .one_or_none()
             )

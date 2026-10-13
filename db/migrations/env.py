@@ -52,6 +52,7 @@ def _ensure_version_column_capacity(connection) -> None:
         return
     inspector = inspect(connection)
     if "alembic_version" not in inspector.get_table_names():
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(255) PRIMARY KEY)"))
         return
     version_column = next(
         (c for c in inspector.get_columns("alembic_version") if c["name"] == "version_num"),

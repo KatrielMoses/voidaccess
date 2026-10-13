@@ -66,6 +66,8 @@ class TestPagination(unittest.TestCase):
         """Verify FastAPI rejects limit > 100."""
         from fastapi.testclient import TestClient
         from api.main import app
+        from api.ownership import require_resource_owner
+        app.dependency_overrides[require_resource_owner] = lambda: None
         from api.auth import get_current_user
 
         mock_user = MagicMock()
@@ -83,6 +85,8 @@ class TestPagination(unittest.TestCase):
         """Verify FastAPI rejects negative offset."""
         from fastapi.testclient import TestClient
         from api.main import app
+        from api.ownership import require_resource_owner
+        app.dependency_overrides[require_resource_owner] = lambda: None
         from api.auth import get_current_user
 
         mock_user = MagicMock()

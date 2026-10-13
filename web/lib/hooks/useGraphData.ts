@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { GraphApiResponse } from "@/lib/types/investigation";
-import { getToken } from "@/lib/auth";
 
 type State =
   | { status: "idle" | "loading"; data: null; error: null }
@@ -19,11 +18,11 @@ export function useGraphData(investigationId: string, minConfidence?: number) {
   const refetch = useCallback(async () => {
     setState({ status: "loading", data: null, error: null });
     try {
-      const token = getToken();
+
       const qs = minConfidence !== undefined ? `?min_confidence=${minConfidence}` : "";
       const res = await fetch(`/api/investigations/${encodeURIComponent(investigationId)}/graph${qs}`, {
         cache: "no-store",
-        headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) },
+        headers: {  },
       });
       if (!res.ok) {
         const errBody = (await res.json().catch(() => ({}))) as { error?: string };

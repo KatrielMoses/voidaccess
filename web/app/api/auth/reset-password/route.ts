@@ -1,15 +1,16 @@
+import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server"
 import { getBackendUrl } from "@/lib/backend"
 
 export async function POST(request: Request) {
-  const token = request.headers.get("Authorization");
+  const token = getSessionAuthorization();
     const body = await request.json()
     const BACKEND_URL = getBackendUrl()
 
   try {
     const res = await fetch(`${BACKEND_URL}/auth/reset-password`, {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
         ...(token ? { "Authorization": token } : {})
       },

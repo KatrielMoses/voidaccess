@@ -18,6 +18,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from db.entity_views import entity_views
+from api.ownership import require_resource_owner
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from api.auth import CurrentUser, get_current_user
@@ -25,7 +27,7 @@ from api.errors import GENERIC_ERROR_MESSAGE, log_exception
 from extractor.identity import entity_canonical_id
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_resource_owner)])
 
 
 # ---------------------------------------------------------------------------
@@ -76,15 +78,12 @@ async def list_entities(
                 q = q.filter(Entity.entity_type == entity_type)
             if value_contains:
                 q = q.filter(Entity.value.contains(value_contains))
+            entities = entity_views(session, q.all(), user_id=current_user.user.id)
             if since_dt:
-                q = q.filter(Entity.created_at >= since_dt)
-            total = q.count()
-            entities = (
-                q.order_by(Entity.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            )
+                entities = [e for e in entities if e.created_at and e.created_at.replace(tzinfo=None) >= since_dt.replace(tzinfo=None)]
+            entities.sort(key=lambda e: e.created_at.isoformat() if e.created_at else "", reverse=True)
+            total = len(entities)
+            entities = entities[offset:offset + limit]
             # Score each row against its own investigation (cached per
             # investigation id so a page of same-investigation entities builds
             # the map once), matching the CLI export and /entities/{id} exactly.
@@ -133,6 +132,7 @@ async def export_entity_stix(
             if entity is None:
                 raise HTTPException(status_code=404, detail="Entity not found")
             _assert_entity_accessible(session, eid, current_user.user.id)
+            entity = entity_views(session, [entity], user_id=current_user.user.id)[0]
 
             try:
                 from export.stix import entity_to_stix_indicator, entity_to_stix_threat_actor, entity_to_stix_malware, bundle_to_json  # noqa: PLC0415
@@ -190,6 +190,7 @@ async def export_entity_json(
             if entity is None:
                 raise HTTPException(status_code=404, detail="Entity not found")
             _assert_entity_accessible(session, eid, current_user.user.id)
+            entity = entity_views(session, [entity], user_id=current_user.user.id)[0]
 
             appearances = get_entity_appearances(session, eid, current_user.user.id)
             data = _entity_to_dict(entity, _entity_priority_fields(session, entity))
@@ -230,6 +231,7 @@ async def get_entity_related(
             if entity is None:
                 raise HTTPException(status_code=404, detail="Entity not found")
             _assert_entity_accessible(session, eid, current_user.user.id)
+            entity = entity_views(session, [entity], user_id=current_user.user.id)[0]
 
             rels = (
                 session.query(EntityRelationship)
@@ -240,6 +242,10 @@ async def get_entity_related(
                 .all()
             )
 
+            from db.models import Investigation
+            owned_ids = {i for (i,) in session.query(Investigation.id).filter_by(user_id=current_user.user.id)}
+            rels = [rel for rel in rels if rel.investigation_id in owned_ids]
+            entity = entity_views(session, [entity], user_id=current_user.user.id)[0]
             neighbor_ids = set()
             for rel in rels:
                 if rel.entity_a_id == eid:
@@ -254,7 +260,7 @@ async def get_entity_related(
                     .filter(Entity.id.in_(neighbor_ids))
                     .all()
                 )
-                neighbors_map = {ne.id: ne for ne in neighbor_entities}
+                neighbors_map = {ne.id: ne for ne in entity_views(session, neighbor_entities, user_id=current_user.user.id)}
 
             neighbors: dict[str, dict] = {}
             for rel in rels:
@@ -345,6 +351,7 @@ async def get_stylometry_analysis(
                 .all()
             )
 
+            related = entity_views(session, related, user_id=current_user.user.id, all_links=True)
             texts: list[str] = []
             for e in related:
                 if e.page and e.page.cleaned_text and len((e.page.cleaned_text or "").strip()) >= 100:
@@ -410,19 +417,9 @@ async def get_stylometry_analysis(
                         f"{feat_label}: {pct}% {direction} baseline ({val:.2f} vs {baseline})"
                     )
 
-            # === NEW: Cross-actor matching ===
+            # Global style aggregates are an internal CLI cache. The API does
+            # not expose comparisons computed from another user's text.
             similar_actors = []
-            try:
-                import asyncio  # noqa: PLC0415
-                if profile and text_samples >= 3:
-                    similar_actors = await asyncio.to_thread(
-                        _find_similar_actors,
-                        profile=profile,
-                        canonical_value=entity_canonical_id(entity),
-                        entity_type=entity.entity_type,
-                    )
-            except Exception as e:
-                logger.warning(f"Similar actor matching failed: {e}")
 
             return {
                 "entity_id": entity_id,
@@ -499,6 +496,7 @@ async def get_opsec_analysis(
                 .all()
             )
 
+            related = entity_views(session, related, user_id=current_user.user.id, all_links=True)
             texts_with_timestamps: list[dict] = []
             for e in related:
                 text = ""
@@ -603,6 +601,7 @@ async def get_entity(
             if entity is None:
                 raise HTTPException(status_code=404, detail="Entity not found")
             _assert_entity_accessible(session, eid, current_user.user.id)
+            entity = entity_views(session, [entity], user_id=current_user.user.id)[0]
 
             source_url = ""
             try:
@@ -725,6 +724,7 @@ async def get_entity_neighbors(
                 entity_id=entity_uuid,
                 investigation_id=inv_uuid,
                 session=session,
+                user_id=current_user.user.id,
             )
 
             if edge_type_list:
@@ -749,6 +749,7 @@ async def get_entity_neighbors(
                             entity_id=nid,
                             investigation_id=inv_uuid,
                             session=session,
+                            user_id=current_user.user.id,
                         )
                         for n in nxt:
                             nid2 = uuid.UUID(n["neighbor_id"])
@@ -853,6 +854,7 @@ def _investigation_priority_map(session, investigation_id) -> dict:
         .filter(EntityRelationship.investigation_id == investigation_id)
         .all()
     )
+    scoped = entity_views(session, scoped, investigation_id=investigation_id)
     return score_map(scoped, relationships)
 
 

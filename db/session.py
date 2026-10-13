@@ -240,13 +240,13 @@ def get_session(url: Optional[str] = None) -> Generator[Session, None, None]:
         session.close()
 
 
-def get_db(url: Optional[str] = None) -> Generator[Session, None, None]:
+def get_db() -> Generator[Session, None, None]:
     """
     FastAPI dependency that yields a database session.
     The session is closed automatically after the request.
     Usage: db: Session = Depends(get_db)
     """
-    factory = get_session_factory(url)
+    factory = get_session_factory()
     db = factory()
     try:
         yield db

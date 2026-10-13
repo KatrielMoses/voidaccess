@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { MonitorAlert } from "@/types/monitor";
-import { getToken } from "@/lib/auth";
 
 type AlertsPayload = {
   alerts?: MonitorAlert[];
@@ -21,10 +20,10 @@ export function useMonitorAlerts(monitorName: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const token = getToken();
+
       const res = await fetch(
         `/api/monitors/${encodeURIComponent(monitorName)}/alerts?include_acknowledged=true&limit=50`,
-        { cache: "no-store", headers: { ...(token ? { "Authorization": `Bearer ${token}` } : {}) } }
+        { cache: "no-store", headers: {  } }
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -51,14 +50,14 @@ export function useMonitorAlerts(monitorName: string | null) {
   const acknowledgeAll = useCallback(async (): Promise<boolean> => {
     if (!monitorName) return false;
     try {
-      const token = getToken();
+
       const res = await fetch(
         `/api/monitors/${encodeURIComponent(monitorName)}/alerts/acknowledge`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+
           },
           body: JSON.stringify({}),
         }

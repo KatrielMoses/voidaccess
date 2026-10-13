@@ -824,7 +824,7 @@ async def extract_entities_from_pages(
                     with get_session() as _page_session:
                         persisted_pages = (
                             _page_session.query(Page)
-                            .filter(Page.url.in_(missing_urls))
+                            .filter(Page.url.in_(missing_urls), (Page.investigation_id == investigation_id) | Page.investigation_id.is_(None))
                             .all()
                         )
                         for _page in persisted_pages:

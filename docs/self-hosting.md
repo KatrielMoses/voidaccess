@@ -83,3 +83,16 @@ Pass the returned token as `Authorization: Bearer <token>` on protected API requ
 - The first image build is large; later builds reuse Docker's layer cache.
 
 See [Architecture and technical reference](architecture.md) for the service topology, pipeline internals, schema, API surface, and configuration reference.
+
+
+## Multi-user upgrade to 2.1.0
+
+Follow [the October 2026 security advisory](SECURITY-ADVISORY-2026-10.md) before
+sharing an installation. Run `alembic upgrade head`, then
+`python -m scripts.migrate_multiuser` to import legacy YAML watches and backfill
+Chroma owners to the first administrator. YAML is read-only input; monitor CRUD
+uses the database. Use `voidaccess admin promote --email EMAIL` for role recovery.
+Start Uvicorn with `--no-proxy-headers` and set `VOIDACCESS_TRUSTED_PROXIES` only
+for controlled proxies. `VOIDACCESS_GLOBAL_RATE_LIMIT` and
+`VOIDACCESS_USER_RATE_LIMIT` default to 120/minute each. See the advisory for
+count/CIDR examples and migration attribution limitations.

@@ -20,6 +20,7 @@ import os
 import uuid
 from typing import Any, Optional
 
+from api.ownership import require_resource_owner
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, validator
@@ -89,7 +90,7 @@ import json
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_resource_owner)])
 
 # In-process cache: investigation_id (str) → infrastructure clusters list.
 # Populated during the pipeline run; read by the GET detail endpoint.
@@ -1878,7 +1879,7 @@ async def _run_investigation_task(
                     u = ep.get("url") or ep.get("link") or ""
                     t = ep.get("text") or ep.get("content") or ""
                     if u and t:
-                        store_page(url=u, content=t, metadata={"source": ep.get("source", "enrichment")})
+                        store_page(url=u, content=t, metadata={"source": ep.get("source", "enrichment"), "investigation_id": str(inv_uuid)})
             except Exception:
                 pass
 
@@ -1939,7 +1940,7 @@ async def _run_investigation_task(
                 for u in all_urls_to_scrape
             ]
             cached_pages_list, urls_needing_scrape = bulk_check_cache(
-                url_strings, max_age_hours=24
+                url_strings, max_age_hours=24, user_id=0
             )
             cached_dict = {p["link"]: p["content"] for p in cached_pages_list}
             uncached_set = set(urls_needing_scrape)
@@ -2008,7 +2009,7 @@ async def _run_investigation_task(
                     continue
                 page_text = scraped_pages[page_url]
                 if page_text and len(page_text) > 100:
-                    if store_page(url=page_url, content=page_text, metadata={"source": "scraper"}):
+                    if store_page(url=page_url, content=page_text, metadata={"source": "scraper", "investigation_id": str(inv_uuid)}):
                         stored_count += 1
             logger.info("[%s] Stored %d new pages in vector cache", inv_uuid, stored_count)
         except Exception as exc:
@@ -2826,7 +2827,7 @@ async def cancel_investigation(
             if inv is None:
                 raise HTTPException(status_code=404, detail="Investigation not found")
             if str(inv.user_id) != str(current_user.user.id):
-                raise HTTPException(status_code=403, detail="Forbidden")
+                raise HTTPException(status_code=404, detail="Not found")
             terminal = {"completed", "failed", "cancelled", "completed_no_results"}
             if inv.status in terminal:
                 raise HTTPException(
@@ -2878,7 +2879,7 @@ async def investigation_progress(
     if inv_check is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
     if str(inv_check.user_id) != str(current_user.user.id):
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=404, detail="Not found")
 
     async def event_stream():
         last_step = None
@@ -2966,9 +2967,9 @@ async def get_temporal_analysis(investigation_id: str) -> dict:
             if inv is None:
                 raise HTTPException(status_code=404, detail="Investigation not found")
 
-            entities = session.query(Entity).filter(
-                Entity.investigation_id == inv.id
-            ).all()
+            from db.queries import get_entities_for_investigation
+            from db.entity_views import entity_views
+            entities = entity_views(session, get_entities_for_investigation(session, inv.id), investigation_id=inv.id)
 
             if not entities:
                 return {
@@ -3098,7 +3099,7 @@ async def get_investigation(
                 if inv is None:
                     raise HTTPException(status_code=404, detail="Investigation not found")
                 if str(inv.user_id) != str(current_user.user.id):
-                    raise HTTPException(status_code=403, detail="Forbidden")
+                    raise HTTPException(status_code=404, detail="Not found")
         except HTTPException:
             raise
         except ValueError:
@@ -3141,7 +3142,7 @@ async def get_investigation_entities(
             if inv is None:
                 raise HTTPException(status_code=404, detail="Investigation not found")
             if str(inv.user_id) != str(current_user.user.id):
-                raise HTTPException(status_code=403, detail="Forbidden")
+                raise HTTPException(status_code=404, detail="Not found")
 
             linked_ids_select = (
                 sa_select(InvestigationEntityLink.entity_id)
@@ -3155,7 +3156,8 @@ async def get_investigation_entities(
             # the current page or confidence/type filter.  This keeps ranking
             # stable across pagination and makes it comparable to the CLI
             # export for the same investigation.
-            score_entities = scoped_query.all()
+            from db.entity_views import entity_views
+            score_entities = entity_views(session, scoped_query.all(), investigation_id=inv.id)
             relationships = (
                 session.query(EntityRelationship)
                 .filter(EntityRelationship.investigation_id == inv.id)
@@ -3168,9 +3170,9 @@ async def get_investigation_entities(
             if entity_type:
                 query = query.filter(Entity.entity_type == entity_type)
             if min_confidence > 0.0:
-                query = query.filter(Entity.confidence >= min_confidence)
+                pass  # Confidence is per-investigation and filtered after projection.
 
-            candidates = query.all()
+            candidates = [e for e in entity_views(session, query.all(), investigation_id=inv.id) if e.confidence >= min_confidence]
 
             # Safety net: filter prohibited entity values from the response.
             # Catches values that may have been stored before FIX 2 was deployed.
@@ -3329,7 +3331,7 @@ async def export_investigation_entities_csv(
             if inv is None:
                 raise HTTPException(status_code=404, detail="Investigation not found")
             if str(inv.user_id) != str(current_user.user.id):
-                raise HTTPException(status_code=403, detail="Forbidden")
+                raise HTTPException(status_code=404, detail="Not found")
 
             linked_ids_select = (
                 sa_select(InvestigationEntityLink.entity_id)
@@ -3348,6 +3350,8 @@ async def export_investigation_entities_csv(
                 .filter(EntityRelationship.investigation_id == inv.id)
                 .all()
             )
+            from db.entity_views import entity_views
+            entities = entity_views(session, entities, investigation_id=inv.id)
             priority_by_id = rank_map(entities, relationships)
             # Export the full set (non-destructive) but ordered high-signal-first
             # so the CSV leads with the entities that matter.

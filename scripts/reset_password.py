@@ -45,6 +45,9 @@ def main() -> None:
             print(f"Error: no user found with email '{email}'.", file=sys.stderr)
             sys.exit(1)
 
+        first = session.query(User).order_by(User.id).first()
+        if first.id == user.id:
+            user.role = "admin"
         user.hashed_password = hash_password(new_password)
         user.must_reset_password = not args.no_force_reset
         session.commit()

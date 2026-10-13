@@ -22,6 +22,8 @@ def _wrap_keyword(watch: dict, llm) -> Coroutine[Any, Any, None]:
     Returns a coroutine that can be awaited.
     """
     async def _run_watch() -> None:
+        if not _watch_is_active(watch):
+            return
         result = await jobs.run_keyword_watch(watch, llm=llm)
         await evaluate_and_dispatch_alerts(watch, result)
 
@@ -34,6 +36,8 @@ def _wrap_url(watch: dict, llm) -> Coroutine[Any, Any, None]:
     Returns a coroutine that can be awaited.
     """
     async def _run_watch() -> None:
+        if not _watch_is_active(watch):
+            return
         result = await jobs.run_url_watch(watch, llm=llm if watch.get("use_llm", False) else None)
         await evaluate_and_dispatch_alerts(watch, result)
 
@@ -85,7 +89,7 @@ def start_scheduler(llm=None, event_loop: asyncio.AbstractEventLoop | None = Non
     scheduler = AsyncIOScheduler(event_loop=event_loop)
 
     for w in watches:
-        wid = w["name"]
+        wid = w.get("scheduler_id", w["name"])
         hours = float(w["interval_hours"])
         trigger = IntervalTrigger(hours=hours)
         if w.get("type") == "keyword":
@@ -180,3 +184,13 @@ def trigger_job_now(scheduler, watch_name: str) -> bool:
     except Exception as exc:
         logger.warning("trigger_job_now: %s", exc)
         return False
+
+
+def _watch_is_active(watch):
+    if not watch.get("scheduler_id"):
+        return True
+    import uuid
+    from db.models import Monitor
+    from db.session import get_session
+    with get_session() as session:
+        return session.query(Monitor.id).filter_by(id=uuid.UUID(watch["scheduler_id"]), user_id=watch["user_id"], enabled=True, deleted=False).first() is not None

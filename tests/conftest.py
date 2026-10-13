@@ -80,6 +80,7 @@ async def _netpool_isolation():
 
 @pytest.fixture(autouse=True)
 def reset_source_state(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     # An ambient allowlist in a developer shell must not change unrelated tests.
     monkeypatch.delenv("VOIDACCESS_ENRICHMENT_SOURCES", raising=False)
     # Likewise an ambient deny-list, and the process-wide cancel token / source
@@ -200,3 +201,11 @@ class FakeExtractionResult:
 def make_results(*entities) -> list:
     """Wrap FakeEntity instances into a one-element extraction-results list."""
     return [FakeExtractionResult(list(entities))]
+
+
+@pytest.fixture(autouse=True)
+def _api_override_isolation():
+    from api.main import app
+    app.dependency_overrides.clear()
+    yield
+    app.dependency_overrides.clear()

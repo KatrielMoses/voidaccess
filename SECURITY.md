@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| v1.7.x   | Yes       |
+| v2.1.x   | Yes       |
+| <= v2.0.3 | No — multi-user upgrade required |
 
 
 Only the latest release line receives security fixes.
@@ -52,11 +53,16 @@ We investigate and confirm the issue. If valid, we fix it before public disclosu
 
 The API runs as a non-root user inside Docker containers (uid 1000, gid 1000). JWTs expire after 8 hours and include a unique ID (jti) that gets stored in Redis for revocation when users log out.
 
-Token revocation behaviour on Redis availability is a deliberate design decision. If `REDIS_URL` is **not** configured, the blacklist is disabled by design and tokens remain valid until natural expiry (fail-open — for operators who choose not to run Redis). If `REDIS_URL` **is** configured but Redis becomes unreachable, revocation is treated as a required control and the API **fails closed**: authenticated requests are rejected with `503 Service Unavailable` and an operator warning is logged, rather than silently accepting possibly-revoked tokens. Enforcement resumes automatically once Redis recovers. This trades availability for revocation integrity when revocation has been explicitly opted in; unset `REDIS_URL` to prefer availability instead.
+JWT revocation uses Redis when configured, otherwise the self-hosted database.
+Both configured backends fail authentication closed on a revocation-check outage.
+Web logout revokes the JWT before clearing the httpOnly session cookie.
+
+See the [October 2026 multi-user advisory](docs/SECURITY-ADVISORY-2026-10.md)
+for affected versions, exposure details, upgrade steps, and migration notes.
 
 API keys provided by users are encrypted with Fernet (AES-128) using a key derived from JWT_SECRET. Server-level keys are stored in environment variables only.
 
-Rate limiting is applied to auth endpoints (5/minute login, 3/minute password reset) and a global limit to all API routes (100/minute). These can be disabled via DISABLE_RATE_LIMIT=true.
+Rate limiting is applied to auth endpoints (5/minute login, 3/minute password reset) and a global per-IP limit and an authenticated-user limit (120/minute each by default). These can be disabled via DISABLE_RATE_LIMIT=true.
 
 The scraping layer validates every URL before fetch. It blocks internal IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, link-local, IPv6 private) and known internal hostnames. Onion addresses pass through because Tor handles the routing. This prevents accidental internal network exposure.
 

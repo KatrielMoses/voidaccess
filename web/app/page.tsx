@@ -1,3 +1,4 @@
+import { LogoutButton } from "@/components/LogoutButton";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import { InvestigationInput } from "@/components/InvestigationInput";
@@ -57,6 +58,7 @@ export default function HomePage() {
           </Link>
           <div className="h-4 w-px bg-[var(--border-subtle)]" />
           <StatusBar />
+          <LogoutButton />
         </nav>
       </header>
 
