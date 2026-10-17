@@ -64,6 +64,10 @@ class _FakeResponse:
 
 
 class _FakeSession:
+    # The shared clearnet pool (netpool) checks ``.closed`` on every request to
+    # rebuild a closed session, so a fake must expose it like aiohttp does.
+    closed = False
+
     def __init__(self, responses, timestamps=None):
         self._responses = list(responses)
         self._timestamps = timestamps if timestamps is not None else []
@@ -484,6 +488,9 @@ async def test_nvd_burst_then_idle_is_blocked_by_the_window(monkeypatch):
     monkeypatch.setattr(nvd, "_NVD_DELAY_NO_KEY", 0.0)        # spacing off
     monkeypatch.delenv("NVD_API_KEY", raising=False)
     nvd._reset_request_windows()
+    import netpool
+
+    monkeypatch.setattr(netpool, "_clearnet_session", None)  # build the pool from the fake below
 
     timestamps: list[float] = []
     payload = {

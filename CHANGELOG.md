@@ -2,7 +2,21 @@
 
 All notable changes to VoidAccess are documented here.
 
-## 2.1.0 (unreleased)
+## [2.1.0] - 2026-10-17
+
+A security release for multi-user self-hosted installs, plus everything built since 2.0.3: a shared knowledge
+tier and owned page index, new intelligence sources, safety parity between the CLI and the web app, an official
+progress hook, a cloud-ready source deny-list, and many reliability fixes.
+
+**Upgrade:** read `docs/SECURITY-ADVISORY-2026-10.md`, install 2.1.0, rebuild the web UI, and run
+`alembic upgrade head` (migrations `0027` to `0036`). Rotate `JWT_SECRET` if you want to end sessions issued before
+the upgrade. Multi-user installs should upgrade promptly.
+
+**Privacy:** nothing leaves your install. The new "shared" tier is shared between the users of one install, in your
+own database, and only ever holds sanitized observations, never who searched for what. The cross-install ingest API
+is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you run yourself.
+
+### Security
 
 - Fix self-hosted multi-user data exposure: shared ownership dependencies return
   404 for foreign investigation, entity, graph, analysis, export, actor and monitor resources.
@@ -18,9 +32,39 @@ All notable changes to VoidAccess are documented here.
   API tests, migration tests, route enumeration and browser-session tests.
 - See `docs/SECURITY-ADVISORY-2026-10.md` for upgrade and attribution limitations.
 
-## Unreleased
+### Breaking changes
 
-### Default changes (self-hosters will notice these)
+- Database: run `alembic upgrade head` (migrations `0027` to `0036`). The ownership migration has no destructive
+  downgrade; back up first (see the advisory).
+- Administrative routes require the `admin` role.
+- `voidaccess.llm.generate_summary` raises `SummaryUnavailable` instead of returning an error string.
+- CLI JSON `sources_used` statuses renamed: `fail` -> `error`, `skipped_no_key` -> `no_key`; new `disabled`,
+  `skipped_by_allowlist`, `timed_out`.
+- `voidaccess investigate --quiet` prints nothing except fatal errors.
+
+### New: shared tier and owned page index (local to your install)
+
+- **Shared corpus tier** (`shared_corpus/`): discovered onions, page snapshots, canonical IOCs and source reputation,
+  kept apart from private investigation data, so one investigation's observations speed up the next (cache hits,
+  seed expansion, pre-extracted entities) without revealing who searched for what. Migrations `0027`, `0028`,
+  `0030` to `0032`, `0034`, `0035`.
+- **One sanitizer for every shared write** (`sanitizer/`): content-safety drop, credential redaction and personal
+  data redaction before anything reaches the shared tier; it fails closed (stores nothing) when it can't guarantee
+  redaction. Plus a page-snapshot object store (`snapshot_store/`) and IOC hygiene helpers (`hygiene/`).
+- **Anti-poisoning trust gate** (`trust_gate/`): deterministic quarantine, corroboration, source reputation and
+  anomaly checks for the shared tier, with corpus-health views for the maintainer (`observability/`).
+- **Cross-install ingest API with Sybil-resistant corroboration** (`ingest/`, `api/routes/ingest.py`, migration
+  `0033`). Off by default (`VOIDACCESS_INGEST_ENABLED=false`).
+- **Owned, semantically ranked page index** (`owned_index/`), filled from investigations and seeds
+  (`index_population/`) and kept fresh by a background loop (`freshness/`) on a durable DB-backed job queue
+  (`jobqueue/`, migration `0029`), with an in-process rate limiter (`ratelimit/`).
+- **New sources and search improvements:** CVE intelligence, EPSS exploit-probability scores and Exploit-DB; a much
+  larger curated onion seed list; search result ranking and an engine cull (`search/ENGINE_CULL.md`); a reusable
+  blocklist-feed matcher (`feeds/`); presence-only HIBP Pwned Passwords checks via k-anonymity
+  (`credential_presence/`); a shared clearnet connection pool (`netpool/`).
+- **Benchmark tooling** (`benchmark/`): engine probes with latency and unique-result share.
+
+### Changed defaults (self-hosters will notice these)
 
 - **Packaging:** `pip install voidaccess` now ships 13 packages it previously
   omitted (`shared_corpus`, `trust_gate`, `netpool`, `jobqueue`, `hygiene`,
@@ -115,7 +159,6 @@ All notable changes to VoidAccess are documented here.
 - Per-source HTTP request counts: `sources_used[...].requests`, and
   `source_requests`, `source_requests_by_step`, `sources_status` and the output
   paths in the `completed` progress event's `metrics`.
-- `VOIDACCESS_ENRICHMENT_SOURCES` allowlist for enrichment sources.
 - `VOIDACCESS_SEARCH_WORKERS`, `VOIDACCESS_SCRAPE_WORKERS`,
   `VOIDACCESS_EXTRACT_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_CONCURRENCY`, `VOIDACCESS_LLM_CHUNK_TIMEOUT`, `VOIDACCESS_SEARCH_DEADLINE`,
   `VOIDACCESS_CONCURRENT_COLLECT`; `VOIDACCESS_ENRICHMENT_TIMEOUT` is now applied
@@ -123,7 +166,7 @@ All notable changes to VoidAccess are documented here.
 - `benchmark probe` artifacts report `latency_p90_ms` and `unique_result_share`
   per engine.
 
-### Earlier unreleased changes
+### Safety
 
 - Align CLI and API content-safety gates: Tor and side-source page text is
   scanned via shared `gate_pages()` before persistence, vector cache, extraction,

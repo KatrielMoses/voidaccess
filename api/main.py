@@ -464,10 +464,12 @@ async def _periodic_stuck_sweep() -> None:
 # App setup
 # ---------------------------------------------------------------------------
 
+from voidaccess_cli import __version__ as _VOIDACCESS_VERSION  # single source of truth for the version
+
 app = FastAPI(
     title="VoidAccess Intelligence API",
     description="VoidAccess: Dark Web Intelligence Platform",
-    version="2.0.3",
+    version=_VOIDACCESS_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,

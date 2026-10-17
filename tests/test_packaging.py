@@ -200,3 +200,18 @@ def test_wheel_installs_and_imports(tmp_path):
               "from voidaccess.summary_fallback import summarize_with_fallback; "
               "print(len(s.all_source_ids()))"], cwd, 300, env)
     assert r.returncode == 0, (r.stdout + r.stderr)[-1500:]
+
+
+def test_version_strings_agree():
+    """The API, the IOC package and the CLI report the same version as pyproject.toml."""
+    import re
+    from pathlib import Path
+
+    import voidaccess_cli
+    from export import ioc_package
+
+    root = Path(__file__).resolve().parents[1]
+    pyproject = re.search(r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M).group(1)
+    assert voidaccess_cli.__version__ == pyproject
+    assert ioc_package.PACKAGE_VERSION == pyproject
+    assert 'version=_VOIDACCESS_VERSION' in (root / "api" / "main.py").read_text()
