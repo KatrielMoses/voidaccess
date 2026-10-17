@@ -66,6 +66,19 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
 
 ### Changed defaults (self-hosters will notice these)
 
+- **More distinct onion pages per run.** Onion links are now picked one per site and
+  at most two per mirror family (sites whose addresses share their first seven
+  characters), with real search-result links ahead of addresses a results page
+  only mentions. The number fetched follows `--depth`: 15 (shallow), 25 (normal),
+  40 (deep), overridable with `VOIDACCESS_ONION_TOP_N` (5-60). When failed fetches
+  or mirrored copies leave slots empty, one extra batch backfills them from the
+  next-ranked links; `normal` and `deep` also follow up to 10 / 20 links found on
+  the fetched pages. Every extra fetch goes through the same URL and content
+  safety gates.
+- **Source status can read `partial`:** some of the source's requests worked and
+  some failed. In the `enrich.source` trace event a partial source reads `error`
+  (the trace vocabulary has no `partial`).
+
 - **Packaging:** `pip install voidaccess` now ships 13 packages it previously
   omitted (`shared_corpus`, `trust_gate`, `netpool`, `jobqueue`, `hygiene`,
   `sanitizer`, `ratelimit`, `observability`, `snapshot_store`,
@@ -190,6 +203,38 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
 
 ### Fixed
 
+- **A failed fetch is no longer counted or stored as a page.** The scraper used to
+  return the search result's title as the text of a page it could not fetch (or
+  that had no text), so those titles were stored, extracted and counted in
+  `pages_fetched`. Now only a fetch that returned content is a page; the failure
+  shows only as its `page.fetched` outcome.
+- **Source status is honest for fixed endpoints.** Any non-2xx answer from a feed
+  or a fixed API (ransomware.live, CISA advisories, justice.gov, the MITRE
+  bundle, the blocklists) is a failure; a per-item lookup's 404 (Shodan
+  InternetDB, HIBP, VirusTotal, NVD and similar) still means "no record". Calls
+  made as `await session.get(...)` are counted too, and a feed that failed is not
+  requested again in the same run. Sources that silently read `ok` while every
+  call 404'd now read `error`.
+- **Dead endpoints replaced:** ransomware.live groups now come from its data feed
+  (`data.ransomware.live/groups.json`; the API's `/groups` and `/group/{name}`
+  are gone), CISA advisories from `cybersecurity-advisories/all.xml`, and
+  justice.gov press releases from `/news/rss`. The last two are RSS and are now
+  parsed as such (the justice.gov feed had never parsed).
+- **MITRE ATT&CK techniques are attributed only to a group the run found, by
+  exact name or alias.** Matching was by substring, so "Tor", "royal" or "bert"
+  pulled in unrelated groups' techniques. Now a name must equal an intrusion
+  set's name or alias (after the built-in alias table; "Cobalt Strike", a tool,
+  was removed from it); an alias that is also an ATT&CK software name is
+  ambiguous and matches nothing; revoked sets are ignored. The overlay counts
+  `THREAT_ACTOR_HANDLE` as an actor, runs only when the run has no
+  `MITRE_TECHNIQUE` yet (it used to check a misspelt CVE type), adds one page per
+  group, and tags every technique with its group.
+- **Organisation names drop link-directory and markup noise.** Values such as
+  "Name - description" titles, markdown residue, slash lists, `.onion` names,
+  directory words, base64 runs and dark-market listing words are removed before
+  they are stored or sent to the NVD CPE lookup; truncated parentheses, link
+  tails and leak-listing status words are trimmed first. On 379 labelled values
+  from the regression runs: 97.8% precision, 75.9% recall.
 - **Enrichment no longer throws away finished work at its 59 s deadline.** The
   CISA KEV / NVD / Shodan / VirusTotal / historical-intel (MITRE) / CVE-fusion
   group ran its steps one after another behind NVD, so it usually missed the
