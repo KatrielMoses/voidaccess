@@ -29,7 +29,7 @@ from sources.enrichment_allowlist import (
 logger = logging.getLogger(__name__)
 
 _MITRE_CACHE = "/tmp/voidaccess_mitre_attack.json"
-_FBI_CACHE = "/tmp/voidaccess_fbi_press.json"
+_FBI_CACHE = "/tmp/voidaccess_fbi_press.xml"
 
 ACTOR_ALIASES = {
     "revil": "Wizard Spider",
@@ -46,7 +46,6 @@ ACTOR_ALIASES = {
     "hive": None,
     "cl0p": "TA505",
     "ta505": "TA505",
-    "cobalt strike": "Cobalt Group",
     "apt28": "APT28",
     "fancy bear": "APT28",
     "lazarus": "Lazarus Group",
@@ -60,10 +59,13 @@ _mitre_feed = CachedFeed(
     _MITRE_CACHE,
     ttl_seconds=604800,
 )
+# justice.gov retired /news/press-releases/rss; /news/rss is the live feed (the
+# same one rss_scraper reads; verified 2026-10-17). It is RSS, not JSON.
 _fbi_feed = CachedFeed(
-    "https://www.justice.gov/news/press-releases/rss",
+    "https://www.justice.gov/news/rss",
     _FBI_CACHE,
-    ttl_seconds=43200)
+    ttl_seconds=43200,
+    parse="rss")
 
 # Per-entity pacing across the MITRE / DOJ / CISA fan-out (verified 2026-07-29):
 #
@@ -77,24 +79,97 @@ _fbi_feed = CachedFeed(
 ENTITY_REQUEST_DELAY = 0.5
 
 
-async def _fetch_mitre_index() -> dict:
+class _AttackIndex:
+    """Exact-match lookups over one ATT&CK STIX bundle (built once per bundle).
+
+    A name resolves to an intrusion set only by exact, case-insensitive match
+    on the set's name or one of its aliases, after ACTOR_ALIASES; never by
+    substring. A term that is only an *alias* of a set and is also an ATT&CK
+    software name or alias ("Snake": a Turla alias and the Uroburos implant) is
+    ambiguous and resolves to nothing; a set's own name wins ("Play" is the
+    group G1040 even though Playcrypt lists it as an alias). Revoked and
+    deprecated objects are ignored.
+    """
+
+    def __init__(self, objects: list) -> None:
+        live = [o for o in objects if isinstance(o, dict)
+                and not o.get("revoked") and not o.get("x_mitre_deprecated")]
+        self.by_name: dict[str, dict] = {}
+        self.by_alias: dict[str, dict] = {}
+        self.software: set[str] = set()
+        technique_ids: dict[str, str] = {}
+        for obj in live:
+            kind = obj.get("type")
+            if kind == "intrusion-set":
+                name = (obj.get("name") or "").strip().lower()
+                if name:
+                    self.by_name.setdefault(name, obj)
+                for alias in obj.get("aliases") or []:
+                    self.by_alias.setdefault(str(alias).strip().lower(), obj)
+            elif kind in ("tool", "malware"):
+                for term in [obj.get("name")] + list(obj.get("x_mitre_aliases") or []):
+                    if term:
+                        self.software.add(str(term).strip().lower())
+            elif kind == "attack-pattern":
+                for ref in obj.get("external_references") or []:
+                    if ref.get("source_name") == "mitre-attack":
+                        ext_id = ref.get("external_id", "")
+                        if ext_id.startswith("T"):
+                            technique_ids[obj.get("id", "")] = ext_id
+                        break
+        self.techniques: dict[str, list[str]] = {}
+        for obj in live:
+            if obj.get("type") == "relationship" and obj.get("relationship_type") == "uses":
+                t_code = technique_ids.get(obj.get("target_ref", ""))
+                if t_code:
+                    codes = self.techniques.setdefault(obj.get("source_ref", ""), [])
+                    if t_code not in codes:
+                        codes.append(t_code)
+
+    def resolve(self, actor_name: str) -> Optional[dict]:
+        q = (actor_name or "").strip().lower()
+        if not q:
+            return None
+        if q in ACTOR_ALIASES:
+            target = ACTOR_ALIASES[q]
+            if target is None:
+                return None
+            q = target.lower()
+        if q in self.by_name:
+            return self.by_name[q]
+        if q in self.by_alias and q not in self.software:
+            return self.by_alias[q]
+        return None
+
+
+_attack_index_cache: dict[int, _AttackIndex] = {}
+
+
+def _attack_index(data) -> _AttackIndex:
+    key = id(data)
+    index = _attack_index_cache.get(key)
+    if index is None:
+        objects = data if isinstance(data, list) else data.get("objects", [])
+        index = _AttackIndex(objects)
+        _attack_index_cache.clear()  # one bundle per process
+        _attack_index_cache[key] = index
+    return index
+
+
+def group_id(group: dict) -> str:
+    for ref in group.get("external_references") or []:
+        if ref.get("source_name") == "mitre-attack":
+            return ref.get("external_id", "")
+    return ""
+
+
+async def _fetch_mitre_index() -> Optional[_AttackIndex]:
     if not is_enrichment_source_enabled("mitre_attack"):
-        return {}
+        return None
     data = await _mitre_feed.fetch()
     if data is None:
-        return {}
-
-    index: dict = {}
-    objects = data if isinstance(data, list) else data.get("objects", [])
-    for obj in objects:
-        if obj.get("type") != "intrusion-set":
-            continue
-        name = (obj.get("name") or "").lower()
-        aliases = [a.lower() for a in obj.get("aliases") or []]
-        for key in [name] + aliases:
-            if key:
-                index[key] = obj
-    return index
+        return None
+    return _attack_index(data)
 
 
 async def _fetch_fbi_results(entity_value: str) -> list[dict]:
@@ -121,70 +196,28 @@ async def _fetch_fbi_results(entity_value: str) -> list[dict]:
     return results
 
 
+async def get_group_techniques(actor_name: str) -> Optional[tuple[str, str, list[str]]]:
+    """``(group name, group id, T-codes)`` for the ATT&CK group *actor_name*
+    names exactly (see :class:`_AttackIndex`), or ``None``."""
+    index = await _fetch_mitre_index()
+    if index is None:
+        return None
+    group = index.resolve(actor_name)
+    if group is None:
+        return None
+    return group.get("name", ""), group_id(group), list(index.techniques.get(group.get("id", ""), []))
+
+
 async def get_techniques_for_actor(actor_name: str) -> list[str]:
-    """Return MITRE ATT&CK T-codes used by a threat group (case-insensitive partial match).
+    """Return MITRE ATT&CK T-codes used by the threat group *actor_name* names.
 
-    Searches group names and aliases in the local STIX cache, then follows
-    ``uses`` relationships to attack-pattern objects to collect T-codes.
-    Returns [] when the actor is not found or the cache is unavailable, or
-    when ``mitre_attack`` is not in VOIDACCESS_ENRICHMENT_SOURCES.
+    Exact, case-insensitive match on an intrusion set's name or alias (after
+    ACTOR_ALIASES), never a substring, and never an ATT&CK software name. Returns
+    [] when there is no such group, the cache is unavailable, or ``mitre_attack``
+    is not enabled.
     """
-    if not is_enrichment_source_enabled("mitre_attack"):
-        return []
-    data = await _mitre_feed.fetch()
-    if data is None:
-        return []
-
-    objects = data if isinstance(data, list) else data.get("objects", [])
-    q = actor_name.lower()
-
-    alias_result = ACTOR_ALIASES.get(q)
-    if alias_result is None and q in ACTOR_ALIASES:
-        return []
-    if alias_result is not None:
-        q = alias_result.lower()
-
-    # Locate intrusion-set STIX ID by name / alias (partial match)
-    group_stix_id: Optional[str] = None
-    for obj in objects:
-        if obj.get("type") != "intrusion-set":
-            continue
-        name = (obj.get("name") or "").lower()
-        aliases = [a.lower() for a in (obj.get("aliases") or [])]
-        if q in name or any(q in alias for alias in aliases):
-            group_stix_id = obj.get("id")
-            break
-
-    if not group_stix_id:
-        return []
-
-    # Build attack-pattern stix_id → T-code lookup
-    technique_map: dict[str, str] = {}
-    for obj in objects:
-        if obj.get("type") != "attack-pattern":
-            continue
-        for ref in (obj.get("external_references") or []):
-            if ref.get("source_name") == "mitre-attack":
-                ext_id = ref.get("external_id", "")
-                if ext_id.startswith("T"):
-                    technique_map[obj.get("id", "")] = ext_id
-                    break
-
-    # Collect T-codes via "uses" relationships from this group
-    t_codes: list[str] = []
-    seen: set[str] = set()
-    for obj in objects:
-        if (
-            obj.get("type") == "relationship"
-            and obj.get("relationship_type") == "uses"
-            and obj.get("source_ref") == group_stix_id
-        ):
-            t_code = technique_map.get(obj.get("target_ref", ""))
-            if t_code and t_code not in seen:
-                seen.add(t_code)
-                t_codes.append(t_code)
-
-    return t_codes
+    found = await get_group_techniques(actor_name)
+    return found[2] if found else []
 
 
 async def enrich_historical(entities_by_type: dict[str, list[dict]]) -> list[dict]:
@@ -210,7 +243,8 @@ async def enrich_historical(entities_by_type: dict[str, list[dict]]) -> list[dic
         return []
 
     results: list[dict] = []
-    mitre_index: dict = {}
+    mitre_index: Optional[_AttackIndex] = None
+    mitre_loaded = False
 
     for ent in relevant_entities:
         if cancel.is_cancelled():
@@ -221,10 +255,11 @@ async def enrich_historical(entities_by_type: dict[str, list[dict]]) -> list[dic
 
         q = ev.lower()
 
-        if not mitre_index:
+        if not mitre_loaded:
             mitre_index = await _fetch_mitre_index()
+            mitre_loaded = True
 
-        mitre_match = mitre_index.get(q)
+        mitre_match = mitre_index.resolve(q) if mitre_index is not None else None
         if mitre_match:
             results.append({
                 "source": "mitre_attack",
@@ -281,7 +316,7 @@ async def _cisa_advisory_for_entity(entity_value: str, entity_type: str) -> Opti
                 "entity_type": entity_type,
                 "entity_value": entity_value,
                 "advisory_title": adv.get("title", ""),
-                "advisory_url": adv.get("url", ""),
-                "advisory_date": adv.get("datePublished", ""),
+                "advisory_url": adv.get("url") or adv.get("link", ""),
+                "advisory_date": adv.get("datePublished") or adv.get("published", ""),
             }
     return None

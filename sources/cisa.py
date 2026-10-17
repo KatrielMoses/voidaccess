@@ -24,13 +24,15 @@ from sources.enrichment_allowlist import (
 logger = logging.getLogger(__name__)
 
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-CISA_ADVISORIES_URL = "https://www.cisa.gov/cybersecurity-advisories/all.json"
+# The advisories list is published as RSS (all.json was retired; verified
+# 2026-10-17). Items carry title, link, pubDate and category tags.
+CISA_ADVISORIES_URL = "https://www.cisa.gov/cybersecurity-advisories/all.xml"
 
 _KEV_CACHE = "/tmp/voidaccess_cisa_kev.json"
-_ADVISORIES_CACHE = "/tmp/voidaccess_cisa_advisories.json"
+_ADVISORIES_CACHE = "/tmp/voidaccess_cisa_advisories.xml"
 
 _kev_feed = CachedFeed(CISA_KEV_URL, _KEV_CACHE, ttl_seconds=86400)
-_adv_feed = CachedFeed(CISA_ADVISORIES_URL, _ADVISORIES_CACHE, ttl_seconds=21600)
+_adv_feed = CachedFeed(CISA_ADVISORIES_URL, _ADVISORIES_CACHE, ttl_seconds=21600, parse="rss")
 
 
 async def enrich_cisa_cve(cve_id: str) -> list[dict]:
@@ -95,8 +97,8 @@ async def enrich_cisa_advisories(entity_value: str, entity_type: str) -> list[di
                 "entity_type": entity_type,
                 "entity_value": entity_value,
                 "advisory_title": adv.get("title", ""),
-                "advisory_url": adv.get("url", ""),
-                "advisory_date": adv.get("datePublished", ""),
+                "advisory_url": adv.get("url") or adv.get("link", ""),
+                "advisory_date": adv.get("datePublished") or adv.get("published", ""),
             })
     return results
 

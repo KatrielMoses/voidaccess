@@ -19,7 +19,10 @@ from urllib.parse import urlparse
 import aiohttp
 
 import pacing
-from sources import http_pool
+import json
+
+from sources import http_pool, source_control
+from sources.cache import CachedFeed
 from utils import cancel
 from sources.enrichment_allowlist import (
     ENRICHMENT_SOURCE_IDS,
@@ -702,17 +705,32 @@ def _rl_extract_onion_urls(group: dict) -> list[str]:
     return urls
 
 
+# The free data feed: the full group list with descriptions and leak-site
+# locations in one static file (verified 2026-10-17). It replaces the API's
+# /groups (now an HTML page) and the per-group /group/{name} detail calls, so a
+# run makes one request instead of one per minute per group.
+RANSOMWARE_LIVE_GROUPS_URL = "https://data.ransomware.live/groups.json"
+_rl_groups_feed = CachedFeed(
+    RANSOMWARE_LIVE_GROUPS_URL,
+    "/tmp/voidaccess_ransomware_live_groups.json",
+    ttl_seconds=21600,
+    headers=_RANSOMWARE_LIVE_HEADERS,
+)
+
+
 async def fetch_ransomware_live(query: str) -> list[dict]:
     """
     Search ransomware.live for threat group profiles, leak-site .onion addresses,
     and recent victim claim URLs.
 
     Produces three kinds of intelligence:
-    1. Group profile + TTPs (text for entity extraction)
+    1. Group profile (text for entity extraction)
     2. Leak-site .onion addresses (scrape seeds — bypass search engine discovery)
     3. Individual victim claim URLs (specific .onion post pages to scrape)
 
-    Free public API — no key required.
+    Groups come from the data feed (RANSOMWARE_LIVE_GROUPS_URL); recent attacks
+    from the API's /v2/recentcyberattacks. Free, no key; personal-use terms, so
+    it is off in the hosted profile.
     """
     if not is_enrichment_source_enabled("ransomware_live"):
         return []
@@ -721,146 +739,80 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
         return []
 
     results: list[dict] = []
-    timeout = aiohttp.ClientTimeout(total=25)
 
     try:
-        async with http_pool.clearnet_session() as session:
-            # ── 1. Match groups from the full group index ──────────────────────
-            await _rl_route_gate("/groups")
-            async with session.get(
-                f"{_RANSOMWARE_LIVE_BASE}/groups",
-                headers=_RANSOMWARE_LIVE_HEADERS, timeout=timeout,
-            ) as resp:
-                if resp.status == 429:
-                    wait = pacing.retry_after_seconds(
-                        resp.headers, pacing.scale_delay_floor(_RL_MIN_INTERVAL)
-                    )
-                    logger.warning(
-                        "ransomware.live /groups rate limited — %.0fs", wait
-                    )
-                    return []
-                if resp.status != 200:
-                    logger.warning("ransomware.live /groups HTTP %s", resp.status)
-                    return []
-                all_groups = await resp.json(content_type=None)
+        all_groups = await _rl_groups_feed.fetch()
+        if all_groups is None:
+            return []  # the failed request is already counted against the source
+        if not isinstance(all_groups, list):
+            logger.warning("ransomware.live: group feed was not a list")
+            source_control.record_source_failure("ransomware_live")
+            return []
 
-            _tokens = _significant_group_tokens(query)
-            matched_summary: list[dict] = []
-            for g in (all_groups if isinstance(all_groups, list) else []):
-                name = (g.get("name") or "").lower()
-                if _group_name_matches_query(name, _tokens):
-                    matched_summary.append(g)
+        _tokens = _significant_group_tokens(query)
+        matched_summary: list[dict] = []
+        for g in all_groups:
+            if not isinstance(g, dict):
+                continue
+            name = (g.get("name") or "").lower()
+            if _group_name_matches_query(name, _tokens):
+                matched_summary.append(g)
 
-            if not matched_summary:
-                logger.info("ransomware.live: no groups matched %r", query)
-                return []
+        if not matched_summary:
+            logger.info("ransomware.live: no groups matched %r", query)
+            return []
 
-            logger.info("ransomware.live: %d groups matched %r", len(matched_summary), query)
+        logger.info("ransomware.live: %d groups matched %r", len(matched_summary), query)
 
-            # ── 2. Fetch full group detail for each match (has ttps, tools, locations) ──
-            async def _fetch_group_detail(gname: str) -> Optional[dict]:
-                try:
-                    # /group/{name} is ONE endpoint for rate-limit purposes, so
-                    # every group shares a single 1-req/min allowance.
-                    await _rl_route_gate("/group/" + str(gname))
-                    async with session.get(
-                        f"{_RANSOMWARE_LIVE_BASE}/group/{gname}",
-                        headers=_RANSOMWARE_LIVE_HEADERS, timeout=timeout,
-                    ) as r:
-                        if r.status == 429:
-                            logger.warning(
-                                "ransomware.live /group/%s rate limited", gname
-                            )
-                            return None
-                        if r.status == 200:
-                            text = await r.text()
-                            if text.strip()[:1] in "[{":
-                                return await r.json(content_type=None) if False else \
-                                       __import__("json").loads(text)
-                except Exception:
-                    pass
-                return None
+        # ── Recent attacks, filtered to the matched groups ────────────────────
+        recent_victims: list[dict] = []
+        matched_names = {g.get("name", "").lower() for g in matched_summary}
+        endpoint = "/v2/recentcyberattacks"
+        try:
+            await _rl_route_gate(endpoint)
+            async with http_pool.clearnet_session() as session:
+                async with session.get(
+                    f"https://api.ransomware.live{endpoint}",
+                    headers=_RANSOMWARE_LIVE_HEADERS,
+                    timeout=aiohttp.ClientTimeout(total=25),
+                ) as r:
+                    if r.status == 200:
+                        text = await r.text()
+                        if text.strip()[:1] == "[":
+                            for v in json.loads(text):
+                                if (v.get("group") or "").lower() in matched_names:
+                                    recent_victims.append(v)
+                        else:
+                            source_control.record_source_failure("ransomware_live")
+        except Exception as exc:
+            logger.warning("ransomware.live %s failed: %s", endpoint, exc)
 
-            # Sequential, not gathered: concurrent calls to the same route would
-            # all queue on the same 62 s gate anyway, and gathering them merely
-            # hides that from the soft budget below.
-            wanted = matched_summary[:_RL_MAX_GROUP_DETAILS]
-            details: list[Any] = []
-            _rl_started = time.monotonic()
-            for _g in wanted:
-                if details and (time.monotonic() - _rl_started) > _RL_SOFT_BUDGET:
-                    logger.info(
-                        "ransomware.live: group-detail budget (%.0fs) reached "
-                        "after %d of %d at 1 req/min",
-                        _RL_SOFT_BUDGET, len(details), len(wanted),
-                    )
-                    break
-                details.append(await _fetch_group_detail(_g.get("name", "")))
+        logger.info("ransomware.live: %d recent victims for matched groups", len(recent_victims))
 
-            group_map: dict[str, dict] = {}
-            for g, detail in zip(wanted, details):
-                gname = g.get("name", "")
-                if isinstance(detail, dict):
-                    group_map[gname] = {**g, **detail}
-                else:
-                    group_map[gname] = g
-
-            # Only the *detail* fetch is rate-capped.  Every matched group still
-            # contributes its summary record, so narrowing the fan-out from 5 to
-            # _RL_MAX_GROUP_DETAILS costs ttps/tools/locations for the tail, not
-            # the groups themselves.
-            for g in matched_summary:
-                gname = g.get("name", "")
-                if gname:
-                    group_map.setdefault(gname, g)
-
-            # ── 3. Pull recent victims and filter by matched groups ────────────
-            recent_victims: list[dict] = []
-            matched_names = {g.get("name", "").lower() for g in matched_summary}
-            for endpoint in ("/v2/recentvictims", "/v2/recentcyberattacks"):
-                try:
-                    # Distinct routes, so these do not contend with each other
-                    # or with /groups — the gate is per route by design.
-                    await _rl_route_gate(endpoint)
-                    async with session.get(f"https://api.ransomware.live{endpoint}") as r:
-                        if r.status == 200:
-                            text = await r.text()
-                            if text.strip()[:1] == "[":
-                                raw: list = __import__("json").loads(text)
-                                for v in raw:
-                                    if (v.get("group") or "").lower() in matched_names:
-                                        recent_victims.append(v)
-                except Exception:
-                    pass
-
-            logger.info("ransomware.live: %d recent victims for matched groups", len(recent_victims))
-
-            # ── 4. Assemble results ───────────────────────────────────────────
-            for gname, gdata in group_map.items():
-                onion_urls = _rl_extract_onion_urls(gdata)
-
-                # Collect victims for this specific group
-                group_victims = [
-                    v for v in recent_victims
-                    if (v.get("group") or "").lower() == gname.lower()
-                ]
-
-                # Claim URLs are individual victim post pages on the leak site
-                claim_urls = [
-                    v.get("claim_url") for v in group_victims
-                    if v.get("claim_url") and ".onion" in (v.get("claim_url") or "")
-                ]
-
-                results.append({
-                    "group":        gname,
-                    "description":  gdata.get("description") or "",
-                    "onion_urls":   onion_urls,
-                    "claim_urls":   claim_urls[:30],
-                    "victims":      group_victims[:50],
-                    "ttps":         gdata.get("ttps") or [],
-                    "tools":        gdata.get("tools") or [],
-                    "victim_count": gdata.get("_victim_count", 0),
-                })
+        # ── Assemble results ────────────────────────────────────────────────
+        for gdata in matched_summary:
+            gname = gdata.get("name", "")
+            if not gname:
+                continue
+            group_victims = [
+                v for v in recent_victims
+                if (v.get("group") or "").lower() == gname.lower()
+            ]
+            # Claim URLs are individual victim post pages on the leak site
+            claim_urls = [
+                v.get("claim_url") for v in group_victims
+                if v.get("claim_url") and ".onion" in (v.get("claim_url") or "")
+            ]
+            results.append({
+                "group":        gname,
+                "description":  gdata.get("description") or "",
+                "onion_urls":   _rl_extract_onion_urls(gdata),
+                "claim_urls":   claim_urls[:30],
+                "victims":      group_victims[:50],
+                "ttps":         gdata.get("ttps") or [],
+                "tools":        gdata.get("tools") or [],
+                "victim_count": gdata.get("_victim_count", 0),
+            })
 
     except asyncio.TimeoutError:
         logger.warning("ransomware.live: request timed out")
@@ -868,6 +820,7 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
         logger.warning("ransomware.live: client error: %s", exc)
     except Exception as exc:
         logger.warning("ransomware.live: unexpected error: %s", exc)
+        source_control.record_source_failure("ransomware_live")
 
     return results
 
@@ -1318,6 +1271,49 @@ def _record_source_state(source_ids, state: str) -> None:
         tracker.set_state(sid, state)
 
 
+# Entity types that name an actor whose ATT&CK techniques the overlay may add.
+OVERLAY_ACTOR_TYPES = frozenset({
+    "THREAT_ACTOR", "THREAT_ACTOR_HANDLE", "RANSOMWARE_GROUP", "MALWARE_FAMILY",
+})
+
+
+async def _mitre_overlay_page(actor_name: str, seen_groups: set[str]) -> Optional[dict]:
+    """The MITRE overlay page for *actor_name*, or None.
+
+    Only a group the name resolves to exactly (sources.historical_intel) is used,
+    once per group; every technique line names that group, so each T-code
+    carries its provenance into extraction."""
+    from sources.historical_intel import get_group_techniques
+
+    try:
+        found = await get_group_techniques(actor_name)
+    except Exception as exc:
+        logger.warning("MITRE overlay: failed for '%s': %s", actor_name, exc)
+        return None
+    if not found or not found[2] or found[1] in seen_groups:
+        return None
+    group_name, gid, techniques = found
+    seen_groups.add(gid)
+    logger.info("MITRE overlay: %d techniques for actor '%s' (group %s %s)",
+                len(techniques), actor_name, gid, group_name)
+    content = (
+        f"MITRE ATT&CK Overlay: Techniques associated with {actor_name} "
+        f"(source: mitre_attack_overlay; matched group: {group_name} {gid})\n"
+        + "\n".join(f"{t} [group: {group_name} {gid}]" for t in techniques)
+    )
+    url = f"https://attack.mitre.org/groups/{gid}/"
+    return {
+        "link": url,
+        "url": url,
+        "content": content,
+        "text": content,
+        "status": 200,
+        "source": "mitre_attack_overlay",
+        "via": "mitre_overlay",
+        "mitre_group": gid,
+    }
+
+
 def _assemble_new_source_pages(parts: dict[str, Any], query: str) -> list[dict]:
     """Pages from the group's finished parts, in the order the group always used."""
     pages: list[dict] = []
@@ -1472,24 +1468,22 @@ async def _enrich_new_sources(
             parts["cve"] = legacy
 
     async def _overlay_part() -> None:
-        # Entity-based MITRE overlay: fires when the caller passes
-        # pre-extracted entities that contain actors but zero CVE/MITRE_TECHNIQUE results.
-        _actor_types = {"THREAT_ACTOR", "RANSOMWARE_GROUP", "MALWARE_FAMILY"}
-        _cve_mitre_types = {"CVE", "MITRE_TECHNIQUE"}
+        # Entity-based MITRE overlay: fires when the run found actors but no
+        # MITRE_TECHNIQUE entities yet.
         _actor_ents = [
             e for e in entities
-            if (e.get("type") or e.get("entity_type", "")) in _actor_types
+            if (e.get("type") or e.get("entity_type", "")) in OVERLAY_ACTOR_TYPES
         ]
-        _has_cve_or_mitre = any(
-            (e.get("type") or e.get("entity_type", "")) in _cve_mitre_types
+        _has_mitre = any(
+            (e.get("type") or e.get("entity_type", "")) == "MITRE_TECHNIQUE"
             for e in entities
         )
-        if not (_actor_ents and not _has_cve_or_mitre and is_enrichment_source_enabled("mitre_attack")):
+        if not (_actor_ents and not _has_mitre and is_enrichment_source_enabled("mitre_attack")):
             return
-        from sources.historical_intel import get_techniques_for_actor
 
         overlay: list[dict] = []
         parts["mitre_overlay"] = overlay  # published as it grows
+        seen_groups: set[str] = set()
         for _actor_ent in _actor_ents:
             if cancel.is_cancelled():
                 break
@@ -1500,27 +1494,9 @@ async def _enrich_new_sources(
             )
             if not _actor_name:
                 continue
-            try:
-                _techniques = await get_techniques_for_actor(_actor_name)
-            except Exception as _exc:
-                logger.warning("MITRE overlay: failed for '%s': %s", _actor_name, _exc)
-                _techniques = []
-            if not _techniques:
-                continue
-            logger.info(f"MITRE overlay: added {len(_techniques)} techniques for actor '{_actor_name}'")
-            _oc = (
-                f"MITRE ATT&CK Overlay: Techniques associated with {_actor_name} "
-                f"(source: mitre_attack_overlay)\n" + "\n".join(_techniques)
-            )
-            overlay.append({
-                "link": "https://attack.mitre.org/",
-                "url": "https://attack.mitre.org/",
-                "content": _oc,
-                "text": _oc,
-                "status": 200,
-                "source": "mitre_attack_overlay",
-                "via": "mitre_overlay",
-            })
+            page = await _mitre_overlay_page(_actor_name, seen_groups)
+            if page is not None:
+                overlay.append(page)
 
     async def _blocklists_part() -> None:
         # P1.4 — abuse/phishing blocklist matching (SSLBL / OpenPhish / PhishTank).
@@ -1995,8 +1971,6 @@ async def enrich_investigation(
             for p in pages
         )
         if not _t_found:
-            from sources.historical_intel import get_techniques_for_actor
-
             # Bounded by what is left of the phase deadline as well.
             OVERLAY_TIMEOUT = 20
             overlay_timeout = min(OVERLAY_TIMEOUT, max(0.0, phase_deadline - loop.time()))
@@ -2010,30 +1984,13 @@ async def enrich_investigation(
 
             async def _run_overlay():
                 _results = []
+                _seen: set[str] = set()
                 for _aname in _prioritized:
                     if cancel.is_cancelled():
                         break
-                    try:
-                        _techs = await get_techniques_for_actor(_aname)
-                    except Exception as _oexc:
-                        logger.warning("MITRE overlay: failed for '%s': %s", _aname, _oexc)
-                        _techs = []
-                    if not _techs:
-                        continue
-                    logger.info(f"MITRE overlay: added {len(_techs)} techniques for actor '{_aname}'")
-                    _ocontent = (
-                        f"MITRE ATT&CK Overlay: Techniques associated with {_aname} "
-                        f"(source: mitre_attack_overlay)\n" + "\n".join(_techs)
-                    )
-                    _results.append({
-                        "link": "https://attack.mitre.org/",
-                        "url": "https://attack.mitre.org/",
-                        "content": _ocontent,
-                        "text": _ocontent,
-                        "status": 200,
-                        "source": "mitre_attack_overlay",
-                        "via": "mitre_overlay",
-                    })
+                    page = await _mitre_overlay_page(_aname, _seen)
+                    if page is not None:
+                        _results.append(page)
                 return _results
 
             try:

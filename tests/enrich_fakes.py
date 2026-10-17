@@ -81,9 +81,16 @@ def install(monkeypatch, delays: dict[str, float] | None = None, calls: list | N
         return [{"source": "cve_intel", "url": f"https://example.invalid/cve/{c}",
                  "content": f"{c} nvd={c in nvd_set} kev={c in kev_set}"} for c in cves]
 
-    async def techniques(actor):
+    # Exact-match stand-in for sources.historical_intel.get_group_techniques:
+    # only these synthetic names are ATT&CK groups; anything else is not.
+    groups = {
+        "examplegroup": ("ExampleGroup", "G9001", ["T1566", "T1486"]),
+        "sampleactor": ("SampleActor", "G9002", ["T1059"]),
+    }
+
+    async def group_techniques(actor):
         await _pause("overlay")
-        return ["T1566 - Phishing"]
+        return groups.get((actor or "").strip().lower())
 
     async def blocklists(entities):
         await _pause("blocklists")
@@ -101,7 +108,7 @@ def install(monkeypatch, delays: dict[str, float] | None = None, calls: list | N
     monkeypatch.setattr("sources.shodan.enrich_shodan", shodan)
     monkeypatch.setattr("sources.virustotal.enrich_virustotal", virustotal)
     monkeypatch.setattr("sources.historical_intel.enrich_historical", historical)
-    monkeypatch.setattr("sources.historical_intel.get_techniques_for_actor", techniques)
+    monkeypatch.setattr("sources.historical_intel.get_group_techniques", group_techniques)
     monkeypatch.setattr("sources.cve_intel.fuse_cve_intelligence", fuse)
     monkeypatch.setattr("feeds.enrich_blocklists", blocklists)
     import sources.enrichment as en

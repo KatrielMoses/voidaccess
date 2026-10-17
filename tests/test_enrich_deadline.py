@@ -218,9 +218,11 @@ def test_cloud_profile_enabled_set_is_unchanged(monkeypatch):
     calls = fakes.install(monkeypatch)
     pages, _ = _run(fakes.ENTITIES_WITH_CVES)
     assert sorted(set(calls)) == ["blocklists", "cisa", "fusion", "historical", "nvd", "overlay"]
+    # E5: one overlay page per ATT&CK group the run's actors resolve to
+    # exactly (SampleLoader is a malware family, not a group).
     assert _sources(pages) == [
         "cisa_advisory", "cve_intel", "cve_intel", "mitre_attack",
-        "mitre_attack_overlay", "mitre_attack_overlay", "sslbl",
+        "mitre_attack_overlay", "sslbl",
     ]
 
 

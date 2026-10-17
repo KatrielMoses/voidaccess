@@ -47,21 +47,23 @@
    "via": "mitre_cti"
   },
   {
-   "content": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "link": "https://attack.mitre.org/",
+   "content": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay; matched group: ExampleGroup G9001)\nT1566 [group: ExampleGroup G9001]\nT1486 [group: ExampleGroup G9001]",
+   "link": "https://attack.mitre.org/groups/G9001/",
+   "mitre_group": "G9001",
    "source": "mitre_attack_overlay",
    "status": 200,
-   "text": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "url": "https://attack.mitre.org/",
+   "text": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay; matched group: ExampleGroup G9001)\nT1566 [group: ExampleGroup G9001]\nT1486 [group: ExampleGroup G9001]",
+   "url": "https://attack.mitre.org/groups/G9001/",
    "via": "mitre_overlay"
   },
   {
-   "content": "MITRE ATT&CK Overlay: Techniques associated with SampleActor (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "link": "https://attack.mitre.org/",
+   "content": "MITRE ATT&CK Overlay: Techniques associated with SampleActor (source: mitre_attack_overlay; matched group: SampleActor G9002)\nT1059 [group: SampleActor G9002]",
+   "link": "https://attack.mitre.org/groups/G9002/",
+   "mitre_group": "G9002",
    "source": "mitre_attack_overlay",
    "status": 200,
-   "text": "MITRE ATT&CK Overlay: Techniques associated with SampleActor (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "url": "https://attack.mitre.org/",
+   "text": "MITRE ATT&CK Overlay: Techniques associated with SampleActor (source: mitre_attack_overlay; matched group: SampleActor G9002)\nT1059 [group: SampleActor G9002]",
+   "url": "https://attack.mitre.org/groups/G9002/",
    "via": "mitre_overlay"
   },
   {
@@ -119,21 +121,13 @@
    "via": "mitre_cti"
   },
   {
-   "content": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "link": "https://attack.mitre.org/",
+   "content": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay; matched group: ExampleGroup G9001)\nT1566 [group: ExampleGroup G9001]\nT1486 [group: ExampleGroup G9001]",
+   "link": "https://attack.mitre.org/groups/G9001/",
+   "mitre_group": "G9001",
    "source": "mitre_attack_overlay",
    "status": 200,
-   "text": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "url": "https://attack.mitre.org/",
-   "via": "mitre_overlay"
-  },
-  {
-   "content": "MITRE ATT&CK Overlay: Techniques associated with SampleLoader (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "link": "https://attack.mitre.org/",
-   "source": "mitre_attack_overlay",
-   "status": 200,
-   "text": "MITRE ATT&CK Overlay: Techniques associated with SampleLoader (source: mitre_attack_overlay)\nT1566 - Phishing",
-   "url": "https://attack.mitre.org/",
+   "text": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay; matched group: ExampleGroup G9001)\nT1566 [group: ExampleGroup G9001]\nT1486 [group: ExampleGroup G9001]",
+   "url": "https://attack.mitre.org/groups/G9001/",
    "via": "mitre_overlay"
   },
   {

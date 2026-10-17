@@ -47,6 +47,8 @@ STATUS_DISABLED = "disabled"
 STATUS_NO_KEY = "no_key"
 # Not run in this mode (for example the onion engines under ``--no-tor``).
 STATUS_SKIPPED = "skipped"
+# Some of the source's requests failed and some worked.
+STATUS_PARTIAL = "partial"
 
 SOURCE_STATUSES = (
     STATUS_OK,
@@ -56,6 +58,7 @@ SOURCE_STATUSES = (
     STATUS_DISABLED,
     STATUS_NO_KEY,
     STATUS_SKIPPED,
+    STATUS_PARTIAL,
 )
 
 # Search-stage sources (enrichment ids are registered in enrichment_allowlist).
@@ -244,6 +247,9 @@ class SourceTracker:
         # source, a phase timing out). Later writes win except that a gate
         # outcome is never downgraded to ``ok``.
         self.states: dict[str, str] = {}
+        # Fixed feeds (sources.cache.CachedFeed) that already failed in this
+        # run: they are not requested again until the next run.
+        self.failed_feeds: set[str] = set()
 
     def record_request(self, source_id: str, n: int = 1) -> None:
         with self._lock:
@@ -272,6 +278,14 @@ class SourceTracker:
     def snapshot_states(self) -> dict[str, str]:
         with self._lock:
             return dict(self.states)
+
+    def mark_feed_failed(self, url: str) -> None:
+        with self._lock:
+            self.failed_feeds.add(url)
+
+    def feed_failed(self, url: str) -> bool:
+        with self._lock:
+            return url in self.failed_feeds
 
 
 # Process-wide default (CLI: one run per process; also the fallback for the
@@ -308,8 +322,19 @@ def record_request(source_id: Optional[str], n: int = 1) -> None:
         get_tracker().record_request(source_id, n)
 
 
+def record_source_failure(source_id: Optional[str]) -> None:
+    """Count one failed call for *source_id* that HTTP status did not show
+    (an answer that could not be parsed, say). Never raises."""
+    try:
+        if source_id:
+            get_tracker().record_failure(source_id)
+    except Exception:  # pragma: no cover
+        pass
+
+
 def record_failure_for_url(url: str) -> None:
-    """Count one failed HTTP call (raised or 401/403/429/5xx). Never raises."""
+    """Count one failed HTTP call (raised, or a failure status: see
+    :func:`is_failure_status`). Never raises."""
     try:
         source_id = _attribution_override.get() or source_for_url(url)
         if source_id:
@@ -321,9 +346,32 @@ def record_failure_for_url(url: str) -> None:
 # A response the source answered with, but that means "the call did not work".
 FAILURE_HTTP_STATUSES = frozenset({401, 403, 429})
 
+# Per-item lookups: a 404 (or 400 for a value the service rejects) means "no
+# record for this item", not a broken source. Every other tracked source calls
+# fixed endpoints (feeds, search APIs), where any non-2xx is a failure.
+PER_ITEM_LOOKUP_SOURCES = frozenset({
+    "shodan_internetdb", "hibp", "hibp_pwned_passwords", "virustotal", "nvd",
+    "rdap", "crtsh", "wayback", "greynoise", "abuseipdb", "urlscan",
+    "hybrid_analysis", "emailrep", "xposedornot", "leakcheck", "hudsonrock",
+    "circl", "securitytrails", "blockcypher", "etherscan",
+})
 
-def is_failure_status(status: int) -> bool:
-    return status in FAILURE_HTTP_STATUSES or status >= 500
+
+def is_failure_status(status: int, source_id: Optional[str] = None) -> bool:
+    """True when an HTTP answer means the call did not work for *source_id*.
+
+    401/403/429/5xx always; any other non-2xx too unless the source is a
+    per-item lookup (see PER_ITEM_LOOKUP_SOURCES). Without a source id, only
+    the always-failure statuses count."""
+    if status in FAILURE_HTTP_STATUSES or status >= 500:
+        return True
+    if source_id is None or source_id in PER_ITEM_LOOKUP_SOURCES:
+        return False
+    return not 200 <= status < 300
+
+
+def is_failure_for_url(status: int, url: str) -> bool:
+    return is_failure_status(status, _attribution_override.get() or source_for_url(url))
 
 
 _attribution_override: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
@@ -444,8 +492,11 @@ def resolve_status(
     if state in (STATUS_TIMED_OUT, STATUS_ERROR):
         return state
     made = tracker.request_count(source_id)
-    if made and tracker.failure_count(source_id) >= made:
+    failed = tracker.failure_count(source_id)
+    if made and failed >= made:
         return STATUS_ERROR  # every call it made failed: not "ok"
+    if failed:
+        return STATUS_PARTIAL  # some calls failed: say so
     if missing_key(source_id) and made == 0:
         return STATUS_NO_KEY
     return STATUS_OK

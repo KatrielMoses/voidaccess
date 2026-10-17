@@ -29,7 +29,7 @@ import aiohttp
 
 import netpool
 from sources.source_control import (
-    is_failure_status,
+    is_failure_for_url,
     record_failure_for_url,
     record_request_for_url,
 )
@@ -69,7 +69,7 @@ class _TrackedRequest:
         except BaseException:
             record_failure_for_url(self._url)
             raise
-        if is_failure_status(getattr(resp, "status", 200)):
+        if is_failure_for_url(getattr(resp, "status", 200), self._url):
             record_failure_for_url(self._url)
         return resp
 
@@ -77,7 +77,19 @@ class _TrackedRequest:
         return await self._ctx.__aexit__(*exc_info)
 
     def __await__(self):
-        return self._ctx.__await__()
+        # ``resp = await session.get(...)`` gets the same accounting as
+        # ``async with session.get(...) as resp``.
+        return self._awaited().__await__()
+
+    async def _awaited(self):
+        try:
+            resp = await self._ctx
+        except BaseException:
+            record_failure_for_url(self._url)
+            raise
+        if is_failure_for_url(getattr(resp, "status", 200), self._url):
+            record_failure_for_url(self._url)
+        return resp
 
     def __getattr__(self, name):
         return getattr(self._ctx, name)
