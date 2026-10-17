@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voidaccess.pro/schema/progress-v2.schema.json",
+  "title": "VoidAccess progress event (schema 2)",
+  "description": "One line of `voidaccess investigate --events-jsonl`, or one CallbackSink event's to_dict(). Schema-1 event types are unchanged apart from the added `schema` field; schema 2 adds the opt-in `trace` type. See progress/README.md.",
+  "type": "object",
+  "required": ["type", "schema", "run_id", "seq", "at"],
+  "properties": {
+    "type": {"enum": ["stage", "counts", "refined", "completed", "failed", "cancelled", "trace"]},
+    "schema": {"const": 2},
+    "run_id": {"type": "string"},
+    "seq": {"type": "integer", "minimum": 1},
+    "at": {"type": "string", "format": "date-time"},
+    "stage": {"$ref": "#/$defs/stage"}
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/schema1Event"},
+    {"$ref": "#/$defs/traceEvent"}
+  ],
+  "$defs": {
+    "stage": {"enum": ["refine", "collect", "filter", "fetch", "extract", "enrich", "graph", "summarize"]},
+    "count": {"type": "integer", "minimum": 0},
+    "ms": {"type": "integer", "minimum": 0},
+    "unit": {"type": "number", "minimum": 0, "maximum": 1},
+    "name": {"type": "string", "minLength": 1, "maxLength": 40},
+    "urlId": {"type": "string", "pattern": "^u[0-9]+$"},
+    "entityId": {"type": "string", "pattern": "^e[0-9]+$"},
+
+    "schema1Event": {
+      "description": "Schema-1 events (fields as in progress/README.md), plus `schema`.",
+      "type": "object",
+      "properties": {
+        "type": {"enum": ["stage", "counts", "refined", "completed", "failed", "cancelled"]},
+        "stage_index": {"type": "integer", "minimum": 1, "maximum": 8},
+        "stage_total": {"const": 8},
+        "counts": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/count"}
+        },
+        "refined_queries": {"type": "array", "items": {"type": "string"}},
+        "message": {"type": "string"},
+        "stages_completed": {"type": "array", "items": {"$ref": "#/$defs/stage"}},
+        "reason": {"type": "string"},
+        "metrics": {"type": "object"},
+        "status": {"enum": ["start", "end", "skipped", "failed"]},
+        "duration_ms": {"$ref": "#/$defs/ms"}
+      },
+      "not": {"anyOf": [{"required": ["kind"]}, {"required": ["data"]}]}
+    },
+
+    "traceEvent": {
+      "type": "object",
+      "required": ["type", "stage", "kind", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "trace"},
+        "schema": {"const": 2},
+        "run_id": {"type": "string"},
+        "seq": {"type": "integer", "minimum": 1},
+        "at": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "kind": {
+          "enum": [
+            "query.refined", "search.request", "search.result", "url.found", "url.kept",
+            "url.dropped", "page.fetched", "page.entities", "entity.found", "enrich.source",
+            "graph.progress", "summary.status", "trace.truncated"
+          ]
+        },
+        "data": {"type": "object"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "query.refined"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/queryRefined"}}}},
+        {"if": {"properties": {"kind": {"const": "search.request"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/searchRequest"}}}},
+        {"if": {"properties": {"kind": {"const": "search.result"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/searchResult"}}}},
+        {"if": {"properties": {"kind": {"const": "url.found"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/urlFound"}}}},
+        {"if": {"properties": {"kind": {"const": "url.kept"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/urlKept"}}}},
+        {"if": {"properties": {"kind": {"const": "url.dropped"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/urlDropped"}}}},
+        {"if": {"properties": {"kind": {"const": "page.fetched"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/pageFetched"}}}},
+        {"if": {"properties": {"kind": {"const": "page.entities"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/pageEntities"}}}},
+        {"if": {"properties": {"kind": {"const": "entity.found"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/entityFound"}}}},
+        {"if": {"properties": {"kind": {"const": "enrich.source"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/enrichSource"}}}},
+        {"if": {"properties": {"kind": {"const": "graph.progress"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/graphProgress"}}}},
+        {"if": {"properties": {"kind": {"const": "summary.status"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/summaryStatus"}}}},
+        {"if": {"properties": {"kind": {"const": "trace.truncated"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/traceTruncated"}}}}
+      ]
+    },
+
+    "queryRefined": {
+      "type": "object", "additionalProperties": false, "required": ["index", "text"],
+      "properties": {
+        "index": {"$ref": "#/$defs/count"},
+        "text": {"type": "string", "maxLength": 200}
+      }
+    },
+    "searchRequest": {
+      "type": "object", "additionalProperties": false, "required": ["engine", "query_index"],
+      "properties": {
+        "engine": {"$ref": "#/$defs/name"},
+        "query_index": {"$ref": "#/$defs/count"}
+      }
+    },
+    "searchResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["engine", "query_index", "status", "results"],
+      "properties": {
+        "engine": {"$ref": "#/$defs/name"},
+        "query_index": {"$ref": "#/$defs/count"},
+        "status": {"enum": ["ok", "error", "timeout", "disabled", "no_key"]},
+        "results": {"$ref": "#/$defs/count"},
+        "ms": {"$ref": "#/$defs/ms"}
+      }
+    },
+    "urlFound": {
+      "type": "object", "additionalProperties": false, "required": ["url_id", "host"],
+      "properties": {
+        "url_id": {"$ref": "#/$defs/urlId"},
+        "host": {"$ref": "#/$defs/hostDisplay"},
+        "engine": {"$ref": "#/$defs/name"},
+        "depth": {"$ref": "#/$defs/count"}
+      }
+    },
+    "hostDisplay": {
+      "description": "Display form only: onion as first 8 + '…' + last 4 + '[.]onion', clearnet defanged. No scheme, port, path, query or bare dot.",
+      "type": "string", "minLength": 1, "maxLength": 80,
+      "not": {"pattern": "(://|/|\\?|#|@|\\s|[^\\[]\\.[^\\]]|^\\.|\\.$)"}
+    },
+    "urlKept": {
+      "type": "object", "additionalProperties": false, "required": ["url_id"],
+      "properties": {
+        "url_id": {"$ref": "#/$defs/urlId"},
+        "score": {"$ref": "#/$defs/unit"}
+      }
+    },
+    "urlDropped": {
+      "type": "object", "additionalProperties": false, "required": ["url_id", "reason"],
+      "properties": {
+        "url_id": {"$ref": "#/$defs/urlId"},
+        "reason": {"enum": ["duplicate", "irrelevant", "cap", "invalid", "ssrf", "safety", "disabled_source"]}
+      }
+    },
+    "pageFetched": {
+      "type": "object", "additionalProperties": false, "required": ["url_id", "outcome"],
+      "properties": {
+        "url_id": {"$ref": "#/$defs/urlId"},
+        "outcome": {
+          "enum": ["ok", "http_404", "http_4xx", "http_5xx", "timeout", "tor_error", "too_large",
+                   "safety_dropped", "empty", "error"]
+        },
+        "http_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "bytes": {"$ref": "#/$defs/count"},
+        "ms": {"$ref": "#/$defs/ms"}
+      },
+      "if": {"properties": {"outcome": {"const": "safety_dropped"}}},
+      "then": {"maxProperties": 2}
+    },
+    "pageEntities": {
+      "type": "object", "additionalProperties": false, "required": ["url_id", "by_type"],
+      "properties": {
+        "url_id": {"$ref": "#/$defs/urlId"},
+        "by_type": {
+          "type": "object", "maxProperties": 64,
+          "propertyNames": {"pattern": "^[A-Z0-9_]{1,40}$"},
+          "additionalProperties": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "entityFound": {
+      "type": "object", "additionalProperties": false, "required": ["entity_id", "type", "display"],
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/entityId"},
+        "type": {"type": "string", "pattern": "^[A-Z0-9_]{1,40}$"},
+        "display": {"type": "string", "minLength": 1, "maxLength": 80},
+        "confidence": {"$ref": "#/$defs/unit"},
+        "url_id": {"$ref": "#/$defs/urlId"}
+      }
+    },
+    "enrichSource": {
+      "type": "object", "additionalProperties": false, "required": ["source", "status"],
+      "properties": {
+        "source": {"$ref": "#/$defs/name"},
+        "status": {"enum": ["ok", "error", "timeout", "disabled", "no_key", "skipped"]},
+        "hits": {"$ref": "#/$defs/count"}
+      }
+    },
+    "graphProgress": {
+      "type": "object", "additionalProperties": false, "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {"$ref": "#/$defs/count"},
+        "edges": {"$ref": "#/$defs/count"},
+        "communities": {"$ref": "#/$defs/count"}
+      }
+    },
+    "summaryStatus": {
+      "type": "object", "additionalProperties": false, "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["llm", "fallback", "none"]},
+        "attempt": {"$ref": "#/$defs/count"}
+      }
+    },
+    "traceTruncated": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "dropped"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "query.refined", "search.request", "search.result", "url.found", "url.kept",
+            "url.dropped", "page.fetched", "page.entities", "entity.found", "enrich.source",
+            "graph.progress", "summary.status"
+          ]
+        },
+        "dropped": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

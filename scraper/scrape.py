@@ -26,6 +26,7 @@ import ipaddress
 import logging
 import random
 import re
+import time
 import warnings
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -41,6 +42,7 @@ from urllib3.util.retry import Retry
 
 import pacing
 import netpool
+from progress import trace as _trace
 from utils import cancel as _cancel
 from config import TOR_PROXY_HOST, TOR_PROXY_PORT, PLAYWRIGHT_ENABLED
 from scraper import tor_pool
@@ -508,6 +510,46 @@ async def _fetch_one(
             _release_tor_session(isolation_key)
 
 
+def _trace_fetch_failure(url: str, started: float, outcome: object) -> None:
+    """``page.fetched`` for a fetch that ended without a page (trace only).
+
+    *outcome* is what the fetch loop knew: an HTTP status code, ``"content_type"``,
+    the ``"HTTP 503"`` string a retryable status leaves behind, or an exception.
+    """
+    if not _trace.active():
+        return
+    http_status: Optional[int] = None
+    if isinstance(outcome, int):
+        http_status = outcome
+    elif isinstance(outcome, str) and outcome.startswith("HTTP "):
+        try:
+            http_status = int(outcome[5:])
+        except ValueError:
+            http_status = None
+    if http_status is not None:
+        if http_status == 404:
+            label = "http_404"
+        elif 400 <= http_status < 500:
+            label = "http_4xx"
+        elif http_status >= 500:
+            label = "http_5xx"
+        else:
+            label = "error"
+    elif outcome == "content_type":
+        label = "empty"  # not a text page: nothing to extract
+    elif outcome == "tor_error":
+        label = "tor_error"
+    elif isinstance(outcome, asyncio.TimeoutError):
+        label = "timeout"
+    elif is_onion_url(url):
+        label = "tor_error"  # any transport failure over Tor
+    else:
+        label = "error"
+    _trace.page_fetched(
+        url, label, http_status=http_status, ms=int((time.monotonic() - started) * 1000)
+    )
+
+
 async def _fetch_one_impl(
     session: aiohttp.ClientSession,
     url_data: dict,
@@ -530,18 +572,22 @@ async def _fetch_one_impl(
     url, title = _normalize_url_data(url_data)
     if not url:
         return "", title, None, None, None
+    started = time.monotonic()
 
     if not is_safe_url(url):
         _logger.warning("SSRF blocked fetch: %s", url)
+        _trace.url_dropped("fetch", url, "ssrf")
         return url, title, None, None, None
 
     from utils.content_safety import url_is_blocked
 
     if url_is_blocked(url):
+        _trace.url_dropped("fetch", url, "safety")
         return url, title, None, None, None
 
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
+        _trace.url_dropped("fetch", url, "invalid")
         return url, title, None, None, None
 
     headers = {
@@ -579,13 +625,13 @@ async def _fetch_one_impl(
                             return "retry", f"HTTP {resp.status}", None, None, None
 
                         if resp.status != 200:
-                            return "fail", None, None, None, None
+                            return "fail", resp.status, None, None, None
 
                         content_type = (resp.headers.get("Content-Type") or "").lower()
                         if content_type and not any(
                             t in content_type for t in ALLOWED_CONTENT_TYPES
                         ):
-                            return "fail", None, None, None, None
+                            return "fail", "content_type", None, None, None
 
                         chunks: List[bytes] = []
                         bytes_read = 0
@@ -609,6 +655,7 @@ async def _fetch_one_impl(
                     last_exc = r_bytes
                     continue
                 elif status_res == "fail":
+                    _trace_fetch_failure(url, started, r_bytes)
                     return url, title, None, None, None
 
                 raw_bytes = r_bytes
@@ -701,6 +748,12 @@ async def _fetch_one_impl(
                             exc,
                         )
 
+                _trace.note_fetch(
+                    url,
+                    http_status=200,
+                    nbytes=len(raw_bytes),
+                    ms=int((time.monotonic() - started) * 1000),
+                )
                 if extract_typed_relationships:
                     return (
                         url,
@@ -721,6 +774,7 @@ async def _fetch_one_impl(
                         error_str[:100],
                     )
                     await _reset_tor_session_on_error(url)
+                    _trace_fetch_failure(url, started, "tor_error")
                     return url, title, None, None, None
                 last_exc = exc
             except Exception as exc:
@@ -732,11 +786,13 @@ async def _fetch_one_impl(
                         error_str[:100],
                     )
                     await _reset_tor_session_on_error(url)
+                    _trace_fetch_failure(url, started, "tor_error")
                     return url, title, None, None, None
                 last_exc = exc
 
         # All retries exhausted
         _logger.debug("All retries exhausted for url=%s: %s", url, last_exc)
+        _trace_fetch_failure(url, started, last_exc)
         return url, title, None, None, None
 
 
@@ -1076,6 +1132,8 @@ async def scrape_multiple(
     safe_urls, blocked = validate_urls_for_scraping(unique_urls_data)
     if blocked:
         _logger.warning("SSRF: blocked %d unsafe URLs from scrape batch", len(blocked))
+        for blocked_url in blocked:
+            _trace.url_dropped("fetch", blocked_url, "ssrf")
     unique_urls_data = safe_urls
 
     if not unique_urls_data:
@@ -1106,11 +1164,17 @@ async def scrape_multiple(
             continue
         display_text, dropped = scan_page_text(url, display_text or "")
         if dropped:
+            _trace.page_fetched(url, "safety_dropped")
             continue
         if db_text:
             db_text, db_dropped = scan_page_text(url, db_text)
             if db_dropped:
+                _trace.page_fetched(url, "safety_dropped")
                 continue
+        if raw_bytes is not None:
+            # Reported only now, after the safety scan, so a page the filter
+            # drops is never first announced as fetched.
+            _trace.page_fetched(url, "ok" if db_text else "empty")
         if len(display_text) > MAX_RETURN_CHARS:
             available = MAX_RETURN_CHARS - len(suffix)
             if available > 0:

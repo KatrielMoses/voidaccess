@@ -19,13 +19,19 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol, runtime_checkable
 
+from progress.trace import SCHEMA_VERSION, TRUNCATED_KIND, TraceState
+
 logger = logging.getLogger(__name__)
 
 STAGE_TOTAL = 8
 
-# Bounded buffer for queued sinks. Intermediate ``counts`` events are dropped
-# when it is full; ``stage`` / ``refined`` / terminal events never are.
+# Bounded buffer for queued sinks. When it is full, ``trace`` events are dropped
+# first, then intermediate ``counts``; ``stage`` / ``refined`` / terminal events
+# never are.
 EVENT_QUEUE_MAX = 256
+# The bound when tracing is on: room for a whole run's capped trace volume, so a
+# sink that keeps up never loses events to a burst.
+TRACE_QUEUE_MAX = 4096
 # How long ``close()`` waits for queued sinks to drain before giving up.
 EVENT_FLUSH_TIMEOUT_S = 5.0
 
@@ -49,11 +55,14 @@ class Stage(str, Enum):
 
 STAGE_ORDER: tuple[Stage, ...] = tuple(Stage)
 
-EVENT_TYPES = ("stage", "counts", "refined", "completed", "failed", "cancelled")
+EVENT_TYPES = ("stage", "counts", "refined", "completed", "failed", "cancelled", "trace")
 TERMINAL_TYPES = ("completed", "failed", "cancelled")
 # ``display`` events carry UI calls for the Rich sink only. They are not part
 # of the external contract and never reach JSONL / callback sinks by default.
 DISPLAY_TYPE = "display"
+TRACE_TYPE = "trace"
+# Dropped first when a queue is full, in this order.
+DROPPABLE_TYPES = (TRACE_TYPE, "counts")
 
 COUNT_KEYS = (
     "sources_queried",
@@ -75,6 +84,9 @@ class ProgressEvent:
     Additive (not in the contract): ``status`` (``start`` | ``end`` |
     ``skipped`` | ``failed`` on ``stage`` events), ``duration_ms`` (on a stage
     ``end``), ``call`` / ``args`` (``display`` events only).
+
+    Schema 2 adds ``schema`` (on every event) and the ``trace`` event type,
+    which carries ``stage``, ``kind`` and ``data`` (see ``progress/trace.py``).
     """
 
     type: str
@@ -94,12 +106,17 @@ class ProgressEvent:
     duration_ms: Optional[int] = None
     call: Optional[str] = None
     args: Optional[list[Any]] = None
+    schema: int = SCHEMA_VERSION
+    kind: Optional[str] = None
+    data: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-ready dict with ``None`` fields omitted."""
         out = {k: v for k, v in asdict(self).items() if v is not None}
         if self.stage is not None:
             out["stage"] = self.stage.value
+        if self.type == TRACE_TYPE:
+            out.pop("stage_total", None)
         return out
 
 
@@ -156,8 +173,18 @@ class ProgressEmitter:
         sinks: Optional[list[EventSink]] = None,
         run_id: str = "",
         queue_max: int = EVENT_QUEUE_MAX,
+        trace: bool = False,
+        trace_caps: Optional[dict[str, int]] = None,
+        trace_max_events: Optional[int] = None,
     ):
         self.run_id = run_id
+        # Tracing is opt-in. Off, no trace state exists and trace() returns at
+        # its first line, so a run is exactly what it was before schema 2.
+        self.trace_state: Optional[TraceState] = (
+            TraceState(trace_caps, trace_max_events) if trace else None
+        )
+        if trace:
+            queue_max = max(queue_max, TRACE_QUEUE_MAX)
         self.counts: dict[str, int] = {k: 0 for k in COUNT_KEYS}
         self.stages_completed: list[str] = []
         self._seq = 0
@@ -172,6 +199,7 @@ class ProgressEmitter:
         self._worker: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self.dropped = 0
+        self.dropped_traces = 0
         self.terminal_sent = False
         for sink in sinks or []:
             self.add_sink(sink)
@@ -195,6 +223,8 @@ class ProgressEmitter:
         """Stamp and dispatch *event*. Never raises."""
         try:
             if event.type in TERMINAL_TYPES:
+                if self.trace_state is not None and not self.terminal_sent:
+                    self._emit_truncations()
                 self.terminal_sent = True
             with self._lock:
                 if event.type != DISPLAY_TYPE:  # keep contract seq contiguous
@@ -202,8 +232,11 @@ class ProgressEmitter:
                     event.seq = self._seq
                 event.run_id = event.run_id or self.run_id
                 event.at = datetime.now(timezone.utc).isoformat()
-            for sink in self._inline:
-                self._call(sink, event)
+            if event.type != TRACE_TYPE:
+                # Inline sinks (the Rich display) never see traces: they may be
+                # emitted from worker threads and the console is not theirs.
+                for sink in self._inline:
+                    self._call(sink, event)
             if self._queued and event.type != DISPLAY_TYPE:
                 self._enqueue(event)
         except Exception as exc:  # pragma: no cover - defensive
@@ -212,20 +245,35 @@ class ProgressEmitter:
     def _enqueue(self, event: ProgressEvent) -> None:
         with self._cv:
             if len(self._buf) >= self._queue_max:
-                if event.type == "counts":
-                    self.dropped += 1
+                if event.type == TRACE_TYPE:
+                    self._count_drop(event)
                     return
-                # Make room by evicting the oldest droppable counts event.
-                for i, queued in enumerate(self._buf):
-                    if queued.type == "counts":
-                        del self._buf[i]
-                        self.dropped += 1
-                        break
+                if event.type != "counts":
+                    # Make room: evict the oldest trace, else the oldest counts.
+                    self._evict_one()
+                elif not self._evict_one(TRACE_TYPE):
+                    self._count_drop(event)
+                    return
                 # Otherwise keep the must-deliver event; only a flood of
                 # stage/terminal events can grow the buffer, and there are
                 # at most a few dozen per run.
             self._buf.append(event)
             self._cv.notify()
+
+    def _count_drop(self, event: ProgressEvent) -> None:
+        self.dropped += 1
+        if event.type == TRACE_TYPE:
+            self.dropped_traces += 1
+
+    def _evict_one(self, *types: str) -> bool:
+        """Drop the oldest queued event of the first droppable type present."""
+        for droppable in types or DROPPABLE_TYPES:
+            for i, queued in enumerate(self._buf):
+                if queued.type == droppable:
+                    del self._buf[i]
+                    self._count_drop(queued)
+                    return True
+        return False
 
     def _drain(self) -> None:
         while True:
@@ -249,11 +297,25 @@ class ProgressEmitter:
 
     def close(self, timeout: float = EVENT_FLUSH_TIMEOUT_S) -> None:
         """Flush queued sinks (bounded wait) and release file handles."""
+        import time
+
+        deadline = time.monotonic() + timeout
         with self._cv:
             self._closed = True
             self._cv.notify_all()
         if self._worker is not None:
-            self._worker.join(timeout)
+            if self.trace_state is not None:
+                # A slow sink must not hold the terminal event behind a backlog
+                # of traces: after half the budget, shed what is droppable.
+                self._worker.join(timeout / 2)
+                if self._worker.is_alive():
+                    with self._cv:
+                        kept = deque(e for e in self._buf if e.type not in DROPPABLE_TYPES)
+                        for e in self._buf:
+                            if e.type in DROPPABLE_TYPES:
+                                self._count_drop(e)
+                        self._buf = kept
+            self._worker.join(max(0.0, deadline - time.monotonic()))
         for sink in self._inline + self._queued:
             closer = getattr(sink, "close", None)
             if callable(closer):
@@ -261,6 +323,51 @@ class ProgressEmitter:
                     closer()
                 except Exception:
                     pass
+
+    # -- tracing (schema 2) ------------------------------------------------------
+
+    @property
+    def trace_enabled(self) -> bool:
+        return self.trace_state is not None
+
+    def trace(self, stage: Any, kind: str, data: Optional[dict[str, Any]] = None) -> None:
+        """Emit one ``trace`` event. O(1); never raises; a no-op when tracing is
+        off, after the terminal event, or beyond the kind's cap (the overflow is
+        reported once per kind as ``trace.truncated`` before the terminal event).
+
+        Callers pass data that is already display-safe; the hooks in
+        :mod:`progress.trace` build it.
+        """
+        state = self.trace_state
+        if state is None or self.terminal_sent:
+            return
+        try:
+            stage_enum = stage if isinstance(stage, Stage) else Stage(str(stage))
+            if not state.admit(kind):
+                return
+            self.emit(
+                ProgressEvent(type=TRACE_TYPE, stage=stage_enum, kind=kind, data=dict(data or {}))
+            )
+        except Exception as exc:
+            logger.debug("trace emit failed (ignored): %s", exc)
+
+    def _emit_truncations(self) -> None:
+        state = self.trace_state
+        if state is None:
+            return
+        try:
+            stage = Stage(self.stages_completed[-1]) if self.stages_completed else Stage.REFINE
+            for kind, dropped in state.take_truncations():
+                self.emit(
+                    ProgressEvent(
+                        type=TRACE_TYPE,
+                        stage=stage,
+                        kind=TRUNCATED_KIND,
+                        data={"kind": kind, "dropped": dropped},
+                    )
+                )
+        except Exception as exc:
+            logger.debug("trace truncation summary failed (ignored): %s", exc)
 
     # -- pipeline helpers ------------------------------------------------------
 
@@ -377,7 +484,10 @@ __all__ = [
     "ProgressEmitter",
     "ProgressEvent",
     "STAGE_ORDER",
+    "SCHEMA_VERSION",
     "STAGE_TOTAL",
     "Stage",
+    "TRACE_QUEUE_MAX",
+    "TRACE_TYPE",
     "stage_index",
 ]

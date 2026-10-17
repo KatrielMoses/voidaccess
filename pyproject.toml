@@ -75,7 +75,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "aioresponses>=0.7.6"]
+dev = ["pytest", "pytest-asyncio", "aioresponses>=0.7.6", "jsonschema>=4.18"]
 nlp = [
     "sentence-transformers>=3.0",
     "torch>=2.3",
@@ -173,6 +173,7 @@ exclude = [
 # package-data entry below tells setuptools to ship the JSON inside
 # that sub-package directory.
 [tool.setuptools.package-data]
+"progress" = ["schema/*.json"]
 "sources" = ["data/onion_seeds.json"]
 "sources.data" = ["onion_seeds.json"]
 

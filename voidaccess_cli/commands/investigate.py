@@ -102,6 +102,16 @@ def run(
             "terminal display."
         ),
     ),
+    trace: bool = typer.Option(
+        False,
+        "--trace",
+        help=(
+            "Also write trace events (schema 2) to --events-jsonl: each search "
+            "engine call, URL found/kept/dropped, page fetch outcome, entity "
+            "(masked) and enrichment source as it happens. Same as "
+            "VOIDACCESS_TRACE_EVENTS=1. Off by default."
+        ),
+    ),
 ) -> None:
     """Run an investigation: query → search → scrape → extract → enrich → report."""
     from voidaccess_cli import config as cli_config
@@ -248,6 +258,9 @@ def run(
     out_dir = Path(output).expanduser() if output else cli_config.get_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    if trace and events_jsonl is None and not quiet:
+        console.print("[yellow]--trace writes to --events-jsonl; no path given, so no traces are kept.[/yellow]")
+
     # SIGTERM is a cancel request: set the token, let the current item finish,
     # emit the terminal ``cancelled`` event and exit without writing any output
     # file. Installed here (the CLI entry point), never in the library
@@ -269,6 +282,7 @@ def run(
                 quiet=quiet,
                 events_jsonl=events_jsonl,
                 cancel_token=token,
+                trace=True if trace else None,
             )
         )
     except DatabaseSchemaError as exc:
@@ -588,6 +602,7 @@ async def _run_investigation(
     events_jsonl: Optional[Path] = None,
     sinks: Optional[list] = None,
     cancel_token: Optional["cancel.CancelToken"] = None,
+    trace: Optional[bool] = None,
 ) -> None:
     """Run the pipeline, reporting progress to the Rich display and any extra
     sinks (``events_jsonl`` path, or ``sinks`` such as a ``CallbackSink``).
@@ -595,12 +610,28 @@ async def _run_investigation(
     ``cancel_token`` lets an embedding caller cancel the run cooperatively: the
     pipeline stops at its next checkpoint, emits ``cancelled`` and raises
     :class:`utils.cancel.PipelineCancelled`. Without one the run cannot be
-    cancelled this way (behaviour unchanged)."""
+    cancelled this way (behaviour unchanged).
+
+    ``trace`` turns on schema-2 trace events; ``None`` reads
+    ``VOIDACCESS_TRACE_EVENTS``. A query the content-safety gate blocks never
+    produces a trace, whoever the caller is."""
     from progress import JsonlSink, ProgressEmitter
+    from progress import trace as _trace
+    from utils.content_safety import is_blocked_query
+
+    trace_on = _trace.env_enabled() if trace is None else bool(trace)
+    if trace_on:
+        try:
+            trace_on = not is_blocked_query(query)[0]
+        except Exception:
+            trace_on = False
 
     if cancel_token is not None:
         cancel.set_current(cancel_token, process_wide=True)
-    emitter = ProgressEmitter()
+    emitter = ProgressEmitter(trace=trace_on)
+    # Process-wide like the cancel token: the search stage runs on a
+    # thread-isolated event loop that does not inherit context variables.
+    _trace.bind(emitter, process_wide=True)
     extra_sinks = list(sinks or [])
     if events_jsonl is not None:
         extra_sinks.append(JsonlSink(events_jsonl))
@@ -629,6 +660,7 @@ async def _run_investigation(
             pass
         raise
     finally:
+        _trace.bind(None, process_wide=True)
         emitter.close()
         if cancel_token is not None:
             cancel.set_current(None, process_wide=True)
@@ -658,6 +690,7 @@ async def _run_investigation_impl(
     emitter: Any,
 ) -> None:
     from progress import Stage
+    from progress import trace as _trace
     from voidaccess_cli import config as cli_config
     from voidaccess_cli.reporter import PipelineReporter
     from voidaccess_cli.adapters import sqlite as sqlite_adapter
@@ -818,6 +851,7 @@ async def _run_investigation_impl(
     sqlite_adapter.update_investigation(investigation_id, {"refined_query": refined})
     _metric_finish("query_refinement")
     emitter.refined([refined])
+    _trace.query_refined("refine", 0, refined)
     display.stage_end(Stage.REFINE, "skipped" if llm is None else "end")
 
     # --- Step 2 — search fan-out -----------------------------------------
@@ -867,6 +901,8 @@ async def _run_investigation_impl(
     # Parallel clearnet sources
     async def _safe(coro_factory, label, key):
         display.update_substep("Searching dark web", label, "active")
+        if _trace.active():
+            return await _traced_side_source(coro_factory, label, key)
         try:
             res = await coro_factory()
             display.update_substep("Searching dark web", label, "ok")
@@ -876,6 +912,39 @@ async def _run_investigation_impl(
             display.update_substep("Searching dark web", label, "fail")
             sources_used[key] = source_entry(key, ok=False, error=type(exc).__name__)
             return []
+
+    async def _traced_side_source(coro_factory, label, key):
+        # _safe plus search.request / search.result / url.found. Kept apart so
+        # an untraced run executes exactly the code it always did.
+        import time as _time
+
+        _trace.search_request(key)
+        started = _time.monotonic()
+        try:
+            res = await coro_factory()
+            display.update_substep("Searching dark web", label, "ok")
+            sources_used[key] = source_entry(key, count=len(res) if res else 0)
+            res = res or []
+        except Exception as exc:
+            display.update_substep("Searching dark web", label, "fail")
+            sources_used[key] = source_entry(key, ok=False, error=type(exc).__name__)
+            res = []
+        status = _trace.map_source_status(sources_used[key].get("status"), allow_skipped=False)
+        if key == "onion_search" and no_tor:
+            status = "disabled"
+        elif key == "telegram" and not (
+            os.getenv("TELEGRAM_API_ID", "").strip() and os.getenv("TELEGRAM_API_HASH", "").strip()
+        ):
+            status = "no_key"
+        _trace.search_result(key, status, len(res), int((_time.monotonic() - started) * 1000))
+        for item in res:
+            if isinstance(item, dict):
+                _trace.url_found(
+                    "collect", item.get("url") or item.get("link") or "",
+                    engine=item.get("source") if key == "onion_search" else key,
+                    title=item.get("title"),
+                )
+        return res
 
     async def _onionsearch():
         # --no-tor means NO Tor traffic for the entire run.  Torch and
@@ -949,6 +1018,10 @@ async def _run_investigation_impl(
             if ".onion" not in str(_l.get("link", "")).lower()
         ]
         _stripped = _before - len(search_links)
+        if _stripped and _trace.active():
+            _kept_links = {str(_l.get("link", "")) for _l in search_links}
+            for _url in {str(_o.get("url", "")) for _o in onion_pages} - _kept_links:
+                _trace.url_dropped("collect", _url, "disabled_source")
         if _stripped:
             logger.warning(
                 "[no-tor] Stripped %d .onion link(s) from search results before scraping",
@@ -983,12 +1056,15 @@ async def _run_investigation_impl(
     display.stage_start(Stage.FILTER)
     display.update_step("Filtering results", "active")
     filter_top_n = LLM_FILTER_TOP_N
+    # Why a search link that does not survive the filter was dropped (trace).
+    filter_drop_reason = "cap"
     filtered_links = search_links[: filter_top_n * 2] if search_links else []
     if llm is not None and search_links:
         try:
             from voidaccess.llm import filter_results
             filtered_links = await asyncio.to_thread(filter_results, llm, refined, search_links, filter_top_n) or search_links
             filtered_links = filtered_links[:filter_top_n]
+            filter_drop_reason = "irrelevant"
             display.update_step("Filtering results", "ok", f"top {len(filtered_links)}")
         except Exception as exc:
             display.update_step("Filtering results", "fail", str(exc))
@@ -1001,6 +1077,7 @@ async def _run_investigation_impl(
             from voidaccess.llm import _heuristic_filter
             picked = _heuristic_filter(search_links, refined or query, filter_top_n)
             filtered_links = [search_links[i - 1] for i in picked]
+            filter_drop_reason = "irrelevant"
             display.update_step(
                 "Filtering results",
                 "ok",
@@ -1028,6 +1105,12 @@ async def _run_investigation_impl(
         filter_top_n,
         llm,
     )
+
+    if _trace.active():
+        _trace_filter(
+            _trace, search_links, filtered_links, filter_drop_reason,
+            clearnet_pages, filtered_clearnet_pages, telegram_pages,
+        )
 
     display.update_step(
         "Filtering results",
@@ -1068,6 +1151,11 @@ async def _run_investigation_impl(
             s for s in shared_bundle.seeds if s.get("link") not in _rem_links
         ]
         filtered_links = shared_bundle.remaining + seed_additions
+        for _seed in seed_additions if _trace.active() else ():
+            _trace.url_found(
+                "fetch", _seed.get("link") or "", engine="shared_corpus", title=_seed.get("title")
+            )
+            _trace.url_kept("fetch", _seed.get("link") or "")
         if shared_bundle.skipped_private:
             display.update_step("Reading shared corpus", "skip", "private mode")
         elif shared_bundle.served_count or seed_additions:
@@ -1197,8 +1285,12 @@ async def _run_investigation_impl(
     from utils.content_safety import gate_pages
     from utils.content_dedup import deduplicate_page_records
 
+    _pre_gate = list(scraped_pages) if _trace.active() else None
     scraped_pages, _safety_dropped = gate_pages(scraped_pages)
+    _pre_dedup = list(scraped_pages) if _pre_gate is not None else None
     scraped_pages = deduplicate_page_records(scraped_pages)
+    if _pre_gate is not None:
+        _trace_gate(_trace, _pre_gate, _pre_dedup, scraped_pages)
 
     # --- Step 4.1 — discover seeds from gated pages only -----------------
     # scrape_multiple already submits discovered seeds fire-and-forget, but
@@ -1272,6 +1364,12 @@ async def _run_investigation_impl(
             "extract",
         )
         total_entities = sum(len(r.entity_ids) for r in extraction_results)
+        if _trace.active():
+            for _r in extraction_results:
+                # Only pages whose entities were persisted: the entities a
+                # report will contain (after the safety gate and the cap).
+                if getattr(_r, "entity_ids", None):
+                    _trace.page_entities(_r.page_url, getattr(_r, "entities", []) or [])
         display.update_step("Extracting entities", "ok", f"{total_entities} entities")
         extract_failed = False
     except Exception as exc:
@@ -1313,6 +1411,7 @@ async def _run_investigation_impl(
                     if (_page.get("source") or _page.get("source_type")) == _source_name
                 )
                 sources_used[_source_name] = source_entry(_source_name, count=_count)
+                _trace.enrich_source(_source_name, sources_used[_source_name].get("status"), _count)
             display.update_step("Enriching intelligence", "ok", f"{len(enrichment_pages)} pages added")
         except Exception as exc:
             sources_used["enrichment"] = source_entry(
@@ -1320,6 +1419,7 @@ async def _run_investigation_impl(
             )
             sources_used["nvd"] = source_entry("nvd", ok=False, status="error")
             sources_used["ransomlook"] = source_entry("ransomlook", ok=False, status="error")
+            _trace.enrich_source("enrichment", "error")
             display.update_step("Enriching intelligence", "fail", type(exc).__name__)
 
         cancel.checkpoint("enrich")
@@ -1339,16 +1439,24 @@ async def _run_investigation_impl(
                     "hibp_pwned_passwords", _hibp_stats.get("status", "ok")
                 ),
             )
+            _trace.enrich_source(
+                "hibp_pwned_passwords",
+                sources_used["hibp_pwned_passwords"].get("status"),
+                sources_used["hibp_pwned_passwords"].get("count"),
+            )
         except Exception as _hibp_exc:
             logger.debug("HIBP pwned-password scan skipped: %s", _hibp_exc)
+            _trace.enrich_source("hibp_pwned_passwords", "error")
 
         cancel.checkpoint("enrich")
 
         try:
             from sources.ip_reputation import enrich_ip_entities
             await enrich_ip_entities(extraction_results, investigation_id=inv_uuid)
+            _trace.enrich_source("ip_reputation", "ok")
         except Exception as ip_exc:
             logger.debug("ip_reputation skipped: %s", ip_exc)
+            _trace.enrich_source("ip_reputation", "error")
 
         cancel.checkpoint("enrich")
 
@@ -1372,12 +1480,15 @@ async def _run_investigation_impl(
                 if (e.get("entity_type") or "").upper() == "DOMAIN"
             )
             detail = f"{domain_count} domains enriched" if domain_count else ""
+            _trace.enrich_source("domain_reputation", "ok", domain_count)
             display.update_step("Enriching domains", "ok", detail)
         except asyncio.TimeoutError:
             logger.warning("[%s] Domain enrichment timed out after 60s", inv_uuid)
+            _trace.enrich_source("domain_reputation", "timeout")
             display.update_step("Enriching domains", "fail", "timeout")
         except Exception as exc:
             logger.debug("Domain enrichment: %s", exc)
+            _trace.enrich_source("domain_reputation", "error")
             display.update_step("Enriching domains", "fail", str(exc))
 
         cancel.checkpoint("enrich")  # between sources
@@ -1388,12 +1499,15 @@ async def _run_investigation_impl(
                 enrich_hash_entities(extraction_results, inv_uuid),
                 timeout=45,
             )
+            _trace.enrich_source("hash_reputation", "ok")
             display.update_step("Enriching hashes", "ok")
         except asyncio.TimeoutError:
             logger.warning("[%s] Hash enrichment timed out after 45s", inv_uuid)
+            _trace.enrich_source("hash_reputation", "timeout")
             display.update_step("Enriching hashes", "fail", "timeout")
         except Exception as exc:
             logger.debug("Hash enrichment: %s", exc)
+            _trace.enrich_source("hash_reputation", "error")
             display.update_step("Enriching hashes", "fail", str(exc))
 
         cancel.checkpoint("enrich")  # between sources
@@ -1404,12 +1518,15 @@ async def _run_investigation_impl(
                 enrich_email_entities(extraction_results, inv_uuid),
                 timeout=30,
             )
+            _trace.enrich_source("email_reputation", "ok")
             display.update_step("Enriching emails", "ok")
         except asyncio.TimeoutError:
             logger.warning("[%s] Email enrichment timed out after 30s", inv_uuid)
+            _trace.enrich_source("email_reputation", "timeout")
             display.update_step("Enriching emails", "fail", "timeout")
         except Exception as exc:
             logger.debug("Email enrichment: %s", exc)
+            _trace.enrich_source("email_reputation", "error")
             display.update_step("Enriching emails", "fail", str(exc))
 
         cancel.checkpoint("enrich")  # between sources
@@ -1434,16 +1551,22 @@ async def _run_investigation_impl(
                     "leakcheck", _breach_stats.get("leakcheck", "ok")
                 ),
             )
+            for _sid in ("xposedornot", "leakcheck"):
+                _trace.enrich_source(_sid, sources_used[_sid].get("status"), sources_used[_sid].get("count"))
             display.update_step("Breach exposure lookup", "ok")
         except asyncio.TimeoutError:
             logger.warning("[%s] Breach lookup timed out after 60s", inv_uuid)
             sources_used["xposedornot"] = source_entry("xposedornot", timed_out=True)
             sources_used["leakcheck"] = source_entry("leakcheck", timed_out=True)
+            _trace.enrich_source("xposedornot", "timeout")
+            _trace.enrich_source("leakcheck", "timeout")
             display.update_step("Breach exposure lookup", "fail", "timeout")
         except Exception as exc:
             logger.debug("Breach lookup: %s", exc)
             sources_used["xposedornot"] = source_entry("xposedornot", ok=False, status="error")
             sources_used["leakcheck"] = source_entry("leakcheck", ok=False, status="error")
+            _trace.enrich_source("xposedornot", "error")
+            _trace.enrich_source("leakcheck", "error")
             display.update_step("Breach exposure lookup", "fail", type(exc).__name__)
 
         cancel.checkpoint("enrich")  # between sources
@@ -1461,14 +1584,20 @@ async def _run_investigation_impl(
                     "hudsonrock", _infostealer_stats.get("hudsonrock", "ok")
                 ),
             )
+            _trace.enrich_source(
+                "hudsonrock", sources_used["hudsonrock"].get("status"),
+                sources_used["hudsonrock"].get("count"),
+            )
             display.update_step("Infostealer intel", "ok")
         except asyncio.TimeoutError:
             logger.warning("[%s] Infostealer enrichment timed out after 60s", inv_uuid)
             sources_used["hudsonrock"] = source_entry("hudsonrock", timed_out=True)
+            _trace.enrich_source("hudsonrock", "timeout")
             display.update_step("Infostealer intel", "fail", "timeout")
         except Exception as exc:
             logger.debug("Infostealer enrichment: %s", exc)
             sources_used["hudsonrock"] = source_entry("hudsonrock", ok=False, status="error")
+            _trace.enrich_source("hudsonrock", "error")
             display.update_step("Infostealer intel", "fail", type(exc).__name__)
 
 
@@ -1487,18 +1616,25 @@ async def _run_investigation_impl(
                 inv_uuid, _enrich_cap,
             )
             sources_used["enrichment"] = source_entry("enrichment", timed_out=True)
+            _trace.enrich_source("enrichment", "timeout")
             display.update_step("Enriching intelligence", "fail", "timeout")
 
     if enrichment_pages:
         try:
             from extractor.pipeline import extract_entities_from_pages as _extr2
-            await _extr2(
+            _enrich_results = await _extr2(
                 pages=enrichment_pages,
                 investigation_id=inv_uuid,
                 llm=None,
                 run_llm_extraction=False,
                 max_concurrent=preset["extract_concurrency"],
             )
+            if _trace.active():
+                # Enrichment pages have no url.found, so their entities carry
+                # no url_id.
+                for _r in _enrich_results or []:
+                    if getattr(_r, "entity_ids", None):
+                        _trace.page_entities("", getattr(_r, "entities", []) or [], stage="enrich")
         except Exception as exc:
             if not quiet:
                 console.print(f"[grey50]Enrichment extraction failed: {exc}[/grey50]")
@@ -1558,7 +1694,14 @@ async def _run_investigation_impl(
         # onto the event-loop thread so Rich's live renderer remains safe.
         loop.call_soon_threadsafe(display.update_step, "Building graph", "active", label)
 
+    _graph_state = {"nodes": 0, "edges": 0}
+
     def _graph_metrics(metrics: dict[str, int]) -> None:
+        _graph_state["nodes"] = int(metrics.get("entity_rows_loaded", 0) or 0)
+        _graph_state["edges"] = (
+            int(metrics.get("intra_page_edges", 0) or 0) + int(metrics.get("cross_page_edges", 0) or 0)
+        )
+        _trace.graph_progress(_graph_state["nodes"], _graph_state["edges"])
         detail = (
             f"entities: {metrics.get('entity_rows_loaded', 0)} | "
             f"intra-page edges: {metrics.get('intra_page_edges', 0)} | "
@@ -1576,6 +1719,9 @@ async def _run_investigation_impl(
             ),
             timeout=CLI_PHASE_TIMEOUTS["graph_build"],
         )
+        # The graph's own edge count when it reported one; ``edges_written``
+        # counts only relationships that were new to the database.
+        _graph_state["edges"] = _graph_state["edges"] or edges_written
         if no_llm:
             persisted_relationships = sqlite_adapter.get_relationships(investigation_id)
             typed_count = sum(
@@ -1621,6 +1767,12 @@ async def _run_investigation_impl(
     except Exception as exc:
         logger.warning("Community detection failed: %s", exc)
         display.update_step("Community detection", "fail", str(exc))
+    if _trace.active():
+        _trace.graph_progress(
+            _graph_state["nodes"],
+            _graph_state["edges"],
+            len(set(communities.values())) if communities else 0,
+        )
     _metric_finish("graph_build")
     cancel.checkpoint("graph")
     display.stage_end(Stage.GRAPH)
@@ -1687,6 +1839,7 @@ async def _run_investigation_impl(
             "summarize",
         )
         summary_text, summary_kind = outcome.text, outcome.kind
+        _trace.summary_status(outcome.kind, outcome.attempts)
         if outcome.kind == "llm":
             display.update_step("Generating summary", "ok")
         elif outcome.kind == "fallback":
@@ -1696,6 +1849,7 @@ async def _run_investigation_impl(
             display.update_step("Generating summary", "ok", "nothing to summarise")
     else:
         display.update_step("Generating summary", "skip", "--no-llm")
+        _trace.summary_status("none", 0)
     _metric_finish("summary_generation")
     display.stage_end(Stage.SUMMARIZE, "skipped" if llm is None else "end")
 
@@ -1946,6 +2100,67 @@ async def _run_investigation_impl(
     # Close any cached aiohttp sessions so the event loop exits cleanly
     # (otherwise aiohttp prints "Unclosed client session" warnings).
     await _close_cached_sessions()
+
+
+def _trace_filter(
+    tr: Any,
+    search_links: list[dict],
+    filtered_links: list[dict],
+    drop_reason: str,
+    clearnet_pages: list[dict],
+    filtered_clearnet_pages: list[dict],
+    telegram_pages: list[dict],
+) -> None:
+    """url.kept / url.dropped for everything the filter stage decided on."""
+    kept = {str(link.get("link", "")) for link in filtered_links}
+    for link in search_links:
+        url = str(link.get("link", ""))
+        if url in kept:
+            tr.url_kept("filter", url, link.get("semantic_score"))
+        else:
+            tr.url_dropped("filter", url, drop_reason)
+    kept_side = {
+        str(p.get("url") or p.get("link") or "") for p in filtered_clearnet_pages
+    }
+    decided: set[str] = set()
+    for page in clearnet_pages:
+        url = str(page.get("url") or page.get("link") or "")
+        if not url or url in decided:
+            continue
+        decided.add(url)
+        if url in kept_side:
+            tr.url_kept("filter", url)
+        elif not _clearnet_page_text(page):
+            tr.url_dropped("filter", url, "invalid")
+        else:
+            tr.url_dropped("filter", url, "irrelevant")
+    for page in telegram_pages:
+        if page.get("url") and page.get("text"):
+            tr.url_kept("filter", str(page["url"]))
+
+
+def _trace_gate(
+    tr: Any, pre_gate: list[dict], pre_dedup: list[dict], final: list[dict]
+) -> None:
+    """Outcomes decided by the post-scrape safety gate and the content dedup.
+
+    Pages the scraper fetched were already reported by scrape_multiple; pages
+    that arrived with their text (side sources, Telegram, the shared corpus)
+    are reported here, after the gate, so a dropped one is never shown as
+    fetched first.
+    """
+    passed = {str(p.get("url") or p.get("link") or "") for p in pre_dedup}
+    for page in pre_gate:
+        url = str(page.get("url") or page.get("link") or "")
+        if not url:
+            continue
+        if url not in passed:
+            tr.page_fetched(url, "safety_dropped")
+        elif page.get("source") != "tor_search":
+            tr.page_fetched(url, "ok")
+    remaining = {str(p.get("url") or "") for p in final}
+    for url in passed - remaining:
+        tr.url_dropped("fetch", url, "duplicate")
 
 
 def _stage_output(final_path: Path, text: str) -> Path:

@@ -165,6 +165,19 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
   on the CLI path when set. See docs/architecture.md section 13.17.
 - `benchmark probe` artifacts report `latency_p90_ms` and `unique_result_share`
   per engine.
+- Trace events (progress schema 2): `voidaccess investigate --trace --events-jsonl PATH`
+  or `VOIDACCESS_TRACE_EVENTS=1` adds a `trace` event for each refined query,
+  search engine call, URL found/kept/dropped (with the reason), page fetch outcome,
+  page entity counts, entity found (masked), enrichment source, graph progress and
+  summary status, so a dashboard can animate a live run. Hosts are shown only in a
+  shortened or defanged form, with names that spell out abuse content masked; no
+  page text, paths, credentials or personal data,
+  and anything the content-safety filter dropped is reported as an id and a reason
+  only. Volume is capped per kind (`VOIDACCESS_TRACE_CAPS`, at most 3,000 per run),
+  and traces are dropped first when a sink falls behind. JSON Schema:
+  `progress/schema/progress-v2.schema.json`; docs/architecture.md section 13.19.
+- Every progress event now carries `schema: 2` (an added field; nothing else in the
+  schema-1 events changed).
 
 ### Safety
 

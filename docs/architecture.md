@@ -1687,3 +1687,33 @@ Use it together with `VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,
   "tor_search":   {"status": "skipped", "count": 0, "requests": 0}
 }
 ```
+
+### 13.19 Trace Events (progress schema 2)
+
+Opt-in. With neither switch set, a run produces exactly the events, files and terminal output it did before; the only change is the added `schema: 2` field on every progress event.
+
+| Env var / flag | Default | Effect |
+|---|---|---|
+| `voidaccess investigate --trace` | off | Writes `trace` events to the `--events-jsonl` file. Without `--events-jsonl` it warns and keeps nothing. |
+| `VOIDACCESS_TRACE_EVENTS=1` | off | The same, for any caller of `_run_investigation` (the cloud runner sets it and receives traces through its `CallbackSink`). |
+| `VOIDACCESS_TRACE_CAPS` | `url.found=600,url.kept=600,url.dropped=600,page.fetched=400,entity.found=300`, 200 for every other kind | Per-kind caps, e.g. `url.found=300,entity.found=100`. |
+| `VOIDACCESS_TRACE_MAX_EVENTS` | `3000` | Total trace events per run, including the truncation markers. |
+
+**Event.** `{type: "trace", schema: 2, run_id, seq, at, stage, kind, data}`. `seq` is shared with the schema-1 events, so it is monotonic across both. The kinds and their `data` are in `progress/README.md`; `progress/schema/progress-v2.schema.json` validates every event a run writes.
+
+**Where they come from.** The hooks are module functions in `progress/trace.py`, called from the search fan-out (`search/search.py`), the scraper (`scraper/scrape.py`) and the CLI orchestrator. They find the run's emitter the way `utils/cancel.py` finds the cancel token (a context variable, then a process-wide default for the search stage's thread-isolated loop), and are no-ops when no traced emitter is bound. The API pipeline shares the search and scrape functions but never binds one, so it emits nothing and behaves as before.
+
+**Guarantees.**
+
+- *Never slows or breaks a run.* A trace is O(1) to emit, goes through the emitter's bounded queue (raised to 4,096 when tracing is on), and is the first thing dropped when the queue is full; `stage`, `refined` and terminal events never are. On close, if a slow sink is still behind after half the flush budget, queued traces are shed so the terminal event is delivered. Any exception while building a trace is swallowed. Inline sinks (the Rich display) never receive traces.
+- *No new work.* No LLM calls and no extra database queries. The safety checks the hooks use are the pure ones (`is_blocked_url`, `is_blocked_query`, `is_blocked_entity_value`), not `url_is_blocked`, which writes an audit event.
+- *Caps.* Beyond a kind's cap the events are counted, not sent; just before the terminal event the emitter sends one `trace.truncated {kind, dropped}` per capped kind with the final count. The `counts` events keep counting everything.
+
+**What a trace may contain.** A URL appears only as `host`: an onion as the first 8 and last 4 characters of its label plus `[.]onion` (`lockbit3…xyz7[.]onion`), a clearnet host or IP with every `.` and `:` bracketed (`example[.]com`). No scheme, port, path, query or user info. Vanity onion prefixes and hostnames can name what a site is (a live run surfaced prefixes naming child-abuse and murder-for-hire sites that pass the URL check), so when the part shown, or the search result's title, contains a child-abuse, sexual or violence-for-hire term (`progress/trace.py::_DISPLAY_DENY_TERMS`, plus the content-safety lists) the name is masked: `********…fcid[.]onion`, `********[.]com`. The id still follows the URL; the title is used only for this check and never emitted. False positives only hide a harmless name. Entities go through `progress.trace.mask_entity`: public threat-intel identifiers (CVE, hashes, malware and group names, wallet addresses, MITRE ids, actor handles) are shown; IPs, domains and URLs are defanged to their host; emails become `n***[@]domain[.]com`; phones, locations, personal names and key or rule blobs become placeholders; credentials and secrets keep only a well-known public prefix (`AKIA[REDACTED]`, `ghp_[REDACTED]`) or nothing; any type not on those lists is `[REDACTED]`. Never page text, titles, raw credentials, API keys or file paths.
+
+**Content safety.** A URL that `is_blocked_url` rejects is never shown: it gets `url.dropped {url_id, reason: "safety"}` and nothing else, ever. A page the content scan drops gets `page.fetched {url_id, outcome: "safety_dropped"}` with no size, timing or status, and no `page.entities` or `entity.found` follow. Successful scraper fetches are reported only after `scrape_multiple`'s per-page scan, so a dropped page is never first announced as fetched. The host of such a page was already shown by its `url.found` (the URL itself passed the URL check before the fetch), so a consumer should hide that node's host once it sees `safety_dropped`. A query that `is_blocked_query` rejects produces no trace at all, whoever calls `_run_investigation`.
+
+**Following one URL.** `url_id` (`u1`, `u2`, ...) is allocated once per URL string per run, so `url.found` → `url.kept` / `url.dropped` → `page.fetched` → `page.entities` share it. `entity_id` (`e1`, ...) is allocated once per (type, value); `entity.found` is sent on the first sighting with the `url_id` of that page. Entities extracted from enrichment pages carry no `url_id` (those pages have no `url.found`).
+
+**Known limits.** `too_large` is in the vocabulary but the scraper truncates at 1 MB and keeps the page, so such a page reports `ok`. Successful fetches arrive together at the end of the scrape batch (after the safety scan); failures arrive live. Pages whose content duplicates another page are reported `url.dropped {reason: "duplicate"}` at the fetch stage after their `page.fetched`. The search stage's alternative queries (asked of the LLM when the first query finds fewer than 5 results) are `query.refined` events with `index` 1 and 2 in the `collect` stage.
+

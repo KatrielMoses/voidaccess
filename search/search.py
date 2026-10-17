@@ -23,6 +23,7 @@ from db.search_engine_stats import (
 from search.query_builder import diversify_query
 from search.engine_catalog import SEARCH_ENGINES
 from sources.source_control import record_request, source_gate
+from progress import trace as _trace
 from utils import cancel
 from utils.async_utils import run_async
 from search import config as search_config
@@ -255,6 +256,7 @@ async def _search_async(
     llm_client=None,
     engines: Optional[list[dict]] = None,
     allow_diversify: bool = True,
+    query_index: int = 0,
 ) -> list[EngineResult]:
     global _LAST_SEARCH_SUMMARY
     if not source_gate("tor_search"):
@@ -262,6 +264,7 @@ async def _search_async(
         _LAST_SEARCH_SUMMARY = {
             "success": 0, "total": 0, "active": 0, "circuits_open": 0, "results": 0,
         }
+        _trace.search_result("tor_search", "disabled", 0, query_index=query_index)
         return []
     semaphore = asyncio.Semaphore(max_workers)
     # Static catalog lifecycle (P1.1): only `active` engines enter the fan-out.
@@ -289,6 +292,7 @@ async def _search_async(
         name = engine["name"]
         if await should_skip_engine_async(name):
             skipped_results.append(EngineResult(name=name, links=[], error="circuit_open"))
+            _trace.search_result(name, "disabled", 0, query_index=query_index)
             continue
         active_engines.append(engine)
 
@@ -302,6 +306,7 @@ async def _search_async(
             return EngineResult(name=name, links=[], error="cancelled")
         timeout = get_engine_timeout(stats_by_name.get(name, _default_stats(name)))
         engine_url = engine["url"].format(query=query)
+        _trace.search_request(name, query_index)
 
         async def fetch_with_engine_session():
             # Acquired inside the task, released however the fetch ends —
@@ -344,9 +349,17 @@ async def _search_async(
             logger.warning(f"Engine {name} exception: {e}")
             return EngineResult(name=name, links=[], error=str(e), took_ms=took_ms)
 
+    async def run_engine_traced(engine: dict) -> EngineResult:
+        result = await run_engine(engine)
+        if _trace.active():
+            _trace_engine_result(result, query_index)
+        return result
+
+    run_one = run_engine_traced if _trace.active() else run_engine
+
     deadline = search_config.search_deadline()
     if deadline is None and cancel.current() is None:
-        tasks = [run_engine(e) for e in active_engines]
+        tasks = [run_one(e) for e in active_engines]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         deadline_results: list[EngineResult] = []
     else:
@@ -354,7 +367,7 @@ async def _search_async(
         # engines are not recorded against the circuit breaker (a deadline cut
         # is not an engine failure).
         engine_tasks = {
-            asyncio.ensure_future(run_engine(e)): e["name"] for e in active_engines
+            asyncio.ensure_future(run_one(e)): e["name"] for e in active_engines
         }
         done, pending = await cancel.wait_cancellable(
             set(engine_tasks), timeout=deadline
@@ -412,7 +425,8 @@ async def _search_async(
     ):
         alternatives = await diversify_query(query, result_count, llm_client)
         top_engines = active_engines[:3]
-        for alternative in alternatives[:2]:
+        for alt_index, alternative in enumerate(alternatives[:2], start=query_index + 1):
+            _trace.query_refined("collect", alt_index, alternative)
             processed.extend(
                 await _search_async(
                     alternative,
@@ -420,6 +434,7 @@ async def _search_async(
                     llm_client=None,
                     engines=top_engines,
                     allow_diversify=False,
+                    query_index=alt_index,
                 )
             )
 
@@ -444,6 +459,38 @@ async def _search_async(
     return processed
 
 
+def _trace_engine_result(result: EngineResult, query_index: int) -> None:
+    """``search.result`` for one engine, then ``url.found`` for its links."""
+    error = result.error
+    if error is None:
+        status = "ok"
+    elif error in ("timeout", "deadline"):
+        status = "timeout"
+    else:
+        status = "error"
+    _trace.search_result(
+        result.name, status, len(result.links), result.took_ms, query_index=query_index
+    )
+    for link in result.links:
+        _trace.url_found("collect", link.get("link", ""), engine=result.name, title=link.get("title"))
+
+
+def _trace_merged_links(all_links: list[dict], deduped: list[dict], ranked: list[dict]) -> None:
+    """Duplicates collapsed by the dedup, and owned-index hits the merge added."""
+    state = _trace.current().trace_state
+    kept_ids = {state.known_url_id(link.get("link", "")) for link in deduped}
+    for link in all_links:
+        uid = state.known_url_id(link.get("link", ""))
+        if uid is not None and uid not in kept_ids:
+            kept_ids.add(uid)
+            _trace.url_dropped("collect", link.get("link", ""), "duplicate")
+    for link in ranked:
+        _trace.url_found(
+            "collect", link.get("link", ""),
+            engine=link.get("source_engine") or "owned_index", title=link.get("title"),
+        )
+
+
 def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_client=None) -> list[dict]:
     """Async search - call from async context."""
     import time
@@ -466,7 +513,7 @@ def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_
         status = "ok" if not result.error else result.error
         logger.debug(f"Engine {result.name}: {len(result.links)} links ({status})")
 
-    unique = _dedupe_links(all_links)
+    deduped = unique = _dedupe_links(all_links)
 
     # P3.2 — merge the owned index into the fan-out and rank the union by semantic
     # relevance (replaces the static source_weight ordering, which is now only a
@@ -475,6 +522,11 @@ def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_
     from search.ranking import merge_and_rank
 
     unique = run_async(merge_and_rank(query, unique))
+    if _trace.active():
+        try:
+            _trace_merged_links(all_links, deduped, unique)
+        except Exception as exc:  # tracing never breaks a search
+            logger.debug("search trace failed (ignored): %s", exc)
 
     elapsed = (time.monotonic() - start) * 1000
     logger.info(f"Search completed: {len(unique)} unique links in {elapsed:.0f}ms")
