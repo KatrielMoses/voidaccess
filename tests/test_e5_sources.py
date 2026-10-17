@@ -376,12 +376,13 @@ def test_overlay_skips_runs_that_already_have_techniques_and_counts_handles(monk
     from tests import enrich_fakes as fakes
 
     fakes.install(monkeypatch)
-    with_t = [{"entity_type": "THREAT_ACTOR_HANDLE", "value": "ExampleGroup"},
+    two_hosts = ["a.example.invalid", "b.example.invalid"]
+    with_t = [{"entity_type": "THREAT_ACTOR_HANDLE", "value": "ExampleGroup", "corroborating_sources": two_hosts},
               {"entity_type": "MITRE_TECHNIQUE", "value": "T1059"}]
     pages = asyncio.run(en._enrich_new_sources("q", with_t))
     assert "mitre_attack_overlay" not in [p.get("source") for p in pages]
 
-    handle_only = [{"entity_type": "THREAT_ACTOR_HANDLE", "value": "ExampleGroup"}]
+    handle_only = [{"entity_type": "THREAT_ACTOR_HANDLE", "value": "ExampleGroup", "corroborating_sources": two_hosts}]
     pages = asyncio.run(en._enrich_new_sources("q", handle_only))
     overlay = [p for p in pages if p.get("source") == "mitre_attack_overlay"]
     assert len(overlay) == 1
@@ -390,3 +391,112 @@ def test_overlay_skips_runs_that_already_have_techniques_and_counts_handles(monk
     assert overlay[0]["mitre_group"] == "G9001"
 
 
+
+
+# --------------------------------------------------------------------------- #
+# Sweep N1: only corroborated actors drive MITRE output
+# --------------------------------------------------------------------------- #
+
+def _actor(**extra):
+    base = {"entity_type": "RANSOMWARE_GROUP", "value": "ExampleGroup",
+            "extraction_method": "NER", "corroborating_sources": '["one.example.invalid"]'}
+    base.update(extra)
+    return base
+
+
+def _mitre_output(monkeypatch, entities, query="unrelated topic"):
+    import sources.enrichment as en
+    from tests import enrich_fakes as fakes
+
+    calls = fakes.install(monkeypatch)
+    pages = asyncio.run(en._enrich_new_sources(query, entities))
+    sources_ = [p.get("source") for p in pages]
+    return sources_, calls
+
+
+def test_a_single_page_ner_actor_triggers_no_mitre_output(monkeypatch):
+    entities = [_actor()]
+    got, calls = _mitre_output(monkeypatch, entities)
+    assert "mitre_attack_overlay" not in got and "mitre_attack" not in got
+    assert "overlay" not in calls and "historical" not in calls
+    assert entities == [_actor()]  # the entity itself is untouched
+
+
+@pytest.mark.parametrize("extra, query", [
+    ({"corroborating_sources": '["one.example.invalid", "two.example.invalid"]'}, "unrelated topic"),
+    ({"corroborating_sources": ["one.example.invalid", "two.example.invalid"]}, "unrelated topic"),
+    ({"extraction_method": "gazetteer"}, "unrelated topic"),
+    ({"extraction_method": "regex"}, "unrelated topic"),
+    ({}, "ExampleGroup ransomware leak"),
+])
+def test_a_corroborated_actor_triggers_its_techniques(monkeypatch, extra, query):
+    got, _ = _mitre_output(monkeypatch, [_actor(**extra)], query)
+    assert "mitre_attack_overlay" in got
+
+
+def test_two_mentions_on_the_same_host_are_not_corroboration():
+    import sources.enrichment as en
+
+    e = _actor(corroborating_sources='["one.example.invalid", "ONE.example.invalid"]')
+    assert not en._actor_is_corroborated(e, "unrelated topic")
+    assert not en._actor_is_corroborated(_actor(value="Ex"), "ex marks the spot")
+
+
+def test_historical_intel_ignores_uncorroborated_actors(monkeypatch):
+    # CISA returns an advisory, so historical intel would run for leftover actors.
+    entities = [_actor(), _actor(value="SampleActor", corroborating_sources=["h1.example.invalid", "h2.example.invalid"])]
+    got, calls = _mitre_output(monkeypatch, entities)
+    assert "historical" in calls
+    assert got.count("mitre_attack") == 1  # SampleActor only
+
+
+# --------------------------------------------------------------------------- #
+# Sweep N2: ransomware.live / RansomLook group names match whole words only
+# --------------------------------------------------------------------------- #
+
+FEED_NAMES = ["J", "lv", "lockbit", "lockbit3", "lockbit3_fs", "Section9", "apt73", "akira", "blockbit"]
+
+
+@pytest.mark.parametrize("name", ["J", "lv", "j", "LV"])
+def test_one_or_two_letter_group_names_never_match(name):
+    import sources.enrichment as en
+
+    for text in ("j lv jj", "LockBit ransomware", "zqxvjwk plorbtank 7731 quenvax"):
+        assert not en._group_name_matches_text(name, text)
+
+
+def test_whole_word_matching_and_versioned_stems():
+    import sources.enrichment as en
+
+    m = en._group_name_matches_text
+    assert m("lockbit", "LockBit 3.0 affiliates")
+    assert not m("lockbit", "blockbit leak site")
+    assert not m("blockbit", "LockBit 3.0 affiliates")
+    assert m("lockbit3", "LockBit ransomware")        # versioned name, stem matches
+    assert m("lockbit3_fs", "lockbit leak")
+    assert not m("apt73", "an apt group")             # stem shorter than 4 letters
+    assert m("Global Secret Group", "GSG leak", aliases=["GSG"])
+    assert not m("akira", "akiratech breach")
+
+
+@pytest.mark.parametrize("query", [
+    "zqxvjwk plorbtank 7731 quenvax",
+    _onion("duckjduckjgo")[len("http://"):],
+    "продажа доступа к корпоративным сетям",
+])
+def test_gibberish_and_onion_queries_match_no_group(query):
+    import sources.enrichment as en
+
+    assert [n for n in FEED_NAMES if en._group_name_matches_text(n, query)] == []
+
+
+def test_ransomware_live_uses_whole_word_matching(clearnet, monkeypatch, tmp_path):
+    import sources.enrichment as en
+
+    _isolated_feed(monkeypatch, en._rl_groups_feed, tmp_path, "rl.json")
+    _isolated_feed(monkeypatch, en._rl_victims_feed, tmp_path, "victims.json")
+    feed = json.dumps([{"name": n, "locations": []} for n in FEED_NAMES])
+    clearnet({en.RANSOMWARE_LIVE_GROUPS_URL: (200, feed), en.RANSOMWARE_LIVE_VICTIMS_URL: (200, "[]")})
+    assert asyncio.run(en.fetch_ransomware_live("zqxvjwk plorbtank 7731 quenvax")) == []
+    groups = asyncio.run(en.fetch_ransomware_live("LockBit 3.0 affiliates"))
+    assert sorted(g["group"] for g in groups) == ["lockbit", "lockbit3", "lockbit3_fs"]

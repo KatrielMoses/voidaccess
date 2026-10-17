@@ -231,6 +231,18 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
   `THREAT_ACTOR_HANDLE` as an actor, runs only when the run has no
   `MITRE_TECHNIQUE` yet (it used to check a misspelt CVE type), adds one page per
   group, and tags every technique with its group.
+- **MITRE output now needs a corroborated actor.** An actor drives the ATT&CK
+  overlay and historical intel only if a pattern or the gazetteer extractor found
+  it, it was seen on at least two different hosts, or the query names it. One
+  entity-recognition hit on one page (a common word that is also an ATT&CK group
+  name) used to add that group's techniques to most reports. The actor entity
+  itself is still reported.
+- **ransomware.live and RansomLook group names match whole words only.** A group
+  name or listed alias must appear as a whole word in the query (at least three
+  characters, case-insensitive); versioned names such as `lockbit3` also match
+  their stem ("LockBit"). Substring matching let a one-letter group name match
+  unrelated queries and add its pages. ransomware.live is off in the hosted
+  profile, so this affects self-hosted runs.
 - **Organisation names drop link-directory and markup noise.** Values such as
   "Name - description" titles, markdown residue, slash lists, `.onion` names,
   directory words, base64 runs and dark-market listing words are removed before

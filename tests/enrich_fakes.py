@@ -9,17 +9,19 @@ from __future__ import annotations
 
 import asyncio
 
+# Actors carry extraction_method "gazetteer" so they count as corroborated and
+# may drive MITRE output (sources.enrichment._actor_is_corroborated).
 ENTITIES_WITH_CVES = [
     {"entity_type": "CVE_NUMBER", "value": "CVE-2099-0001"},
     {"entity_type": "CVE_NUMBER", "value": "CVE-2099-0002"},
-    {"entity_type": "RANSOMWARE_GROUP", "value": "ExampleGroup"},
-    {"entity_type": "MALWARE_FAMILY", "value": "SampleLoader"},
+    {"entity_type": "RANSOMWARE_GROUP", "value": "ExampleGroup", "extraction_method": "gazetteer"},
+    {"entity_type": "MALWARE_FAMILY", "value": "SampleLoader", "extraction_method": "gazetteer"},
     {"entity_type": "IP_ADDRESS", "value": "192.0.2.10"},
 ]
 # Actors and no CVE/MITRE entity: the entity-based MITRE overlay fires.
 ENTITIES_ACTORS_ONLY = [
-    {"entity_type": "RANSOMWARE_GROUP", "value": "ExampleGroup"},
-    {"entity_type": "THREAT_ACTOR", "value": "SampleActor"},
+    {"entity_type": "RANSOMWARE_GROUP", "value": "ExampleGroup", "extraction_method": "gazetteer"},
+    {"entity_type": "THREAT_ACTOR", "value": "SampleActor", "extraction_method": "gazetteer"},
     {"entity_type": "IP_ADDRESS", "value": "192.0.2.10"},
 ]
 

@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 from urllib.parse import urlparse
 
 import aiohttp
@@ -653,41 +653,39 @@ def reset_ransomware_live_pacing() -> None:
     """Clear per-route pacing state (used by tests)."""
     _rl_route_last.clear()
 
-# Generic words that carry no group-identity signal in a realistic analyst
-# query ("LockBit ransomware leak site").  Stripped before matching so the
-# meaningful token(s) — e.g. "lockbit" — are what we match on, rather than
-# requiring the whole query string to appear literally in a group name.
-_GROUP_QUERY_STOPWORDS: frozenset[str] = frozenset({
-    "ransomware", "ransom", "group", "gang", "crew", "team",
-    "leak", "leaks", "leaksite", "site", "blog", "portal",
-    "data", "the", "and", "actor", "threat", "malware",
-})
+# A tracked ransomware group matches text (a query, an entity) only by its
+# whole name or listed alias, case-insensitively, at least this long. Substring
+# matching let a one-letter group name match any query with that letter in it.
+MIN_GROUP_NAME_LEN = 3
+# Versioned leak-site names ("lockbit3", "lockbit3_fs", "babuk2") also match on
+# their alphabetic stem, so "LockBit" still finds LockBit 3.0's sites. The stem
+# must be 4+ letters ("apt73" does not match the word "apt").
+_VERSIONED_GROUP_NAME = re.compile(r"^([a-z]{4,})\d+(?:[._-]\w*)?$")
 
 
-def _significant_group_tokens(query: str) -> list[str]:
-    """Meaningful lowercase tokens from a group query, stopwords removed.
-
-    Falls back to all tokens if every token was a stopword, so a query made
-    entirely of generic words still matches on something rather than nothing.
-    """
-    tokens = re.findall(r"[a-z0-9.]+", (query or "").lower())
-    tokens = [t.strip(".") for t in tokens if t.strip(".")]
-    significant = [t for t in tokens if t not in _GROUP_QUERY_STOPWORDS and len(t) >= 3]
-    return significant or tokens
+def _whole_word(term: str, text: str) -> bool:
+    return re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text) is not None
 
 
-def _group_name_matches_query(name: str, tokens: list[str]) -> bool:
-    """Token-based match of a tracked group name against query tokens.
+def _group_name_matches_text(name: str, text: str, aliases: Iterable[str] = ()) -> bool:
+    """Whether a tracked group (its name or a listed alias) is named in *text*.
 
-    A token matches if it is a substring of the group name (so ``lockbit``
-    matches ``lockbit``, ``lockbit2``, ``lockbit3``) or the group name is a
-    substring of the token.  This is how an analyst actually phrases a query,
-    versus the old "entire query string must appear in the name" rule.
-    """
-    n = (name or "").lower()
-    if not n:
+    Case-insensitive whole-word match, names of MIN_GROUP_NAME_LEN+ characters,
+    never a substring; a versioned name also matches on its stem (see
+    _VERSIONED_GROUP_NAME)."""
+    haystack = (text or "").lower()
+    if not haystack:
         return False
-    return any(t and (t in n or n in t) for t in tokens)
+    for candidate in (name, *aliases):
+        c = (candidate or "").strip().lower()
+        if len(c) < MIN_GROUP_NAME_LEN:
+            continue
+        if _whole_word(c, haystack):
+            return True
+        versioned = _VERSIONED_GROUP_NAME.match(c)
+        if versioned and _whole_word(versioned.group(1), haystack):
+            return True
+    return False
 
 
 def _rl_extract_onion_urls(group: dict) -> list[str]:
@@ -760,13 +758,12 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
             source_control.record_source_failure("ransomware_live")
             return []
 
-        _tokens = _significant_group_tokens(query)
         matched_summary: list[dict] = []
         for g in all_groups:
             if not isinstance(g, dict):
                 continue
-            name = (g.get("name") or "").lower()
-            if _group_name_matches_query(name, _tokens):
+            aliases = [g["altname"]] if isinstance(g.get("altname"), str) else []
+            if _group_name_matches_text(g.get("name") or "", query, aliases):
                 matched_summary.append(g)
 
         if not matched_summary:
@@ -1064,8 +1061,7 @@ async def fetch_ransomlook(query: str) -> list[dict]:
                 all_groups = await resp.json(content_type=None)
 
             group_names = [g for g in all_groups if isinstance(g, str)] if isinstance(all_groups, list) else []
-            _tokens = _significant_group_tokens(query)
-            matched = [name for name in group_names if _group_name_matches_query(name, _tokens)]
+            matched = [name for name in group_names if _group_name_matches_text(name, query)]
 
             if not matched:
                 logger.info("ransomlook.io: no groups matched %r", query)
@@ -1290,6 +1286,50 @@ def _record_source_state(source_ids, state: str) -> None:
 OVERLAY_ACTOR_TYPES = frozenset({
     "THREAT_ACTOR", "THREAT_ACTOR_HANDLE", "RANSOMWARE_GROUP", "MALWARE_FAMILY",
 })
+# An actor drives the MITRE overlay and historical intel only when corroborated
+# (E5 sweep N1: one NER hit of a common word on one page added an ATT&CK
+# group's techniques to most runs). Corroborated means any of:
+#  * extracted by a pattern or the gazetteer extractor (extraction_method
+#    "regex" / "gazetteer"); an NER span that merely names a gazetteer entry
+#    does not count, since that is exactly how the common word got in;
+#  * seen on at least CORROBORATING_HOSTS distinct hosts;
+#  * named, as a whole word, in the (refined) query.
+# The actor entity itself is kept either way; only what it triggers is gated.
+CORROBORATING_METHODS = frozenset({"regex", "gazetteer"})
+CORROBORATING_HOSTS = 2
+
+
+def _distinct_hosts(raw: Any) -> set[str]:
+    """Hosts in an entity's ``corroborating_sources`` (a list or its JSON text)."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip().startswith("[") else re.split(r"[|,]", raw)
+        except ValueError:
+            raw = re.split(r"[|,]", raw)
+    if not isinstance(raw, (list, tuple, set)):
+        return set()
+    return {str(h).strip().lower() for h in raw if str(h).strip()}
+
+
+def _actor_is_corroborated(entity: dict, query: str) -> bool:
+    if (entity.get("extraction_method") or "").strip().lower() in CORROBORATING_METHODS:
+        return True
+    if len(_distinct_hosts(entity.get("corroborating_sources"))) >= CORROBORATING_HOSTS:
+        return True
+    name = (entity.get("value") or entity.get("canonical_value") or entity.get("entity_value") or "")
+    name = name.strip().lower()
+    return len(name) >= MIN_GROUP_NAME_LEN and _whole_word(name, (query or "").lower())
+
+
+def _without_uncorroborated_actors(entities: list[dict], query: str) -> list[dict]:
+    """*entities* minus actors that may not drive MITRE output on their own."""
+    kept = []
+    for e in entities:
+        etype = e.get("type") or e.get("entity_type", "")
+        if etype in OVERLAY_ACTOR_TYPES and not _actor_is_corroborated(e, query):
+            continue
+        kept.append(e)
+    return kept
 
 
 async def _mitre_overlay_page(actor_name: str, seen_groups: set[str]) -> Optional[dict]:
@@ -1436,7 +1476,10 @@ async def _enrich_new_sources(
             _result("cisa"), _result("shodan"), _result("virustotal")
         )
         if cisa_results or shodan_results or vt_results:
-            unenriched = _group_unenriched_entities(entities, cisa_results, shodan_results, vt_results)
+            unenriched = _group_unenriched_entities(
+                _without_uncorroborated_actors(entities, query),
+                cisa_results, shodan_results, vt_results,
+            )
             if unenriched:
                 hist = await enrich_historical(unenriched)
                 parts["historical"] = _historical_results_to_pages(hist)
@@ -1486,7 +1529,7 @@ async def _enrich_new_sources(
         # Entity-based MITRE overlay: fires when the run found actors but no
         # MITRE_TECHNIQUE entities yet.
         _actor_ents = [
-            e for e in entities
+            e for e in _without_uncorroborated_actors(entities, query)
             if (e.get("type") or e.get("entity_type", "")) in OVERLAY_ACTOR_TYPES
         ]
         _has_mitre = any(
