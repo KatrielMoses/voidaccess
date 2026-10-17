@@ -330,9 +330,10 @@ def _restore_sigterm(previous) -> None:
 # ---------------------------------------------------------------------------
 
 
+# top_n: onion pages fetched (before backfill); VOIDACCESS_ONION_TOP_N overrides.
 DEPTH_PRESETS = {
-    "shallow": {"top_n": 10, "max_workers": 3, "extract_concurrency": 3},
-    "normal":  {"top_n": 20, "max_workers": 5, "extract_concurrency": 5},
+    "shallow": {"top_n": 15, "max_workers": 3, "extract_concurrency": 3},
+    "normal":  {"top_n": 25, "max_workers": 5, "extract_concurrency": 5},
     "deep":    {"top_n": 40, "max_workers": 8, "extract_concurrency": 6},
 }
 
@@ -1055,28 +1056,39 @@ async def _run_investigation_impl(
     cancel.checkpoint("filter")
     display.stage_start(Stage.FILTER)
     display.update_step("Filtering results", "active")
-    filter_top_n = LLM_FILTER_TOP_N
+    from search.selection import onion_top_n, select_diverse
+
+    filter_top_n = LLM_FILTER_TOP_N  # clearnet side pages
+    # Onion pages fetched, by depth (E5): ranked, then diversified (one link
+    # per host, two per mirror family, result links before text mentions).
+    # What is not picked stays in rank order as the backfill pool.
+    onion_n = onion_top_n(preset["top_n"])
+    backfill_pool: list[dict] = []
     # Why a search link that does not survive the filter was dropped (trace).
     filter_drop_reason = "cap"
     filtered_links = search_links[: filter_top_n * 2] if search_links else []
     if llm is not None and search_links:
         try:
             from voidaccess.llm import filter_results
-            filtered_links = await asyncio.to_thread(filter_results, llm, refined, search_links, filter_top_n) or search_links
-            filtered_links = filtered_links[:filter_top_n]
+            # Twice the target, so the diversity rule and the backfill draw
+            # only on links the LLM judged relevant (and safe).
+            llm_picked = await asyncio.to_thread(filter_results, llm, refined, search_links, onion_n * 2) or search_links
+            filtered_links, backfill_pool = select_diverse(llm_picked, onion_n)
             filter_drop_reason = "irrelevant"
             display.update_step("Filtering results", "ok", f"top {len(filtered_links)}")
         except Exception as exc:
             display.update_step("Filtering results", "fail", str(exc))
-            filtered_links = search_links[:filter_top_n]
+            filtered_links, backfill_pool = select_diverse(search_links, onion_n)
     elif no_llm and search_links:
         # No LLM: pick pages via the heuristic ranker instead of just
         # taking the first N (which are usually search-engine index
         # pages and low-value landing pages).
         try:
             from voidaccess.llm import _heuristic_filter
-            picked = _heuristic_filter(search_links, refined or query, filter_top_n)
-            filtered_links = [search_links[i - 1] for i in picked]
+            picked = _heuristic_filter(search_links, refined or query, len(search_links))
+            filtered_links, backfill_pool = select_diverse(
+                [search_links[i - 1] for i in picked], onion_n
+            )
             filter_drop_reason = "irrelevant"
             display.update_step(
                 "Filtering results",
@@ -1085,10 +1097,10 @@ async def _run_investigation_impl(
             )
         except Exception as exc:
             logger.warning("Heuristic filter failed (%s); falling back to first-N", exc)
-            filtered_links = (search_links or [])[:filter_top_n]
+            filtered_links, backfill_pool = select_diverse(search_links or [], onion_n)
             display.update_step("Filtering results", "skip", f"{len(filtered_links)} kept")
     else:
-        filtered_links = (search_links or [])[:filter_top_n]
+        filtered_links, backfill_pool = select_diverse(search_links or [], onion_n)
         display.update_step("Filtering results", "skip" if no_llm else "ok", f"{len(filtered_links)} kept")
 
     # Keep the existing Tor/onion list and scoring path untouched. Clearnet
@@ -1191,30 +1203,52 @@ async def _run_investigation_impl(
                     max_workers=_preset_workers(preset, "max_workers", SCRAPE_WORKERS_ENV),
                     investigation_id=investigation_id,
                     extract_typed_relationships=no_llm,
+                    collect_outlinks=True,
                 )
+
+            def _add_pages(batch_results) -> None:
+                claims = getattr(batch_results, "relationship_claims_by_url", {})
+                for url, text in batch_results.items():
+                    if text:
+                        page_record = {
+                            "url": url,
+                            "text": text,
+                            "source": "tor_search",
+                            "dependency_extraction_invoked": no_llm,
+                            "dependency_extraction_route": "core-scraper" if no_llm else None,
+                        }
+                        if claims.get(url):
+                            page_record["dependency_relationships"] = claims[url]
+                        scraped_pages.append(page_record)
 
             results = await cancel.run_cancellable(_scrape_with_progress(), "fetch")
             display.update_current_url("")
-            relationship_claims_by_url = getattr(
-                results, "relationship_claims_by_url", {}
-            )
-            for url, text in results.items():
-                if text:
-                    page_record = {
-                        "url": url,
-                        "text": text,
-                        "source": "tor_search",
-                        "dependency_extraction_invoked": no_llm,
-                        "dependency_extraction_route": "core-scraper" if no_llm else None,
-                    }
-                    if relationship_claims_by_url.get(url):
-                        page_record["dependency_relationships"] = (
-                            relationship_claims_by_url[url]
-                        )
-                    scraped_pages.append(page_record)
+            _add_pages(results)
             _fetched = sum(1 for _t in results.values() if _t)
+
+            # One extra batch at most (E5): backfill slots that failed or were
+            # mirrors of another page, and (normal/deep) follow a few links
+            # from the pages just fetched. Same scraper, so the URL and page
+            # safety gates apply; same diversity rule against what was fetched.
+            extra_links = _extra_fetch_links(
+                _trace, filtered_links, backfill_pool, scraped_pages,
+                getattr(results, "outlinks_by_url", {}), onion_n, depth,
+            )
+            if extra_links:
+                cancel.checkpoint("fetch")
+                more = await cancel.run_cancellable(
+                    scrape_multiple(
+                        extra_links,
+                        max_workers=_preset_workers(preset, "max_workers", SCRAPE_WORKERS_ENV),
+                        investigation_id=investigation_id,
+                        extract_typed_relationships=no_llm,
+                    ),
+                    "fetch",
+                )
+                _add_pages(more)
+                _fetched += sum(1 for _t in more.values() if _t)
             pipeline_metrics.record_scraping(
-                attempted=len(filtered_links) + len(shared_served_pages),
+                attempted=len(filtered_links) + len(extra_links) + len(shared_served_pages),
                 fetched=_fetched + len(shared_served_pages),
                 cache_hits=len(shared_served_pages),
             )
@@ -2122,6 +2156,53 @@ async def _run_investigation_impl(
     # Close any cached aiohttp sessions so the event loop exits cleanly
     # (otherwise aiohttp prints "Unclosed client session" warnings).
     await _close_cached_sessions()
+
+
+def _extra_fetch_links(
+    tr: Any,
+    filtered_links: list[dict],
+    backfill_pool: list[dict],
+    scraped_pages: list[dict],
+    outlinks_by_url: dict[str, list[str]],
+    onion_n: int,
+    depth: str,
+) -> list[dict]:
+    """The single extra fetch batch: backfill, then depth-1 links.
+
+    Backfill fills the slots the first batch lost (failed fetches and pages
+    whose content duplicated another page) from the ranked pool. Depth-1 takes
+    up to DEPTH1_LINKS[depth] links from the fetched onion pages (none for
+    shallow). Both obey the diversity rule against everything already queued.
+    """
+    from search.selection import (
+        DEPTH1_LINKS, DiversityState, depth1_candidates, link_of, select_diverse,
+    )
+    from utils.content_dedup import deduplicate_page_records
+
+    if cancel.is_cancelled():
+        return []
+    state = DiversityState(link_of(item) for item in filtered_links)
+    onion_pages = [p for p in scraped_pages if p.get("source") == "tor_search"]
+    unique = len(deduplicate_page_records([dict(p) for p in onion_pages]))
+    extra: list[dict] = []
+    deficit = onion_n - unique
+    if deficit > 0 and backfill_pool:
+        backfill, _ = select_diverse(backfill_pool, deficit, state)
+        for item in backfill:
+            tr.url_kept("fetch", link_of(item))
+        extra.extend(backfill)
+    cap = DEPTH1_LINKS.get(depth, 0)
+    if cap and outlinks_by_url:
+        order = [
+            (link_of(item), outlinks_by_url[link_of(item)])
+            for item in filtered_links
+            if link_of(item) in outlinks_by_url
+        ]
+        for link in depth1_candidates(order, cap, state):
+            tr.url_found("fetch", link, engine="depth-1", depth=1)
+            tr.url_kept("fetch", link)
+            extra.append({"link": link, "title": ""})
+    return extra
 
 
 def _trace_filter(

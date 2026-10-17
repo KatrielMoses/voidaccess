@@ -368,6 +368,7 @@ def _prepare_fetch_pipeline(tmp_path, monkeypatch, n_pages, cancel_after, token)
     monkeypatch.setenv(cancel.CANCEL_POLL_INTERVAL_ENV, "0.02")
     monkeypatch.setenv(cancel.CANCEL_GRACE_ENV, "0.5")
     monkeypatch.setattr(inv, "LLM_FILTER_TOP_N", n_pages)
+    monkeypatch.setenv("VOIDACCESS_ONION_TOP_N", str(n_pages))
 
     class _Tor:
         proxy_url = "socks5://127.0.0.1:9050"
@@ -376,7 +377,9 @@ def _prepare_fetch_pipeline(tmp_path, monkeypatch, n_pages, cancel_after, token)
 
     monkeypatch.setattr(tor_detect, "detect_tor", lambda: _Tor())
     links = [
-        {"link": f"https://example.com/lockbit-{i}", "title": f"lockbit ransomware {i}",
+        # One host per link (the selection takes one link per host and two
+        # per 7-character host prefix).
+        {"link": f"https://h{i:03d}-site.example.com/lockbit", "title": f"lockbit ransomware {i}",
          "snippet": "lockbit ransomware"}
         for i in range(n_pages)
     ]

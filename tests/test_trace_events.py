@@ -715,6 +715,8 @@ def _full_run(tmp_path, monkeypatch, caps=""):
     _stub_enrichment(monkeypatch)
     if caps:
         monkeypatch.setenv(tr.TRACE_CAPS_ENV, caps)
+    # 15 onion pages (the shallow default) so the 22 candidates include drops.
+    monkeypatch.setenv("VOIDACCESS_ONION_TOP_N", "15")
 
     good = [f"{_onion(f'lb{i}')}/lockbit-ransomware-{i}" for i in range(6)]
     special = {

@@ -229,7 +229,8 @@ def _parse_html_links(html: str, base_url: str) -> list[dict]:
                 norm = match.lower().rstrip("/")
                 if norm not in seen:
                     seen.add(norm)
-                    links.append({"title": host, "link": match})
+                    # Not a result link: an address mentioned in the page text.
+                    links.append({"title": host, "link": match, "from_text": True})
 
     except Exception:
         pass

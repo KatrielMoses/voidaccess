@@ -1084,15 +1084,56 @@ def _persist_pages(
 class ScrapeBatchResult(dict):
     """Dict-compatible scrape result with optional full-text metadata."""
 
-    def __init__(self, *args, relationship_claims_by_url=None, **kwargs):
+    def __init__(self, *args, relationship_claims_by_url=None, outlinks_by_url=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.relationship_claims_by_url = relationship_claims_by_url or {}
+        # url -> .onion links found in that page's HTML (collect_outlinks=True).
+        self.outlinks_by_url = outlinks_by_url or {}
+
+
+_HREF_RE = re.compile(r"""href\s*=\s*["']([^"'#\s]+)""", re.I)
+_STATIC_SUFFIXES = (
+    ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp",
+    ".woff", ".woff2", ".ttf", ".mp4", ".mp3", ".zip", ".rar", ".7z", ".pdf",
+)
+MAX_OUTLINKS_PER_PAGE = 50
+
+
+def extract_onion_outlinks(page_url: str, raw: bytes) -> list[str]:
+    """.onion page links in *raw* HTML, resolved against *page_url*, in page
+    order, without fragments, static assets or the page itself."""
+    from urllib.parse import urljoin, urldefrag
+
+    try:
+        html = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return []
+    out: list[str] = []
+    seen = {page_url.rstrip("/")}
+    for href in _HREF_RE.findall(html):
+        link = urldefrag(urljoin(page_url, href.strip()))[0]
+        parsed = urlparse(link)
+        if parsed.scheme not in ("http", "https"):
+            continue
+        if not (parsed.hostname or "").lower().endswith(".onion"):
+            continue
+        if parsed.path.lower().endswith(_STATIC_SUFFIXES):
+            continue
+        key = link.rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(link)
+        if len(out) >= MAX_OUTLINKS_PER_PAGE:
+            break
+    return out
 
 async def scrape_multiple(
     urls_data,
     max_workers: int = 5,
     investigation_id: Optional[str] = None,
     extract_typed_relationships: bool = False,
+    collect_outlinks: bool = False,
 ) -> Dict[str, str]:
     """
     Scrape a list of URLs concurrently and return a dict mapping URL → content.
@@ -1156,11 +1197,17 @@ async def scrape_multiple(
 
     from utils.content_safety import scan_page_text
 
+    outlinks_by_url: dict[str, list[str]] = {}
     for row in raw_results:
         url, display_text, raw_bytes, db_text, posted_at = row[:5]
         if len(row) > 5 and row[5]:
             relationship_claims_by_url[url] = row[5]
         if not url:
+            continue
+        if raw_bytes is None:
+            # The fetch failed (its outcome was traced in _fetch_one_impl).
+            # A failed fetch is not a page: its search-result title is not
+            # page text, so nothing is returned or stored for it.
             continue
         display_text, dropped = scan_page_text(url, display_text or "")
         if dropped:
@@ -1171,10 +1218,13 @@ async def scrape_multiple(
             if db_dropped:
                 _trace.page_fetched(url, "safety_dropped")
                 continue
-        if raw_bytes is not None:
-            # Reported only now, after the safety scan, so a page the filter
-            # drops is never first announced as fetched.
-            _trace.page_fetched(url, "ok" if db_text else "empty")
+        # Reported only now, after the safety scan, so a page the filter
+        # drops is never first announced as fetched.
+        _trace.page_fetched(url, "ok" if db_text else "empty")
+        if not db_text:
+            continue  # fetched, but no text: not a page either
+        if collect_outlinks and is_onion_url(url):
+            outlinks_by_url[url] = extract_onion_outlinks(url, raw_bytes)
         if len(display_text) > MAX_RETURN_CHARS:
             available = MAX_RETURN_CHARS - len(suffix)
             if available > 0:
@@ -1223,10 +1273,11 @@ async def scrape_multiple(
 
         await asyncio.gather(*[_run_discovery(t) for t in discovery_tasks])
 
-    if extract_typed_relationships:
+    if extract_typed_relationships or collect_outlinks:
         return ScrapeBatchResult(
             results,
             relationship_claims_by_url=relationship_claims_by_url,
+            outlinks_by_url=outlinks_by_url,
         )
     return results
 
@@ -1249,7 +1300,8 @@ async def scrape_single(
     if not url:
         return "", title
     results = await scrape_multiple([url_data], max_workers=1)
-    return url, results.get(url, title)
+    # A failed fetch has no page text (the title is not the page).
+    return url, results.get(url, "")
 
 
 def get_tor_session() -> requests.Session:
