@@ -716,6 +716,17 @@ _rl_groups_feed = CachedFeed(
     ttl_seconds=21600,
     headers=_RANSOMWARE_LIVE_HEADERS,
 )
+# Victim posts (group_name, post_title, post_url, website, published), from the
+# same data feed; the API's /v2/recentvictims and /v2/recentcyberattacks are
+# gone (404 for every client, verified 2026-10-17). About 20 MB, cached 6 h.
+RANSOMWARE_LIVE_VICTIMS_URL = "https://data.ransomware.live/victims.json"
+_rl_victims_feed = CachedFeed(
+    RANSOMWARE_LIVE_VICTIMS_URL,
+    "/tmp/voidaccess_ransomware_live_victims.json",
+    ttl_seconds=21600,
+    headers=_RANSOMWARE_LIVE_HEADERS,
+)
+_RL_MAX_VICTIMS_PER_GROUP = 50
 
 
 async def fetch_ransomware_live(query: str) -> list[dict]:
@@ -728,9 +739,9 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
     2. Leak-site .onion addresses (scrape seeds — bypass search engine discovery)
     3. Individual victim claim URLs (specific .onion post pages to scrape)
 
-    Groups come from the data feed (RANSOMWARE_LIVE_GROUPS_URL); recent attacks
-    from the API's /v2/recentcyberattacks. Free, no key; personal-use terms, so
-    it is off in the hosted profile.
+    Groups and victim posts come from the data feed (RANSOMWARE_LIVE_GROUPS_URL,
+    RANSOMWARE_LIVE_VICTIMS_URL). Free, no key; personal-use terms, so it is off
+    in the hosted profile.
     """
     if not is_enrichment_source_enabled("ransomware_live"):
         return []
@@ -764,28 +775,32 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
 
         logger.info("ransomware.live: %d groups matched %r", len(matched_summary), query)
 
-        # ── Recent attacks, filtered to the matched groups ────────────────────
+        # ── Latest victim posts of the matched groups ─────────────────────────
         recent_victims: list[dict] = []
         matched_names = {g.get("name", "").lower() for g in matched_summary}
-        endpoint = "/v2/recentcyberattacks"
-        try:
-            await _rl_route_gate(endpoint)
-            async with http_pool.clearnet_session() as session:
-                async with session.get(
-                    f"https://api.ransomware.live{endpoint}",
-                    headers=_RANSOMWARE_LIVE_HEADERS,
-                    timeout=aiohttp.ClientTimeout(total=25),
-                ) as r:
-                    if r.status == 200:
-                        text = await r.text()
-                        if text.strip()[:1] == "[":
-                            for v in json.loads(text):
-                                if (v.get("group") or "").lower() in matched_names:
-                                    recent_victims.append(v)
-                        else:
-                            source_control.record_source_failure("ransomware_live")
-        except Exception as exc:
-            logger.warning("ransomware.live %s failed: %s", endpoint, exc)
+        victims = await _rl_victims_feed.fetch()
+        if isinstance(victims, list):
+            per_group: dict[str, int] = {}
+            ordered = sorted(
+                (v for v in victims if isinstance(v, dict)
+                 and (v.get("group_name") or "").lower() in matched_names),
+                key=lambda v: str(v.get("discovered") or v.get("published") or ""),
+                reverse=True,
+            )
+            for v in ordered:
+                gname = (v.get("group_name") or "").lower()
+                if per_group.get(gname, 0) >= _RL_MAX_VICTIMS_PER_GROUP:
+                    continue
+                per_group[gname] = per_group.get(gname, 0) + 1
+                recent_victims.append({
+                    "group": v.get("group_name") or "",
+                    "victim": v.get("post_title") or "",
+                    "website": v.get("website") or "",
+                    "published": v.get("published") or v.get("discovered") or "",
+                    "claim_url": v.get("post_url") or "",
+                })
+        elif victims is not None:
+            source_control.record_source_failure("ransomware_live")
 
         logger.info("ransomware.live: %d recent victims for matched groups", len(recent_victims))
 

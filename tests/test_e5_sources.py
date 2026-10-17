@@ -224,14 +224,22 @@ def test_ransomware_live_reads_the_data_feed(clearnet, monkeypatch, tmp_path):
     import sources.enrichment as en
 
     _isolated_feed(monkeypatch, en._rl_groups_feed, tmp_path, "rl.json")
-    monkeypatch.setattr(en, "_rl_route_gate", lambda _p: asyncio.sleep(0))
-    clearnet({
+    _isolated_feed(monkeypatch, en._rl_victims_feed, tmp_path, "victims.json")
+    victims = json.dumps([
+        {"group_name": "examplelock", "post_title": "Example Victim Co", "website": "example.invalid",
+         "published": "2099-01-02", "discovered": "2099-01-02",
+         "post_url": "http://examplelockaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion/post/1"},
+        {"group_name": "othergroup", "post_title": "Other", "post_url": ""},
+    ])
+    fake = clearnet({
         en.RANSOMWARE_LIVE_GROUPS_URL: (200, GROUPS_JSON),
-        "https://api.ransomware.live/v2/recentcyberattacks": (200, "[]"),
+        en.RANSOMWARE_LIVE_VICTIMS_URL: (200, victims),
     })
     groups = asyncio.run(en.fetch_ransomware_live("examplelock ransomware"))
     assert [g["group"] for g in groups] == ["examplelock"]
     assert groups[0]["onion_urls"][0].endswith(".onion")
+    assert groups[0]["claim_urls"] == [json.loads(victims)[0]["post_url"]]
+    assert all("api.ransomware.live" not in u for u in fake.calls)
     assert _status("ransomware_live") == "ok"
 
 
