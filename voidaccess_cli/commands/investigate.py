@@ -1412,6 +1412,28 @@ async def _run_investigation_impl(
                 )
                 sources_used[_source_name] = source_entry(_source_name, count=_count)
                 _trace.enrich_source(_source_name, sources_used[_source_name].get("status"), _count)
+            # The other enrichment sources, once they ran or a deadline/failure
+            # was recorded for them, so a cut-off reads timed_out here and in
+            # the trace instead of an ok added later with 0 results.
+            _tracker = source_control.get_tracker()
+            for _source_name in (
+                "cisa_kev", "shodan_internetdb", "virustotal", "epss", "exploitdb",
+                "mitre_attack", "fbi_doj_press", "otx", "malwarebazaar", "threatfox",
+                "urlhaus", "ransomware_live",
+            ):
+                if not (
+                    _tracker.request_count(_source_name)
+                    or _tracker.states.get(_source_name) in (
+                        source_control.STATUS_TIMED_OUT, source_control.STATUS_ERROR
+                    )
+                ):
+                    continue
+                _count = sum(
+                    1 for _page in enrichment_pages
+                    if (_page.get("source") or _page.get("source_type")) == _source_name
+                )
+                sources_used[_source_name] = source_entry(_source_name, count=_count)
+                _trace.enrich_source(_source_name, sources_used[_source_name].get("status"), _count)
             display.update_step("Enriching intelligence", "ok", f"{len(enrichment_pages)} pages added")
         except Exception as exc:
             sources_used["enrichment"] = source_entry(

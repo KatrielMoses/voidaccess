@@ -188,6 +188,25 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
   to omit the LLM authorization preamble from refine, filter, and summary prompts
   without disabling mandatory content filters.
 
+### Fixed
+
+- **Enrichment no longer throws away finished work at its 59 s deadline.** The
+  CISA KEV / NVD / Shodan / VirusTotal / historical-intel (MITRE) / CVE-fusion
+  group ran its steps one after another behind NVD, so it usually missed the
+  deadline and all of its results were discarded (MITRE techniques, the CVE
+  view and many relationships were lost). Now historical intel starts as soon as
+  CISA, Shodan and VirusTotal are done, the CVE fusion as soon as NVD and KEV
+  are (bounded at 8 s, falling back to the plain NVD/KEV pages), NVD stops
+  starting new lookups after 35 s and keeps what it fetched, and the group
+  returns its finished parts 2 s before the phase deadline. A slow source loses
+  only its own results; the phase still ends by 59 s. The constants are in
+  `sources/enrichment.py` (`ENRICHMENT_DEADLINE_S`, `NVD_BUDGET_S`, ...).
+- **A source a deadline cut off now reads `timed_out`, one that failed `error`,**
+  in `sources_used` and in the `enrich.source` trace events, including the
+  sources inside that group (`cisa_kev`, `nvd`, `cve_intel`, `epss`,
+  `exploitdb`, `shodan_internetdb`, `virustotal`, `mitre_attack`) and the
+  other enrichment feeds. Before, a dropped source read `ok` with 0 results.
+
 ## [2.0.3] - 2026-08-04
 
 - Enforce owner-only permissions on the project `.env` in both CLI configure

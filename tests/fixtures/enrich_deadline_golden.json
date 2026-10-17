@@ -1,0 +1,145 @@
+{
+ "actors_only": [
+  {
+   "content": "Ransomware Group Intelligence Report: ExampleGroup\n\nDescription: Example group",
+   "link": "https://www.ransomware.live/group/ExampleGroup",
+   "source": "ransomware_live",
+   "status": 200,
+   "text": "Ransomware Group Intelligence Report: ExampleGroup\n\nDescription: Example group",
+   "title": "ransomware.live \u2014 ExampleGroup",
+   "url": "https://www.ransomware.live/group/ExampleGroup",
+   "via": "ransomware_live_api"
+  },
+  {
+   "content": "CISA Cybersecurity Advisories\n\nTitle: Example advisory\n  URL: https://example.invalid/adv\n",
+   "link": "https://www.cisa.gov/cybersecurity-advisories",
+   "source": "cisa_advisory",
+   "status": 200,
+   "text": "CISA Cybersecurity Advisories\n\nTitle: Example advisory\n  URL: https://example.invalid/adv\n",
+   "url": "https://www.cisa.gov/cybersecurity-advisories",
+   "via": "cisa_feed"
+  },
+  {
+   "content": "Shodan InternetDB: 192.0.2.10\n\nOpen Ports: 443",
+   "link": "https://internetdb.shodan.io/192.0.2.10",
+   "source": "shodan_internetdb",
+   "status": 200,
+   "text": "Shodan InternetDB: 192.0.2.10\n\nOpen Ports: 443",
+   "url": "https://internetdb.shodan.io/192.0.2.10",
+   "via": "shodan_api"
+  },
+  {
+   "content": "Historical Intel: ExampleGroup\n\nMITRE ATT&CK ID: G9999\nName: ExampleGroup\nTechniques: T1486, T1059",
+   "link": "https://attack.mitre.org/groups/G9999",
+   "source": "mitre_attack",
+   "status": 200,
+   "text": "Historical Intel: ExampleGroup\n\nMITRE ATT&CK ID: G9999\nName: ExampleGroup\nTechniques: T1486, T1059",
+   "url": "https://attack.mitre.org/groups/G9999",
+   "via": "mitre_cti"
+  },
+  {
+   "content": "Historical Intel: SampleActor\n\nMITRE ATT&CK ID: G9999\nName: SampleActor\nTechniques: T1486, T1059",
+   "link": "https://attack.mitre.org/groups/G9999",
+   "source": "mitre_attack",
+   "status": 200,
+   "text": "Historical Intel: SampleActor\n\nMITRE ATT&CK ID: G9999\nName: SampleActor\nTechniques: T1486, T1059",
+   "url": "https://attack.mitre.org/groups/G9999",
+   "via": "mitre_cti"
+  },
+  {
+   "content": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "link": "https://attack.mitre.org/",
+   "source": "mitre_attack_overlay",
+   "status": 200,
+   "text": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "url": "https://attack.mitre.org/",
+   "via": "mitre_overlay"
+  },
+  {
+   "content": "MITRE ATT&CK Overlay: Techniques associated with SampleActor (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "link": "https://attack.mitre.org/",
+   "source": "mitre_attack_overlay",
+   "status": 200,
+   "text": "MITRE ATT&CK Overlay: Techniques associated with SampleActor (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "url": "https://attack.mitre.org/",
+   "via": "mitre_overlay"
+  },
+  {
+   "content": "match",
+   "source": "sslbl",
+   "url": "https://example.invalid/bl"
+  }
+ ],
+ "with_cves": [
+  {
+   "content": "Ransomware Group Intelligence Report: ExampleGroup\n\nDescription: Example group",
+   "link": "https://www.ransomware.live/group/ExampleGroup",
+   "source": "ransomware_live",
+   "status": 200,
+   "text": "Ransomware Group Intelligence Report: ExampleGroup\n\nDescription: Example group",
+   "title": "ransomware.live \u2014 ExampleGroup",
+   "url": "https://www.ransomware.live/group/ExampleGroup",
+   "via": "ransomware_live_api"
+  },
+  {
+   "content": "CISA Cybersecurity Advisories\n\nTitle: Example advisory\n  URL: https://example.invalid/adv\n",
+   "link": "https://www.cisa.gov/cybersecurity-advisories",
+   "source": "cisa_advisory",
+   "status": 200,
+   "text": "CISA Cybersecurity Advisories\n\nTitle: Example advisory\n  URL: https://example.invalid/adv\n",
+   "url": "https://www.cisa.gov/cybersecurity-advisories",
+   "via": "cisa_feed"
+  },
+  {
+   "content": "CVE-2099-0001 nvd=True kev=True",
+   "source": "cve_intel",
+   "url": "https://example.invalid/cve/CVE-2099-0001"
+  },
+  {
+   "content": "CVE-2099-0002 nvd=True kev=False",
+   "source": "cve_intel",
+   "url": "https://example.invalid/cve/CVE-2099-0002"
+  },
+  {
+   "content": "Shodan InternetDB: 192.0.2.10\n\nOpen Ports: 443",
+   "link": "https://internetdb.shodan.io/192.0.2.10",
+   "source": "shodan_internetdb",
+   "status": 200,
+   "text": "Shodan InternetDB: 192.0.2.10\n\nOpen Ports: 443",
+   "url": "https://internetdb.shodan.io/192.0.2.10",
+   "via": "shodan_api"
+  },
+  {
+   "content": "Historical Intel: ExampleGroup\n\nMITRE ATT&CK ID: G9999\nName: ExampleGroup\nTechniques: T1486, T1059",
+   "link": "https://attack.mitre.org/groups/G9999",
+   "source": "mitre_attack",
+   "status": 200,
+   "text": "Historical Intel: ExampleGroup\n\nMITRE ATT&CK ID: G9999\nName: ExampleGroup\nTechniques: T1486, T1059",
+   "url": "https://attack.mitre.org/groups/G9999",
+   "via": "mitre_cti"
+  },
+  {
+   "content": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "link": "https://attack.mitre.org/",
+   "source": "mitre_attack_overlay",
+   "status": 200,
+   "text": "MITRE ATT&CK Overlay: Techniques associated with ExampleGroup (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "url": "https://attack.mitre.org/",
+   "via": "mitre_overlay"
+  },
+  {
+   "content": "MITRE ATT&CK Overlay: Techniques associated with SampleLoader (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "link": "https://attack.mitre.org/",
+   "source": "mitre_attack_overlay",
+   "status": 200,
+   "text": "MITRE ATT&CK Overlay: Techniques associated with SampleLoader (source: mitre_attack_overlay)\nT1566 - Phishing",
+   "url": "https://attack.mitre.org/",
+   "via": "mitre_overlay"
+  },
+  {
+   "content": "match",
+   "source": "sslbl",
+   "url": "https://example.invalid/bl"
+  }
+ ]
+}

@@ -393,13 +393,23 @@ async def fetch_nvd_cpe(
     return result
 
 
-async def enrich_nvd(entities: list[dict]) -> list[dict]:
+async def enrich_nvd(
+    entities: list[dict],
+    *,
+    budget_s: Optional[float] = None,
+    collected: Optional[list[dict]] = None,
+) -> list[dict]:
     """
     For each CVE_NUMBER entity, fetch NVD 2.0 metadata.
 
     Rate-limited (key-aware) and capped at MAX_CVES_PER_INVESTIGATION, with a
     soft time budget so a CVE-heavy investigation returns partial results rather
     than blowing the enclosing Phase-A deadline.
+
+    ``budget_s`` overrides that soft budget (the enrichment phase passes its
+    own, ``sources.enrichment.NVD_BUDGET_S``). Results are appended to
+    ``collected`` as they arrive when one is given, so a caller that has to
+    stop NVD early keeps what already came back.
     """
     validate_enrichment_allowlist()  # unknown ids fail loudly, never silently
     if not is_enrichment_source_enabled("nvd"):
@@ -424,17 +434,18 @@ async def enrich_nvd(entities: list[dict]) -> list[dict]:
         _request_delay(), window.limit, window.window,
     )
 
-    results: list[dict] = []
+    results: list[dict] = collected if collected is not None else []
+    budget = _NVD_SOFT_BUDGET if budget_s is None else budget_s
     started = time.monotonic()
 
     # One shared clearnet session reused across the whole CVE batch (injected into
     # each fetch_nvd_cve, which applies its own per-request headers + timeout).
     async with http_pool.clearnet_session() as session:
         for cve_id in cve_ids:
-            if time.monotonic() - started > _NVD_SOFT_BUDGET:
+            if time.monotonic() - started > budget:
                 logger.warning(
                     "NVD: soft time budget (%.0fs) reached — enriched %d of %d CVEs",
-                    _NVD_SOFT_BUDGET, len(results), len(cve_ids),
+                    budget, len(results), len(cve_ids),
                 )
                 break
             # No inter-request sleep here: fetch_nvd_cve() reserves its slot in

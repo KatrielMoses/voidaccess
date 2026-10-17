@@ -22,6 +22,7 @@ import pacing
 from sources import http_pool
 from utils import cancel
 from sources.enrichment_allowlist import (
+    ENRICHMENT_SOURCE_IDS,
     is_enrichment_source_enabled,
     validate_enrichment_allowlist,
 )
@@ -966,6 +967,7 @@ async def _gather_with_partial_results(
     named_coros: list[tuple[str, Any]],
     timeout: float,
     phase_label: str,
+    unfinished: Optional[set[str]] = None,
 ) -> dict[str, Any]:
     """
     Run named coroutines concurrently with a deadline, PRESERVING the results
@@ -979,7 +981,8 @@ async def _gather_with_partial_results(
 
     Returns a dict mapping name → result. On a per-task exception the value is
     the Exception instance (callers already guard with ``isinstance(x, Exception)``).
-    Names whose task did not finish map to ``[]``.
+    Names whose task did not finish map to ``[]``; when *unfinished* is given,
+    those names are also added to it (a cut-off and an empty result differ).
     """
     if not named_coros:  # every source gated off by VOIDACCESS_ENRICHMENT_SOURCES
         return {}
@@ -998,11 +1001,11 @@ async def _gather_with_partial_results(
             t.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
     elif pending:
-        unfinished = [name for name, t in tasks.items() if t in pending]
+        late = [name for name, t in tasks.items() if t in pending]
         logger.warning(
             "%s: deadline (%.0fs) hit — preserving %d finished source(s), "
             "dropping unfinished: %s",
-            phase_label, timeout, len(done), ", ".join(unfinished),
+            phase_label, timeout, len(done), ", ".join(late),
         )
         for t in pending:
             t.cancel()
@@ -1016,6 +1019,8 @@ async def _gather_with_partial_results(
             results[name] = exc if exc is not None else t.result()
         else:
             results[name] = []
+            if unfinished is not None:
+                unfinished.add(name)
     return results
 
 
@@ -1251,19 +1256,110 @@ def ransomlook_to_pages(groups: list[dict]) -> list[dict]:
     return pages
 
 
-async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
+# ---------------------------------------------------------------------------
+# Enrichment deadlines (E4). One wall-clock budget for the whole phase; every
+# other bound below is derived from it or caps one source inside it.
+# ---------------------------------------------------------------------------
+# The enrichment phase ends this many seconds after enrich_investigation starts.
+ENRICHMENT_DEADLINE_S = 59.0
+# _enrich_new_sources returns this long before the phase deadline, so its
+# partial results and per-source statuses are assembled instead of cancelled.
+NEW_SOURCES_MARGIN_S = 2.0
+# NVD starts no new CVE lookup after this many seconds (keeps what returned).
+# Without a key NVD allows 4 requests per 30 s here, so a CVE-heavy run used to
+# spend its whole window on NVD and leave nothing for KEV fusion and MITRE.
+NVD_BUDGET_S = 35.0
+# Bound on the CVE fusion (EPSS + Exploit-DB lookups). On expiry the legacy
+# NVD/KEV pages are used, exactly as when the fusion raises.
+CVE_FUSION_TIMEOUT_S = 8.0
+# Historical intel (MITRE / justice.gov / CISA advisories; R1 measured 5-8 s)
+# starts no later than this long before the group deadline, even if one of its
+# inputs (CISA, Shodan, VirusTotal) is still running; a late input then simply
+# does not narrow its entity list.
+HISTORICAL_RESERVE_S = 10.0
+
+# Named parts of the new-sources group -> the source ids they report under.
+_NEW_SOURCE_IDS: dict[str, tuple[str, ...]] = {
+    "cisa": ("cisa_kev",),
+    "nvd": ("nvd",),
+    "shodan": ("shodan_internetdb",),
+    "virustotal": ("virustotal",),
+    "historical": ("mitre_attack", "fbi_doj_press"),
+    "cve_fusion": ("cve_intel", "epss", "exploitdb"),
+    "mitre_overlay": ("mitre_attack",),
+    "blocklists": ("sslbl", "openphish", "phishtank", "ransomwhere"),
+}
+# Outer-gather task names -> source ids.
+_OUTER_SOURCE_IDS: dict[str, tuple[str, ...]] = {
+    "otx": ("otx",),
+    "malwarebazaar": ("malwarebazaar",),
+    "threatfox": ("threatfox",),
+    "urlhaus": ("urlhaus",),
+    "ransomware_live": ("ransomware_live",),
+    "ransomlook": ("ransomlook",),
+}
+
+
+def _record_source_state(source_ids, state: str) -> None:
+    """Record a cut-off (``timed_out``) or failure (``error``) for *source_ids*
+    so ``sources_used`` and the trace events never read ``ok`` for them.
+    Ids the allowlist/deny-list switched off keep their gate status."""
+    from sources import source_control
+
+    tracker = source_control.get_tracker()
+    for sid in source_ids:
+        try:
+            if sid in ENRICHMENT_SOURCE_IDS and not is_enrichment_source_enabled(sid):
+                continue
+        except Exception:
+            continue
+        if tracker.states.get(sid) == source_control.STATUS_TIMED_OUT:
+            continue  # a cut-off is never downgraded to an error
+        tracker.set_state(sid, state)
+
+
+def _assemble_new_source_pages(parts: dict[str, Any], query: str) -> list[dict]:
+    """Pages from the group's finished parts, in the order the group always used."""
+    pages: list[dict] = []
+    if parts.get("advisories"):
+        pages.extend(_cisa_results_to_pages(parts["advisories"], query))
+    pages.extend(parts.get("cve") or [])
+    if parts.get("shodan"):
+        pages.extend(_shodan_results_to_pages(parts["shodan"]))
+    if parts.get("virustotal"):
+        pages.extend(_vt_results_to_pages(parts["virustotal"]))
+    pages.extend(parts.get("historical") or [])
+    pages.extend(parts.get("mitre_overlay") or [])
+    pages.extend(parts.get("blocklists") or [])
+    return pages
+
+
+async def _enrich_new_sources(
+    query: str,
+    entities: list[dict],
+    *,
+    budget_s: Optional[float] = None,
+    parts: Optional[dict[str, Any]] = None,
+) -> list[dict]:
     """
-    Run the new entity-driven enrichment sources concurrently and return
-    page-shaped dicts.
+    Run the new entity-driven enrichment sources and return page-shaped dicts.
 
     Sources:
     - CISA KEV + advisories   (cisa.py)
-    - NVD 2.0 full CVE data   (nvd.py)
+    - NVD 2.0 full CVE data   (nvd.py), capped at NVD_BUDGET_S
     - Shodan InternetDB       (shodan.py)
     - VirusTotal              (virustotal.py)
     - Historical intel        (historical_intel.py)
+    - CVE fusion              (cve_intel.py: EPSS + Exploit-DB), bounded
+    - Entity MITRE overlay and abuse/phishing blocklists
 
-    Partial results from sources that finish before the deadline are preserved.
+    Nothing waits behind NVD: historical intel starts as soon as CISA, Shodan
+    and VirusTotal (its only inputs) are done, the CVE fusion as soon as NVD
+    and KEV are, and the overlay and blocklists at once. The group returns by
+    *budget_s* (default: the phase deadline minus NEW_SOURCES_MARGIN_S) with
+    whatever finished; a part still running then is stopped and its sources
+    are recorded ``timed_out``. Finished parts are published into *parts* as
+    they complete, so a caller that has to cancel the group keeps them.
     """
     from sources.cisa import enrich_cisa
     from sources.nvd import enrich_nvd
@@ -1271,90 +1367,129 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
     from sources.virustotal import enrich_virustotal
     from sources.historical_intel import enrich_historical
 
+    loop = asyncio.get_running_loop()
+    if budget_s is None:
+        budget_s = ENRICHMENT_DEADLINE_S - NEW_SOURCES_MARGIN_S
+    deadline = loop.time() + max(0.0, budget_s)
+    parts = parts if parts is not None else {}
+
+    def remaining() -> float:
+        return max(0.0, deadline - loop.time())
+
     # VOIDACCESS_ENRICHMENT_SOURCES: build coroutines only for enabled sources
     # (no never-awaited coroutine objects for disabled ones).
     validate_enrichment_allowlist()
+    nvd_collected: list[dict] = []
     _factories = [
         ("cisa", "cisa_kev", lambda: enrich_cisa(query, entities)),
-        ("nvd", "nvd", lambda: enrich_nvd(entities)),
+        ("nvd", "nvd", lambda: enrich_nvd(entities, budget_s=NVD_BUDGET_S, collected=nvd_collected)),
         ("shodan", "shodan_internetdb", lambda: enrich_shodan(entities)),
         ("virustotal", "virustotal", lambda: enrich_virustotal(entities)),
     ]
-    packed: dict[str, Any] = {name: [] for name, _sid, _f in _factories}
-    packed.update(await _gather_with_partial_results(
-        [
-            (name, factory())
-            for name, sid, factory in _factories
-            if is_enrichment_source_enabled(sid)
-        ],
-        timeout=55.0,
-        phase_label="_enrich_new_sources",
-    ))
+    fetch: dict[str, asyncio.Task] = {
+        name: asyncio.ensure_future(factory())
+        for name, sid, factory in _factories
+        if is_enrichment_source_enabled(sid)
+    }
 
-    cisa_results = packed["cisa"]
-    nvd_results = packed["nvd"]
-    shodan_results = packed["shodan"]
-    vt_results = packed["virustotal"]
+    async def _wait_for(names: list[str], until: float) -> None:
+        tasks = [fetch[n] for n in names if n in fetch and not fetch[n].done()]
+        if tasks:
+            # asyncio.wait never cancels what it waits on.
+            await asyncio.wait(tasks, timeout=max(0.0, until - loop.time()))
 
-    if isinstance(cisa_results, Exception):
-        logger.warning("CISA enrichment failed: %s", cisa_results)
-        cisa_results = []
-    if isinstance(nvd_results, Exception):
-        logger.warning("NVD enrichment failed: %s", nvd_results)
-        nvd_results = []
-    if isinstance(shodan_results, Exception):
-        logger.warning("Shodan enrichment failed: %s", shodan_results)
-        shodan_results = []
-    if isinstance(vt_results, Exception):
-        logger.warning("VirusTotal enrichment failed: %s", vt_results)
-        vt_results = []
+    def _result(name: str) -> list:
+        """A finished fetch's results; ``[]`` if it failed or is not done."""
+        task = fetch.get(name)
+        if task is None or not task.done() or task.cancelled():
+            return []
+        exc = task.exception()
+        if exc is not None:
+            logger.warning("%s enrichment failed: %s", name, exc)
+            _record_source_state(_NEW_SOURCE_IDS[name], "error")
+            return []
+        return task.result() or []
 
-    pages: list[dict] = []
+    def _publish_fetches() -> None:
+        """Expose finished CISA advisories / Shodan / VT results in *parts*."""
+        if fetch.get("cisa") is not None and fetch["cisa"].done():
+            parts["advisories"] = [r for r in _result("cisa") if r.get("source") != "cisa_kev"]
+        for name in ("shodan", "virustotal"):
+            if fetch.get(name) is not None and fetch[name].done():
+                parts[name] = _result(name)
 
-    # P1.3: fuse NVD + CISA KEV (already fetched above — no re-fetch, so NVD/KEV
-    # behavior is unchanged) with EPSS + Exploit-DB into ONE unified CVE view,
-    # replacing the separate NVD page + KEV-CVE pages. CISA advisories (non-CVE
-    # actor matches) still render on their own.
-    kev_results = [r for r in cisa_results if r.get("source") == "cisa_kev"]
-    advisory_results = [r for r in cisa_results if r.get("source") != "cisa_kev"]
+    async def _historical_part() -> None:
+        await _wait_for(["cisa", "shodan", "virustotal"], deadline - HISTORICAL_RESERVE_S)
+        _publish_fetches()
+        cisa_results, shodan_results, vt_results = (
+            _result("cisa"), _result("shodan"), _result("virustotal")
+        )
+        if cisa_results or shodan_results or vt_results:
+            unenriched = _group_unenriched_entities(entities, cisa_results, shodan_results, vt_results)
+            if unenriched:
+                hist = await enrich_historical(unenriched)
+                parts["historical"] = _historical_results_to_pages(hist)
 
-    if advisory_results:
-        pages.extend(_cisa_results_to_pages(advisory_results, query))
-    try:
-        from sources.cve_intel import fuse_cve_intelligence
-        pages.extend(await fuse_cve_intelligence(query, entities, nvd_results, kev_results))
-    except Exception as exc:
-        logger.warning("cve_intel fusion failed, falling back to legacy CVE pages: %s", exc)
-        if kev_results:
-            pages.extend(_cisa_results_to_pages(kev_results, query))
-        if nvd_results:
-            pages.extend(_nvd_results_to_pages(nvd_results))
+    async def _fusion_part() -> None:
+        # Leave the fusion its own window: NVD gets until then, and keeps what
+        # it had fetched if it is still running.
+        await _wait_for(["nvd", "cisa"], deadline - CVE_FUSION_TIMEOUT_S)
+        nvd_task = fetch.get("nvd")
+        if nvd_task is not None and not nvd_task.done():
+            nvd_task.cancel()
+            await asyncio.gather(nvd_task, return_exceptions=True)
+            logger.warning(
+                "_enrich_new_sources: NVD still running at the fusion cut-off — "
+                "keeping %d CVE(s) it had enriched", len(nvd_collected),
+            )
+            _record_source_state(("nvd",), "timed_out")
+            nvd_results = list(nvd_collected)
+        else:
+            nvd_results = _result("nvd")
+        await _wait_for(["cisa"], deadline)
+        cisa_results = _result("cisa")
+        kev_results = [r for r in cisa_results if r.get("source") == "cisa_kev"]
+        # P1.3: fuse NVD + CISA KEV (already fetched — no re-fetch) with EPSS +
+        # Exploit-DB into ONE unified CVE view, replacing the separate NVD page
+        # + KEV-CVE pages. CISA advisories still render on their own.
+        try:
+            from sources.cve_intel import fuse_cve_intelligence
+            parts["cve"] = await asyncio.wait_for(
+                fuse_cve_intelligence(query, entities, nvd_results, kev_results),
+                timeout=min(CVE_FUSION_TIMEOUT_S, remaining()),
+            )
+        except Exception as exc:
+            if isinstance(exc, asyncio.TimeoutError):
+                logger.warning("cve_intel fusion timed out, falling back to legacy CVE pages")
+                _record_source_state(_NEW_SOURCE_IDS["cve_fusion"], "timed_out")
+            else:
+                logger.warning("cve_intel fusion failed, falling back to legacy CVE pages: %s", exc)
+            legacy: list[dict] = []
+            if kev_results:
+                legacy.extend(_cisa_results_to_pages(kev_results, query))
+            if nvd_results:
+                legacy.extend(_nvd_results_to_pages(nvd_results))
+            parts["cve"] = legacy
 
-    if shodan_results:
-        pages.extend(_shodan_results_to_pages(shodan_results))
-    if vt_results:
-        pages.extend(_vt_results_to_pages(vt_results))
-
-    if cisa_results or shodan_results or vt_results:
-        unenriched = _group_unenriched_entities(entities, cisa_results, shodan_results, vt_results)
-        if unenriched:
-            hist_pages = await enrich_historical(unenriched)
-            pages.extend(_historical_results_to_pages(hist_pages))
-
-    # Entity-based MITRE overlay: fires when the caller passes pre-extracted entities
-    # that contain actors but zero CVE/MITRE_TECHNIQUE results.
-    _actor_types = {"THREAT_ACTOR", "RANSOMWARE_GROUP", "MALWARE_FAMILY"}
-    _cve_mitre_types = {"CVE", "MITRE_TECHNIQUE"}
-    _actor_ents = [
-        e for e in entities
-        if (e.get("type") or e.get("entity_type", "")) in _actor_types
-    ]
-    _has_cve_or_mitre = any(
-        (e.get("type") or e.get("entity_type", "")) in _cve_mitre_types
-        for e in entities
-    )
-    if _actor_ents and not _has_cve_or_mitre and is_enrichment_source_enabled("mitre_attack"):
+    async def _overlay_part() -> None:
+        # Entity-based MITRE overlay: fires when the caller passes
+        # pre-extracted entities that contain actors but zero CVE/MITRE_TECHNIQUE results.
+        _actor_types = {"THREAT_ACTOR", "RANSOMWARE_GROUP", "MALWARE_FAMILY"}
+        _cve_mitre_types = {"CVE", "MITRE_TECHNIQUE"}
+        _actor_ents = [
+            e for e in entities
+            if (e.get("type") or e.get("entity_type", "")) in _actor_types
+        ]
+        _has_cve_or_mitre = any(
+            (e.get("type") or e.get("entity_type", "")) in _cve_mitre_types
+            for e in entities
+        )
+        if not (_actor_ents and not _has_cve_or_mitre and is_enrichment_source_enabled("mitre_attack")):
+            return
         from sources.historical_intel import get_techniques_for_actor
+
+        overlay: list[dict] = []
+        parts["mitre_overlay"] = overlay  # published as it grows
         for _actor_ent in _actor_ents:
             if cancel.is_cancelled():
                 break
@@ -1377,7 +1512,7 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
                 f"MITRE ATT&CK Overlay: Techniques associated with {_actor_name} "
                 f"(source: mitre_attack_overlay)\n" + "\n".join(_techniques)
             )
-            pages.append({
+            overlay.append({
                 "link": "https://attack.mitre.org/",
                 "url": "https://attack.mitre.org/",
                 "content": _oc,
@@ -1387,17 +1522,69 @@ async def _enrich_new_sources(query: str, entities: list[dict]) -> list[dict]:
                 "via": "mitre_overlay",
             })
 
-    # P1.4 — abuse/phishing blocklist matching (SSLBL / OpenPhish / PhishTank).
-    # Bulk feeds matched in memory against the investigation's entities; matched
-    # entities are flagged in the DB and a provenance-stamped page is emitted.
-    try:
-        from feeds import enrich_blocklists
-        _bl_pages, _bl_stats = await enrich_blocklists(entities)
-        pages.extend(_bl_pages)
-    except Exception as exc:
-        logger.warning("blocklist enrichment failed: %s", exc)
+    async def _blocklists_part() -> None:
+        # P1.4 — abuse/phishing blocklist matching (SSLBL / OpenPhish / PhishTank).
+        # Bulk feeds matched in memory against the investigation's entities; matched
+        # entities are flagged in the DB and a provenance-stamped page is emitted.
+        try:
+            from feeds import enrich_blocklists
+            _bl_pages, _bl_stats = await enrich_blocklists(entities)
+            parts["blocklists"] = _bl_pages
+        except Exception as exc:
+            logger.warning("blocklist enrichment failed: %s", exc)
 
-    return pages
+    branches = {
+        "historical": asyncio.ensure_future(_historical_part()),
+        "cve_fusion": asyncio.ensure_future(_fusion_part()),
+        "mitre_overlay": asyncio.ensure_future(_overlay_part()),
+        "blocklists": asyncio.ensure_future(_blocklists_part()),
+    }
+    try:
+        _, pending = await cancel.wait_cancellable(set(branches.values()), timeout=remaining())
+    except asyncio.CancelledError:
+        # The caller gave up on the group: stop everything, report the cut,
+        # and leave the finished parts in *parts* for the caller.
+        _stop_and_record(fetch, branches)
+        raise
+    if pending:
+        _stop_and_record(fetch, branches, budget_s=budget_s)
+        await asyncio.gather(*fetch.values(), *branches.values(), return_exceptions=True)
+    else:
+        # Every branch is done; a fetch nothing waited on (none today) must not leak.
+        _stop_and_record(fetch, {}, budget_s=budget_s)
+        await asyncio.gather(*fetch.values(), return_exceptions=True)
+
+    for name, task in branches.items():
+        if task.done() and not task.cancelled() and task.exception() is not None:
+            logger.warning("%s part failed: %s", name, task.exception())
+            _record_source_state(_NEW_SOURCE_IDS[name], "error")
+
+    _publish_fetches()  # inputs that finished after historical intel started
+    return _assemble_new_source_pages(parts, query)
+
+
+def _stop_and_record(
+    fetch: dict[str, asyncio.Task],
+    branches: dict[str, asyncio.Task],
+    budget_s: Optional[float] = None,
+) -> None:
+    """Cancel unfinished fetches/parts and record their sources ``timed_out``.
+
+    Logs in the same form as ``_gather_with_partial_results`` so run logs show
+    every source a deadline cut off."""
+    unfinished = [n for n, t in {**fetch, **branches}.items() if not t.done()]
+    if not unfinished:
+        return
+    if not cancel.is_cancelled():
+        logger.warning(
+            "_enrich_new_sources: deadline (%.0fs) hit — preserving finished parts, "
+            "dropping unfinished: %s",
+            budget_s or 0.0, ", ".join(unfinished),
+        )
+    for name in unfinished:
+        if not cancel.is_cancelled():
+            _record_source_state(_NEW_SOURCE_IDS[name], "timed_out")
+        ({**fetch, **branches})[name].cancel()
 
 
 def _cisa_results_to_pages(results: list[dict], query: str) -> list[dict]:
@@ -1675,7 +1862,9 @@ async def enrich_investigation(
     - Shodan InternetDB      — free, no key required (clearnet)
     - VirusTotal             — requires VT_API_KEY (clearnet)
 
-    Completes within ~60s (enforced via ``asyncio.wait_for``).
+    Completes within ENRICHMENT_DEADLINE_S (59 s), wall clock: a source still
+    running then contributes nothing and is reported ``timed_out``; everything
+    that finished is kept (see ``_enrich_new_sources`` for the CVE/MITRE group).
     """
     # Fail loudly (outside the gather) on an unknown VOIDACCESS_ENRICHMENT_SOURCES id.
     validate_enrichment_allowlist()
@@ -1684,6 +1873,8 @@ async def enrich_investigation(
         return []
 
     logger.info("Starting threat intel enrichment for: %s", query)
+    loop = asyncio.get_running_loop()
+    phase_deadline = loop.time() + ENRICHMENT_DEADLINE_S
 
     _entities = entities if entities is not None else []
 
@@ -1713,15 +1904,33 @@ async def enrich_investigation(
         for name, sid, factory in _factories
         if is_enrichment_source_enabled(sid)
     ]
+    # The group gets the phase budget minus a margin, so it returns its own
+    # partial results before this gather's deadline; *new_parts* is the
+    # backstop if it is cancelled anyway.
+    new_parts: dict[str, Any] = {}
     if any(is_enrichment_source_enabled(sid) for sid in _new_source_ids):
-        _named.append(("new_sources", _enrich_new_sources(query, _entities)))
+        _named.append(("new_sources", _enrich_new_sources(
+            query, _entities,
+            budget_s=ENRICHMENT_DEADLINE_S - NEW_SOURCES_MARGIN_S,
+            parts=new_parts,
+        )))
     packed: dict[str, Any] = {name: [] for name, _sid, _f in _factories}
     packed["new_sources"] = []
+    cut: set[str] = set()
     packed.update(await _gather_with_partial_results(
         _named,
-        timeout=59.0,
+        timeout=ENRICHMENT_DEADLINE_S,
         phase_label="Enrichment",
+        unfinished=cut,
     ))
+    if not cancel.is_cancelled():
+        for name in cut - {"new_sources"}:
+            _record_source_state(_OUTER_SOURCE_IDS[name], "timed_out")
+        for name, value in packed.items():
+            if isinstance(value, Exception) and name in _OUTER_SOURCE_IDS:
+                _record_source_state(_OUTER_SOURCE_IDS[name], "error")
+    if "new_sources" in cut:
+        packed["new_sources"] = _assemble_new_source_pages(new_parts, query)
 
     otx_pulses = packed["otx"]
     mb_results = packed["malwarebazaar"]
@@ -1788,7 +1997,9 @@ async def enrich_investigation(
         if not _t_found:
             from sources.historical_intel import get_techniques_for_actor
 
+            # Bounded by what is left of the phase deadline as well.
             OVERLAY_TIMEOUT = 20
+            overlay_timeout = min(OVERLAY_TIMEOUT, max(0.0, phase_deadline - loop.time()))
 
             _q_lower = query.lower()
             _capped = _overlay_actor_names[:10]
@@ -1828,13 +2039,13 @@ async def enrich_investigation(
             try:
                 _overlay_pages = await asyncio.wait_for(
                     _run_overlay(),
-                    timeout=OVERLAY_TIMEOUT,
+                    timeout=overlay_timeout,
                 )
                 pages.extend(_overlay_pages)
             except asyncio.TimeoutError:
                 logger.warning(
-                    "MITRE overlay timed out after %ds — skipping",
-                    OVERLAY_TIMEOUT,
+                    "MITRE overlay timed out after %.0fs — skipping",
+                    overlay_timeout,
                 )
 
     total_onion_seeds = sum(1 for p in pages if p.get("_scrape_seed"))
