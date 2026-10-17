@@ -1,0 +1,71 @@
+{
+ "_note": "Subset of MITRE ATT&CK Enterprise (intrusion-set name, id and aliases only), for tests/test_e5_sources.py. \u00a9 The MITRE Corporation. ATT&CK\u00ae is reproduced and distributed under the ATT&CK Terms of Use (https://attack.mitre.org/resources/legal-and-branding/terms-of-use/).",
+ "objects": [
+  {
+   "type": "intrusion-set",
+   "id": "intrusion-set--bef4c620-0787-42a8-a96d-b7eb6e85917c",
+   "name": "APT28",
+   "aliases": [
+    "APT28",
+    "IRON TWILIGHT",
+    "SNAKEMACKEREL",
+    "Swallowtail",
+    "Group 74",
+    "Sednit",
+    "Sofacy",
+    "Pawn Storm",
+    "Fancy Bear",
+    "STRONTIUM",
+    "Tsar Team",
+    "Threat Group-4127",
+    "TG-4127",
+    "Forest Blizzard",
+    "FROZENLAKE",
+    "GruesomeLarch"
+   ],
+   "external_references": [
+    {
+     "source_name": "mitre-attack",
+     "external_id": "G0007"
+    }
+   ]
+  },
+  {
+   "type": "intrusion-set",
+   "id": "intrusion-set--3753cc21-2dae-4dfb-8481-d004e74502cc",
+   "name": "FIN7",
+   "aliases": [
+    "FIN7",
+    "GOLD NIAGARA",
+    "ITG14",
+    "Carbon Spider",
+    "ELBRUS",
+    "Sangria Tempest"
+   ],
+   "external_references": [
+    {
+     "source_name": "mitre-attack",
+     "external_id": "G0046"
+    }
+   ]
+  },
+  {
+   "type": "intrusion-set",
+   "id": "intrusion-set--7eda3dd8-b09b-4705-8090-c2ad9fb8c14d",
+   "name": "TA505",
+   "aliases": [
+    "TA505",
+    "Hive0065",
+    "Spandex Tempest",
+    "CHIMBORAZO"
+   ],
+   "external_references": [
+    {
+     "source_name": "mitre-attack",
+     "external_id": "G0092"
+    }
+   ]
+  }
+ ],
+ "extracted": "2026-10-17 from enterprise-attack.json (mitre/cti master)"
+}

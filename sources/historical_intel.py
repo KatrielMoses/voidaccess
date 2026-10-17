@@ -31,27 +31,15 @@ logger = logging.getLogger(__name__)
 _MITRE_CACHE = "/tmp/voidaccess_mitre_attack.json"
 _FBI_CACHE = "/tmp/voidaccess_fbi_press.xml"
 
+# Common names that ATT&CK lists as a name or alias of the same intrusion set,
+# applied before exact resolution. Only names ATT&CK itself attributes belong
+# here: a ransomware or malware brand is not an alias of the group that ATT&CK
+# says used it (tests/test_e5_sources.py checks every entry against ATT&CK).
 ACTOR_ALIASES = {
-    "revil": "Wizard Spider",
-    "sodinokibi": "Wizard Spider",
-    "gandcrab": "Wizard Spider",
-    "lockbit": None,
-    "conti": "Wizard Spider",
-    "ryuk": "Wizard Spider",
-    "trickbot": "Wizard Spider",
-    "darkside": "FIN7",
-    "blackmatter": "FIN7",
-    "alphv": None,
-    "blackcat": None,
-    "hive": None,
-    "cl0p": "TA505",
     "ta505": "TA505",
     "apt28": "APT28",
     "fancy bear": "APT28",
-    "lazarus": "Lazarus Group",
-    "apt38": "Lazarus Group",
     "fin7": "FIN7",
-    "carbanak": "FIN7",
 }
 
 _mitre_feed = CachedFeed(
@@ -130,11 +118,7 @@ class _AttackIndex:
         q = (actor_name or "").strip().lower()
         if not q:
             return None
-        if q in ACTOR_ALIASES:
-            target = ACTOR_ALIASES[q]
-            if target is None:
-                return None
-            q = target.lower()
+        q = ACTOR_ALIASES.get(q, q).lower()
         if q in self.by_name:
             return self.by_name[q]
         if q in self.by_alias and q not in self.software:

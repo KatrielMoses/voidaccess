@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -321,13 +322,53 @@ STIX = {"objects": [
 @pytest.mark.parametrize("name, want", [
     ("Tor", None), ("tor", None), ("Play", "G1040"), ("PLAY", "G1040"), ("royal", None),
     ("snake", None), ("bert", None), ("muddy", None), ("Dragon", None), ("side", None),
-    ("conti", "G0102"), ("lockbit", None), ("cobalt strike", None),
+    ("conti", None), ("revil", None), ("darkside", None), ("lockbit", None),
+    ("cobalt strike", None),
 ])
 def test_attack_names_resolve_exactly(name, want):
     from sources import historical_intel as hi
 
     group = hi._AttackIndex(STIX["objects"]).resolve(name)
     assert (hi.group_id(group) if group else None) == want
+
+
+ATTACK_SUBSET = Path(__file__).parent / "fixtures" / "attack_alias_subset.json"
+ATTACK_BUNDLE = Path("/tmp/voidaccess_mitre_attack.json")
+
+
+def _alias_holders(objects: list, key: str) -> list[dict]:
+    return [
+        o for o in objects
+        if o.get("type") == "intrusion-set" and not o.get("revoked")
+        and key in [(o.get("name") or "").lower()] + [a.lower() for a in o.get("aliases") or []]
+    ]
+
+
+@pytest.mark.parametrize("key", sorted(__import__("sources.historical_intel", fromlist=["x"]).ACTOR_ALIASES))
+def test_every_built_in_alias_is_one_attack_itself_lists(key):
+    """Each ACTOR_ALIASES entry maps a name to the intrusion set whose own
+    ATT&CK name or aliases contain that name (checked against a committed
+    ATT&CK subset, and against the full bundle when it is cached locally)."""
+    from sources import historical_intel as hi
+
+    sources_ = [json.loads(ATTACK_SUBSET.read_text())["objects"]]
+    if ATTACK_BUNDLE.exists():
+        sources_.append(json.loads(ATTACK_BUNDLE.read_text())["objects"])
+    for objects in sources_:
+        group = hi._AttackIndex(objects).resolve(key)
+        assert group is not None, key
+        assert group["name"] == hi.ACTOR_ALIASES[key]
+        names = [(group.get("name") or "").lower()] + [a.lower() for a in group.get("aliases") or []]
+        assert key in names, (key, group["name"])
+        assert [o["id"] for o in _alias_holders(objects, key)] == [group["id"]]
+
+
+def test_brands_attack_does_not_attribute_are_not_aliases():
+    from sources import historical_intel as hi
+
+    for brand in ("revil", "sodinokibi", "gandcrab", "conti", "ryuk", "trickbot", "darkside",
+                  "blackmatter", "cl0p", "carbanak", "lazarus", "apt38"):
+        assert brand not in hi.ACTOR_ALIASES
 
 
 def test_overlay_skips_runs_that_already_have_techniques_and_counts_handles(monkeypatch):

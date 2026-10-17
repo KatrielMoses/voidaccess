@@ -223,8 +223,10 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
 - **MITRE ATT&CK techniques are attributed only to a group the run found, by
   exact name or alias.** Matching was by substring, so "Tor", "royal" or "bert"
   pulled in unrelated groups' techniques. Now a name must equal an intrusion
-  set's name or alias (after the built-in alias table; "Cobalt Strike", a tool,
-  was removed from it); an alias that is also an ATT&CK software name is
+  set's name or alias (after a built-in alias table that now holds only names
+  ATT&CK itself lists for the group; brand mappings such as REvil, GandCrab or
+  Conti to Wizard Spider and DarkSide to FIN7, and the tool "Cobalt Strike",
+  were removed); an alias that is also an ATT&CK software name is
   ambiguous and matches nothing; revoked sets are ignored. The overlay counts
   `THREAT_ACTOR_HANDLE` as an actor, runs only when the run has no
   `MITRE_TECHNIQUE` yet (it used to check a misspelt CVE type), adds one page per
