@@ -31,6 +31,7 @@ from urllib.parse import urlparse
 from extractor import entity_shape as _shape
 from extractor import confidence as _conf
 from extractor import gazetteer as _gazetteer
+from extractor import org_filter as _org_filter
 from extractor import software_suppression as _software
 
 logger = logging.getLogger(__name__)
@@ -1019,102 +1020,6 @@ def _source_quality_from_url(url: str) -> float:
     return 1.0
 
 
-_ORG_NOISE_RE = re.compile(
-    r'\b(paid|bought|sold|hacked|leaked)\b'
-    r'|\b(attempt|operations|disrupted)\b'
-    r'|\b(http|onion|tor|socks)\b'
-    r'|\b(zero.log|tor.native)\b'
-    r'|^\d'
-    r'|[<>{}\[\]|\\]',
-    re.IGNORECASE,
-)
-_HTML_ENTITY_RE = re.compile(r"&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]+);?", re.IGNORECASE)
-_DECODED_HTML_UI_RE = re.compile(r"[\u2190-\u21ff\u00ae\u00a9\u2122]")
-_ORG_SENTENCE_WORDS: frozenset[str] = frozenset({
-    "the", "a", "an", "how", "cancel", "reply", "post", "posts", "latest",
-    "popular", "tutorial", "tutorials", "guide", "home", "news", "security",
-    "advertisement", "advertising", "speaking", "subscribe", "mailing",
-    "list", "leave", "recent", "author", "actively", "exploited", "analyzing",
-    "targeted", "intrusions", "through", "stay", "upcoming", "seizes",
-    "related", "articles", "dummies", "vulnerability", "date", "added",
-    "expands", "leadership", "approach", "radar", "supply", "chain",
-    "compromise", "commercial", "live", "proxies", "software", "office",
-    "oauth", "os", "application", "server", "protect", "sharepoint",
-    "tv", "stealer", "stack", "protection", "organization", "redacted",
-    "organizations", "are", "building", "achieves", "patches", "moves",
-    "contact", "rule", "addition", "activated", "scale", "automation",
-    "algorithmic", "payload", "decomposition", "third-party", "third",
-    "party", "additional", "resources", "learn", "join", "dll",
-    "sideloading", "factory", "malware", "threat", "research", "tags",
-    "copilot", "next-gen", "xmrig", "authenticode", "updatefactor",
-    "coldfusion", "falcon", "openid", "overwatch", "analysis", "table",
-    "antimalware", "scan", "interface", "bypass", "static", "file-size",
-    "inflation", "loaders", "data", "exe", "getassertion",
-    "getcredentials", "imphash", "cluster", "role", "remote", "desktop",
-    "protocol", "sha-256", "webauthn", "yubikey", "systemagentservice",
-    "chromium", "clientdatahash", "gift", "card", "fraud", "macos",
-    "linux", "tools", "typescript", "webassembly", "webhid",
-    "ai-hallucinated", "hallucinated", "domains", "comparison", "llm",
-    "dataset", "jaccard", "multi-signal", "risk", "classification",
-    "share", "executive", "summary", "temperature", "configuration",
-    "account", "numbers", "balanced", "llm2", "briefs",
-})
-_ORG_ALLOWED_CONNECTORS: frozenset[str] = frozenset({
-    "and", "of", "for", "to", "in", "on", "with",
-})
-_ORG_SUFFIX_HINTS: frozenset[str] = frozenset({
-    "agency", "bank", "bureau", "center", "centre", "committee", "company",
-    "corp", "corporation", "council", "department", "directorate", "division",
-    "foundation", "gmbh", "group", "inc", "institute", "labs", "limited",
-    "llc", "ltd", "networks", "team", "technologies", "university", "union",
-})
-
-
-def _is_valid_org_name(value: str) -> bool:
-    v = value.strip()
-    v_lower = v.lower()
-    if v_lower in ENTITY_BLOCKLIST:
-        return False
-    if len(v) < 3 or len(v) > 60:
-        return False
-    if re.search(r"[:,/()]", v):
-        return False
-    if re.search(r"\.[a-z0-9]{2,5}\b", v_lower):
-        return False
-    if re.search(r"\d{1,2}/\d{1,2}/\d{2,4}", v):
-        return False
-    if _HTML_ENTITY_RE.search(v) or _DECODED_HTML_UI_RE.search(v):
-        return False
-    if re.search(r"\b[a-z]+['\u2019]\w*\b", v_lower):
-        return False
-    tokens = re.findall(r"[a-z0-9]+(?:[-.][a-z0-9]+)*", v_lower)
-    if not tokens:
-        return False
-    if any(token.isdigit() for token in tokens):
-        return False
-    if any(token == "cve" or token.startswith("cve-") for token in tokens):
-        return False
-    if len(tokens) > 4:
-        return False
-    if "-" in v and not any(token in _ORG_SUFFIX_HINTS for token in tokens):
-        return False
-    if any(token in _ORG_SENTENCE_WORDS for token in tokens):
-        return False
-    word_tokens = [token for token in tokens if re.search(r"[a-z]", token)]
-    if len(word_tokens) > 1:
-        generic_words = [
-            token for token in word_tokens
-            if token in ENTITY_BLOCKLIST or token in _ORG_ALLOWED_CONNECTORS
-        ]
-        if len(generic_words) >= len(word_tokens):
-            return False
-    if re.fullmatch(r"[A-Z_]+:?\d*", v) and v_lower not in COMMON_THREAT_TERMS:
-        return False
-    if _ORG_NOISE_RE.search(v):
-        return False
-    return True
-
-
 # ---------------------------------------------------------------------------
 # NormalizedEntity dataclass
 # ---------------------------------------------------------------------------
@@ -1555,6 +1460,17 @@ def normalize_entities(
             canonical = _normalize_value(entity_type, raw_value)
             if not canonical:
                 continue
+
+            if entity_type == "ORGANIZATION_NAME":
+                # Repair-then-reject (extractor/org_filter.py): link-directory
+                # titles, markup and listing residue are not organisations and
+                # must not reach the DB or the NVD CPE lookup.
+                cleaned = _org_filter.clean_org_name(canonical)
+                if cleaned is None:
+                    noise_count += 1
+                    logger.debug("Org filter rejected an ORGANIZATION_NAME candidate")
+                    continue
+                canonical = cleaned
 
             if (
                 entity_type == "ORGANIZATION_NAME"
