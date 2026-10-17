@@ -215,9 +215,9 @@ is off unless you set `VOIDACCESS_INGEST_ENABLED=true` on a corpus service you r
   made as `await session.get(...)` are counted too, and a feed that failed is not
   requested again in the same run. Sources that silently read `ok` while every
   call 404'd now read `error`.
-- **Dead endpoints replaced:** ransomware.live groups now come from its data feed
-  (`data.ransomware.live/groups.json`; the API's `/groups` and `/group/{name}`
-  are gone), CISA advisories from `cybersecurity-advisories/all.xml`, and
+- **Dead endpoints replaced:** ransomware.live groups and victim posts now come
+  from its data feed (`data.ransomware.live/groups.json` and `victims.json`; the
+  API's `/groups`, `/group/{name}` and `/v2` victim endpoints are gone), CISA advisories from `cybersecurity-advisories/all.xml`, and
   justice.gov press releases from `/news/rss`. The last two are RSS and are now
   parsed as such (the justice.gov feed had never parsed).
 - **MITRE ATT&CK techniques are attributed only to a group the run found, by
