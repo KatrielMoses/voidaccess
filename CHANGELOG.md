@@ -2,7 +2,7 @@
 
 All notable changes to VoidAccess are documented here.
 
-## [2.1.0] - 2026-10-17
+## [2.1.0] - 2026-10-18
 
 A security release for multi-user self-hosted installs, plus everything built since 2.0.3: a shared knowledge
 tier and owned page index, new intelligence sources, safety parity between the CLI and the web app, an official
