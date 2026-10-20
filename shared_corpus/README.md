@@ -145,7 +145,7 @@ populated by *other users' runs*:
 never a private-tier table — so one user's run accelerates the next without ever
 exposing that user's investigation/query/report. `tests/test_shared_read.py`
 asserts (via captured SQL) the read path's table set ⊆ the three shared tables.
-Consent-gated (P2.4): private mode reads nothing central (`skipped_private=True`),
+Consent-gated (P2.4): corpus sharing is opt-in. Private mode reads nothing central (`skipped_private=True`),
 and the $0/no-corpus path serves nothing without crashing.
 
 The served cache-hit count flows into the `pages_cache_hits` metric, so the

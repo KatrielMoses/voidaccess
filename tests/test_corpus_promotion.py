@@ -52,7 +52,8 @@ def _cfg() -> TrustGateConfig:
 
 
 @pytest.fixture
-def engine(tmp_path):
+def engine(tmp_path, monkeypatch):
+    monkeypatch.setattr("config.PRIVATE_MODE", False)
     db_path = (tmp_path / "promote.db").as_posix()
     eng = create_engine(
         f"sqlite:///{db_path}", connect_args={"check_same_thread": False}

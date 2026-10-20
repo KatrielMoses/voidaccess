@@ -56,6 +56,7 @@ def Session(tmp_path):
 
 @pytest.fixture
 def s3_configured(monkeypatch):
+    monkeypatch.setattr(config, "PRIVATE_MODE", False)
     monkeypatch.setattr(config, "S3_ENDPOINT_URL", _ENDPOINT, raising=False)
     monkeypatch.setattr(config, "S3_BUCKET", _BUCKET, raising=False)
     monkeypatch.setattr(config, "S3_ACCESS_KEY_ID", "AKIAEXAMPLE", raising=False)

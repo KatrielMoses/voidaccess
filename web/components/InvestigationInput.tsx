@@ -126,6 +126,8 @@ export function InvestigationInput() {
       <div className="group relative w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-raised)] transition-all duration-300 focus-within:border-[var(--accent-border)] focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
         <div className="p-4">
           <textarea
+            aria-label="Investigation query"
+            aria-describedby="investigation-data-disclosure"
             ref={taRef}
             value={value}
             onChange={(e) => {
@@ -177,6 +179,14 @@ export function InvestigationInput() {
           </button>
         </div>
       </div>
+
+      <p id="investigation-data-disclosure" className="max-w-2xl text-sm text-[var(--text-secondary)]">
+        Search providers receive your query. The selected model receives your query
+        and collected page text; hosted models send that data to their provider.
+        Enabled enrichment services may receive discovered indicators, including
+        email addresses. Corpus private mode controls sharing with the corpus;
+        it does not disable these external requests. Use public information here.
+      </p>
 
       {error && (
         <div className="flex items-center gap-2 font-mono text-[13px] text-[var(--warning)]">

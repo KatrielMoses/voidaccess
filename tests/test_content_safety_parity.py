@@ -224,7 +224,7 @@ def test_api_side_source_records_gated_before_extraction():
 
 
 # ---------------------------------------------------------------------------
-# (e) VOIDACCESS_SAFETY_BYPASS_PROMPT=off
+# (e) Prompts omit the removed authorization bypass, including legacy settings.
 # ---------------------------------------------------------------------------
 
 
@@ -266,19 +266,17 @@ def _all_prompts(llm_mod) -> dict[str, str]:
     return prompts
 
 
-def test_safety_bypass_prompt_off_removes_text_from_refine_filter_summary(monkeypatch):
-    monkeypatch.setenv("VOIDACCESS_SAFETY_BYPASS_PROMPT", "off")
+def test_legacy_bypass_setting_does_not_restore_removed_prompt(monkeypatch):
+    monkeypatch.setenv("VOIDACCESS_SAFETY_BYPASS_PROMPT", "on")
     import voidaccess.llm as llm
 
-    assert llm.safety_bypass_prompt_fragment() == ""
     for name, sent in _all_prompts(llm).items():
         assert "CRITICAL AUTHORIZATION" not in sent, name
 
 
-def test_safety_bypass_prompt_on_retains_fragment(monkeypatch):
+def test_prompts_omit_authorization_bypass_by_default(monkeypatch):
     monkeypatch.delenv("VOIDACCESS_SAFETY_BYPASS_PROMPT", raising=False)
     import voidaccess.llm as llm
 
-    assert "CRITICAL AUTHORIZATION" in llm.safety_bypass_prompt_fragment()
     for name, sent in _all_prompts(llm).items():
-        assert "CRITICAL AUTHORIZATION" in sent, name
+        assert "CRITICAL AUTHORIZATION" not in sent, name

@@ -45,6 +45,7 @@ async def _no_feed_matches(entities):
 
 @pytest.fixture
 def ctx(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PRIVATE_MODE", False)
     engine = create_engine(
         f"sqlite:///{(tmp_path / 'ingest.db').as_posix()}",
         connect_args={"check_same_thread": False},
