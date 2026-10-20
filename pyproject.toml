@@ -27,6 +27,7 @@ dependencies = [
     "textual==8.2.7",
     "click==8.3.2",
     "fastapi==0.136.0",
+    "uvicorn[standard]==0.54.0",
     "aiohttp==3.13.5",
     "aiohttp-socks==0.11.0",
     "alembic==1.18.4",
@@ -34,6 +35,8 @@ dependencies = [
     "pillow==12.2.0",
     "sqlalchemy[asyncio]==2.0.49",
     "aiosqlite==0.22.1",
+    "psycopg2-binary==2.9.13",
+    "asyncpg==0.32.0",
     "filelock==3.29.0",
     # P3-HARDEN / DRIFT-1: numpy 2.x breaks the sentence-transformers/torch stack
     # (real MiniLM fails to import — e.g. "cannot import name 'ComplexWarning'"),

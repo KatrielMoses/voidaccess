@@ -367,17 +367,17 @@ ETHERSCAN_API_KEY = _clean_env("ETHERSCAN_API_KEY", "")
 # at the point where authentication is needed.
 JWT_SECRET = _clean_env("JWT_SECRET")
 
-# Token blacklist Redis (optional — omit to disable blacklist checks)
-REDIS_URL = _clean_env("REDIS_URL")
+# Optional Redis override for token revocation; blank/unset uses the database.
+REDIS_URL = _clean_env("REDIS_URL") or None
 
 # Playwright JS rendering for JavaScript-heavy .onion sites
-# Set to False to disable (faster startup, lower memory usage)
+# Opt in only when JS rendering is needed; the browser processes untrusted pages.
 # Requires: playwright installed + browsers downloaded
-PLAYWRIGHT_ENABLED = _clean_env("PLAYWRIGHT_ENABLED", "true")
+PLAYWRIGHT_ENABLED = _clean_env("PLAYWRIGHT_ENABLED", "false")
 if PLAYWRIGHT_ENABLED is not None:
     PLAYWRIGHT_ENABLED = PLAYWRIGHT_ENABLED.lower() == "true"
 else:
-    PLAYWRIGHT_ENABLED = True
+    PLAYWRIGHT_ENABLED = False
 
 
 DEFAULT_MODELS = {

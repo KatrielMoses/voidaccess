@@ -134,18 +134,16 @@ async def get_current_user(
         raise credentials_exception
 
     if token_payload.jti:
-        # Fail closed when revocation was opted in (REDIS_URL set) but the
-        # blacklist store is unreachable: we cannot confirm the token has not
-        # been revoked, so we refuse rather than silently honour it. Enforcement
-        # resumes automatically once Redis is reachable again. When REDIS_URL is
-        # unset, is_token_revoked() simply returns False (disabled by design).
+        # Fail closed if the configured Redis or database revocation store is
+        # unreachable: we cannot confirm the token has not been revoked.
+        # Checks are disabled only when neither store is configured.
         try:
             token_revoked = await is_token_revoked(token_payload.jti)
         except BlacklistUnavailableError:
             logger.warning(
                 "Token revocation store unavailable — failing closed (rejecting "
-                "authentication). Restore Redis, or unset REDIS_URL to disable "
-                "blacklist enforcement (fail-open by design)."
+                "authentication). Restore the configured Redis or database "
+                "revocation store."
             )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

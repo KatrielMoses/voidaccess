@@ -253,6 +253,7 @@ async def get_browser(tor_proxy_host: str = "tor", tor_proxy_port: int = 9050):
 
             _BROWSER = await _PLAYWRIGHT.chromium.launch(
                 headless=True,
+                chromium_sandbox=True,
                 # No `username`/`password` here, ever: Playwright's driver throws
                 # "Browser does not support socks5 proxy authentication" for any
                 # socks5 URL carrying credentials.  Isolation for this path comes
@@ -261,23 +262,10 @@ async def get_browser(tor_proxy_host: str = "tor", tor_proxy_port: int = 9050):
                     "server": f"socks5://{tor_proxy_host}:{socks_port}",
                 },
                 args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--no-first-run",
-                    "--no-zygote",
-                    # NO `--single-process`.  It was here until v1.9.5 and it
-                    # made Chromium abort the moment a *second* BrowserContext
-                    # was created: measured 1/4 contexts sequentially and 0/8
-                    # concurrently, every failure a TargetClosedError.  Since
-                    # fetch_with_playwright() creates one context per fetch,
-                    # that meant the first JS fallback worked, the next killed
-                    # the browser, and any two concurrent fallbacks both
-                    # failed.  `--no-zygote` was measured harmless on its own
-                    # (4/4) and is kept.  If you are tempted to re-add
-                    # `--single-process` for memory reasons, the contexts are
-                    # ~50 MB each and already closed per fetch; measure first.
+                    # Keep the sandbox and zygote enabled for untrusted pages.
                     # Privacy — match Tor Browser fingerprint loosely
                     "--disable-blink-features=AutomationControlled",
                 ],

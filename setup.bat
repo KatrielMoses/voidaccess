@@ -204,6 +204,7 @@ echo.
 
 for /f "delims=" %%i in ('!PYTHON! -c "import secrets; print(secrets.token_hex(32))"') do set JWT_SECRET=%%i
 for /f "delims=" %%i in ('!PYTHON! -c "import secrets; print(secrets.token_hex(16))"') do set POSTGRES_PASSWORD=%%i
+for /f "delims=" %%i in ('!PYTHON! -c "import secrets; print(secrets.token_hex(32))"') do set MEILI_MASTER_KEY=%%i
 
 :: Safety net: pre-flight should have already wiped stale volumes via the
 :: Reset path. If a postgres volume snuck back in, nuke it now -- the new
@@ -218,7 +219,8 @@ if not errorlevel 1 (
 
 call :env_set "JWT_SECRET" "!JWT_SECRET!"
 call :env_set "POSTGRES_PASSWORD" "!POSTGRES_PASSWORD!"
-echo %GREEN%  [OK]%NC%  Generated JWT_SECRET and POSTGRES_PASSWORD
+call :env_set "MEILI_MASTER_KEY" "!MEILI_MASTER_KEY!"
+echo %GREEN%  [OK]%NC%  Generated JWT_SECRET, POSTGRES_PASSWORD and MEILI_MASTER_KEY
 echo.
 
 :: -- STEP 4: LLM Provider -----------------------------------------------------

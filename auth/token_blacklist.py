@@ -7,10 +7,9 @@ Backends, selected at call time (so config/env changes and tests take effect):
     unreachable raises ``BlacklistUnavailableError`` so the caller fails closed.
   * REDIS_URL unset, DATABASE_URL set → **DB backend** (P2.3). Revocation works
     with **no Redis** on a single box: a revoked ``jti`` is stored in
-    ``revoked_tokens`` with its natural expiry. A transient DB error degrades
-    fail-open (returns "not revoked") rather than 503 — the service must keep
-    serving JWT auth without Redis; the DB is not an opted-in external control
-    the way REDIS_URL is.
+    ``revoked_tokens`` with its natural expiry. A DB error raises
+    ``BlacklistUnavailableError`` so authentication fails closed rather than
+    accepting a possibly-revoked token.
   * Neither set → disabled (fail-open by design); ``is_token_revoked`` returns
     False, as before.
 
@@ -39,7 +38,7 @@ BLACKLIST_PREFIX = "blacklist:"
 
 
 class BlacklistUnavailableError(RuntimeError):
-    """Raised when an opted-in blacklist store (Redis) is unreachable. Callers
+    """Raised when a configured blacklist store is unreachable. Callers
     fail closed rather than silently honour a possibly-revoked token."""
 
 

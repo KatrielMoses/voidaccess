@@ -1,16 +1,13 @@
 # ============================================================
 # VoidAccess FastAPI Dockerfile (Optimized)
-# Cold build: ~5 min | Warm rebuild: ~30s
+# Dependency layers are reusable across application-only changes.
 # ============================================================
-
-# --- Build Arguments ---
-ARG PLAYWRIGHT_ENABLED=false
-ARG GPU=false
-ARG OTX_API_KEY=""
-ARG ABUSECH_API_KEY=""
 
 # --- Builder stage ---
 FROM python:3.11-slim AS builder
+
+ARG PLAYWRIGHT_ENABLED=false
+ARG GPU=false
 
 WORKDIR /app
 
@@ -23,55 +20,36 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project metadata and source for installation from the authoritative
-# dependency manifest in pyproject.toml.
-COPY pyproject.toml README.md ./
-COPY api/ api/
-COPY analysis/ analysis/
-COPY auth/ auth/
-COPY crawler/ crawler/
-COPY db/ db/
-COPY export/ export/
-COPY extractor/ extractor/
-COPY fingerprint/ fingerprint/
-COPY graph/ graph/
-COPY i18n/ i18n/
-COPY monitor/ monitor/
-COPY scraper/ scraper/
-COPY search/ search/
-COPY sources/ sources/
-COPY utils/ utils/
-COPY voidaccess/ voidaccess/
-COPY voidaccess_cli/ voidaccess_cli/
-COPY config.py .
+# Resolve dependencies before copying application source. Read the existing
+# manifest directly rather than maintaining a second requirements list.
+COPY pyproject.toml ./
 
 # Install Python dependencies with BuildKit cache mount
 # CPU-only torch if GPU=false (default), CUDA torch if GPU=true
-RUN --mount=type=cache,target=/root/.pip \
-    if [ "$GPU" = "true" ]; then \
-        pip install --no-cache-dir .; \
-    else \
-        pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-        pip install --no-cache-dir .; \
-    fi
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ "$GPU" != "true" ]; then \
+        pip install torch --index-url https://download.pytorch.org/whl/cpu; \
+    fi && \
+    python -c "import subprocess, sys, tomllib; p=tomllib.load(open('pyproject.toml','rb'))['project']; subprocess.check_call([sys.executable, '-m', 'pip', 'install', *p['dependencies'], *p['optional-dependencies']['vector']])"
+
+# The language model is a build dependency, never downloaded by investigations.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m spacy download en_core_web_sm
 
 # Install Playwright only if explicitly enabled (opt-in)
 # Always create /ms-playwright so COPY --from=builder doesn't fail when disabled
-RUN mkdir -p /ms-playwright && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    mkdir -p /ms-playwright && \
     if [ "$PLAYWRIGHT_ENABLED" = "true" ]; then \
-        pip install --no-cache-dir playwright && \
+        pip install playwright && \
         PLAYWRIGHT_BROWSERS_PATH=/ms-playwright playwright install chromium && \
         PLAYWRIGHT_BROWSERS_PATH=/ms-playwright playwright install-deps chromium; \
     fi
 
-# Copy scripts for seed data download
-COPY scripts/ scripts/
-
-# Download seed data (handles missing keys internally)
-RUN --mount=type=cache,target=/root/.pip \
-    OTX_API_KEY=$OTX_API_KEY ABUSECH_API_KEY=$ABUSECH_API_KEY \
-    python scripts/download_seed.py || true
-
+# Install the application from its complete package tree without reinstalling
+# dependencies. This includes alembic.ini and all bundled reference data.
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-deps .
 
 # --- Runtime stage ---
 FROM python:3.11-slim
@@ -119,8 +97,8 @@ RUN mkdir -p /data /app /ms-playwright && chown -R voidaccess:voidaccess /app /d
 # Copy ms-playwright from builder
 COPY --from=builder /ms-playwright /ms-playwright
 
-# Copy seed data if it exists (using bracket wildcard to make it optional)
-COPY --from=builder /app/data/seed_data.json.g[z] /data/seed_data.json.gz
+# Use the bundled reference snapshot; builds do not query intelligence services.
+COPY --from=builder /app/data/seed_data.json.gz /data/seed_data.json.gz
 
 # Copy application code (comes last for cache optimization)
 COPY --chown=voidaccess:voidaccess . .
@@ -133,10 +111,6 @@ RUN mkdir -p /app/chroma_db && chown -R voidaccess:voidaccess /app/chroma_db
 # This directory is mounted as a named Docker volume in docker-compose so it is
 # always writable by the voidaccess user regardless of the host bind-mount.
 RUN mkdir -p /app/data && chown -R voidaccess:voidaccess /app/data
-
-# Download spaCy model at runtime if not present (defer to first run)
-RUN python -c "import spacy; spacy.load('en_core_web_sm')" 2>/dev/null || \
-    python -m spacy download en_core_web_sm
 
 # Environment variables
 ENV PYTHONPATH=/app

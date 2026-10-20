@@ -1,6 +1,6 @@
 # Self-Hosting VoidAccess
 
-VoidAccess can run as a local CLI or as a four-service Docker Compose stack with PostgreSQL, Tor, FastAPI, and the Next.js web interface.
+VoidAccess can run as a local CLI or as a five-service Docker Compose stack with PostgreSQL, Tor, Meilisearch, FastAPI, and the Next.js web interface.
 
 ## Requirements
 
@@ -26,7 +26,7 @@ cd VoidAccess
 setup.bat
 ```
 
-The setup wizard creates `.env`, generates `JWT_SECRET` and `POSTGRES_PASSWORD`, configures the selected LLM provider, collects optional enrichment keys, and starts the stack.
+The setup wizard creates `.env`, generates `JWT_SECRET`, `POSTGRES_PASSWORD`, and `MEILI_MASTER_KEY`, configures the selected LLM provider, collects optional enrichment keys, and starts the stack.
 
 ## Manual Docker Compose setup
 
@@ -37,7 +37,9 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Set at least `POSTGRES_PASSWORD`, `JWT_SECRET`, and one supported LLM provider key in `.env` before starting the stack. Keep `.env` private; it is ignored by Git.
+Set `POSTGRES_PASSWORD`, `JWT_SECRET`, `MEILI_MASTER_KEY` (at least 16 bytes), and one supported LLM provider key in `.env` before starting the stack. Generate each secret separately with `python -c "import secrets; print(secrets.token_hex(32))"`. Keep `.env` private; it is ignored by Git. The supplied stack does not run Redis: leave `REDIS_URL` unset unless you configure a reachable Redis service.
+
+All published ports bind to `127.0.0.1`. The backend receives settings from `.env`; application source is built into the image rather than mounted from the host. Rebuild the image after changing source. To serve other machines, configure an authenticated HTTPS reverse proxy and review the multi-user advisory below before changing the bindings.
 
 | Service | URL or port | Purpose |
 |---|---|---|
@@ -45,6 +47,8 @@ Set at least `POSTGRES_PASSWORD`, `JWT_SECRET`, and one supported LLM provider k
 | API | `http://localhost:8000` | REST API and `/docs` schema |
 | PostgreSQL | `localhost:5433` | Persistent investigation data |
 | Tor | `localhost:9050` | SOCKS5 access to `.onion` services |
+| Tor renderer | `localhost:9250` | Destination-isolated SOCKS5 access |
+| Meilisearch | `localhost:7700` | Persistent index; master key required |
 
 ## Operations
 
@@ -61,6 +65,8 @@ Convenience wrappers live in `scripts/`: `start.sh`, `stop.sh`, `start.bat`, and
 The checked-in [`.env.example`](../.env.example) documents all supported settings. Enrichment keys are optional and their integrations skip cleanly when unset.
 
 The Docker build definitions and override example live in [`docker/`](../docker/). To customize local service settings, copy `docker/docker-compose.override.yml.example` to `docker-compose.override.yml` in the repository root.
+
+JavaScript rendering is disabled by default. To enable it, set `PLAYWRIGHT_ENABLED=true` and rebuild the backend. Chromium runs as a non-root user with its sandbox enabled. If the host/container cannot support that sandbox, leave rendering disabled; do not add `--no-sandbox` or run the container as root. HTML collection remains available without browser rendering.
 
 ## API authentication
 
