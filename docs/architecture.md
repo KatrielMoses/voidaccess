@@ -1645,9 +1645,9 @@ Search-stage source ids (enrichment ids are in 13.16):
 | `torch` | Torch onion search engine | `sources/engines.py` | on our keys (row 36) |
 | `haystack` | Haystack onion search engine | `sources/engines.py` | on our keys (row 36) |
 | `paste_sites` | umbrella for the four clearnet paste sites | `sources/paste_scraper.py` | off (row 38) |
-| `pastebin` | Pastebin search and raw fetch | `sources/paste_scraper.py` | off (row 38) |
-| `paste_ee` | paste.ee search and fetch | `sources/paste_scraper.py` | off (row 38) |
-| `dpaste` | dpaste.org search and fetch | `sources/paste_scraper.py` | off (row 38) |
+| `pastebin` | Pastebin; anonymous search unavailable, discovered URLs only | `sources/paste_scraper.py` | off (row 38) |
+| `paste_ee` | paste.ee; anonymous search unavailable, discovered URLs only | `sources/paste_scraper.py` | off (row 38) |
+| `dpaste` | dpaste.org; anonymous search unavailable, discovered URLs only | `sources/paste_scraper.py` | off (row 38) |
 | `rentry` | Rentry raw fetch (no search endpoint) | `sources/paste_scraper.py` | off (row 38) |
 | `github` | GitHub code and repository search | `sources/github_scraper.py` | on our keys with one token and caching (row 31) |
 | `gitlab` | GitLab snippet and project search | `sources/gitlab_scraper.py` | BYO only until terms are read (row 32) |

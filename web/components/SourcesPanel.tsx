@@ -1,5 +1,7 @@
 "use client";
 
+import type { SourceEntry, SourceResult } from "@/lib/types/investigation";
+
 const SOURCE_LABELS: Record<string, string> = {
   tor_search: "Tor Search",
   otx: "AlienVault OTX",
@@ -9,14 +11,17 @@ const SOURCE_LABELS: Record<string, string> = {
   ransomware_live: "ransomware.live",
   ransomlook: "ransomlook.io",
   cisa: "CISA KEV",
+  cisa_kev: "CISA KEV",
   nvd: "NVD 2.0",
   shodan: "Shodan InternetDB",
+  shodan_internetdb: "Shodan InternetDB",
   virustotal: "VirusTotal",
   securitytrails: "SecurityTrails",
   github: "GitHub",
   gitlab: "GitLab",
   paste_sites: "Paste Sites",
   rss_feeds: "RSS Feeds",
+  rss: "RSS Feeds",
   circl_pdns: "CIRCL pDNS",
   email_reputation: "Email Reputation",
   xposedornot: "XposedOrNot",
@@ -63,40 +68,37 @@ const SOURCE_KEY_HINTS: Record<string, string> = {
 
 type DotColor = "green" | "gray" | "yellow" | "red" | "orange";
 
-function getDotColor(status: string): DotColor {
-  if (!status || status.startsWith("skipped") || status === "pending") return "gray";
-  if (status === "timed_out") return "orange";
-  if (status === "error") return "red";
-  if (status.includes("_0_")) return "yellow";
-  if (status.startsWith("ok")) return "green";
+function sourceEntry(raw: SourceResult): SourceEntry {
+  if (typeof raw !== "string") return raw;
+  const count = raw.match(/^ok_(\d+)_/);
+  return { status: count ? "ok" : raw, ...(count ? { count: Number(count[1]) } : {}) };
+}
+
+function getDotColor({ status, count, requests }: SourceEntry): DotColor {
+  if (status === "timed_out" || status === "partial") return "orange";
+  if (status === "error" || status.startsWith("error_") || status.startsWith("http_")) return "red";
+  if (status === "ok") return count === 0 ? (requests === 0 ? "gray" : "yellow") : "green";
   return "gray";
 }
 
-function getResultCount(status: string): string | null {
-  const m = status.match(/ok_(\d+)_/);
-  return m ? m[1] : null;
-}
-
-function getTooltip(key: string, status: string): string {
-  const label = SOURCE_LABELS[key] ?? key;
-  if (!status || status === "pending") return `${label}: pending`;
-  if (status === "skipped_no_key") {
+function describeSource(key: string, entry: SourceEntry): string {
+  const { status, count, requests } = entry;
+  if (status === "no_key" || status === "skipped_no_key") {
     const hint = SOURCE_KEY_HINTS[key];
-    return hint
-      ? `${label}: skipped — no API key configured (${hint})`
-      : `${label}: skipped — no API key configured`;
+    return `No API key${hint ? ` (${hint})` : ""}`;
   }
-  if (status === "skipped_disabled") return `${label}: disabled via env var`;
-  if (status === "skipped_not_implemented") return `${label}: key present but not yet wired`;
-  if (status === "timed_out") return `${label}: did not finish in time (timed out)`;
-  if (status === "error") return `${label}: failed with error`;
-  const count = getResultCount(status);
-  if (count === "0") return `${label}: ran, no results`;
-  if (count !== null) {
-    const unit = status.includes("_pages") ? "pages" : status.includes("_enrichments") ? "enrichments" : "results";
-    return `${label}: ${count} ${unit}`;
-  }
-  return `${label}: ok`;
+  if (status === "disabled" || status === "skipped_disabled") return "Disabled";
+  if (status === "skipped_by_allowlist") return "Excluded by source selection";
+  if (status === "skipped_not_implemented") return "Integration unavailable";
+  if (status === "skipped") return key === "paste_sites" || ["pastebin", "paste_ee", "dpaste", "rentry"].includes(key)
+    ? "No supported anonymous search" : "Not run";
+  if (status.startsWith("skipped")) return status.replaceAll("_", " ");
+  if (status === "timed_out") return "Timed out";
+  if (status === "partial") return `Partial results (${count ?? 0}); some requests failed`;
+  if (status === "error" || status.startsWith("error_") || status.startsWith("http_")) return "Failed";
+  if (status === "ok" && count === 0 && requests === 0) return "No results; no external requests recorded";
+  if (status === "ok") return count === undefined ? "Completed" : count === 0 ? "No results" : `${count} results`;
+  return status === "pending" ? "Pending" : status.replaceAll("_", " ");
 }
 
 const DOT_CLASSES: Record<DotColor, string> = {
@@ -111,12 +113,12 @@ const LEGEND = [
   { color: "green" as DotColor, label: "Results" },
   { color: "yellow" as DotColor, label: "No results" },
   { color: "gray" as DotColor, label: "Skipped" },
-  { color: "orange" as DotColor, label: "Timed out" },
+  { color: "orange" as DotColor, label: "Partial / timed out" },
   { color: "red" as DotColor, label: "Error" },
 ];
 
 interface Props {
-  sourcesUsed: Record<string, string>;
+  sourcesUsed: Record<string, SourceResult>;
 }
 
 export function SourcesPanel({ sourcesUsed }: Props) {
@@ -152,11 +154,12 @@ export function SourcesPanel({ sourcesUsed }: Props) {
 
       <div className="flex flex-wrap gap-x-5 gap-y-3">
         {allKeys.map(key => {
-          const status = sourcesUsed[key] ?? "";
-          const color = getDotColor(status);
+          const entry = sourceEntry(sourcesUsed[key]);
+          const color = getDotColor(entry);
           const label = SOURCE_LABELS[key] ?? key;
-          const tip = getTooltip(key, status);
-          const count = getResultCount(status);
+          const description = describeSource(key, entry);
+          const requestDetail = entry.requests === undefined ? "" : ` · ${entry.requests} requests`;
+          const tip = `${label}: ${description}${requestDetail}`;
 
           return (
             <div
@@ -166,15 +169,12 @@ export function SourcesPanel({ sourcesUsed }: Props) {
             >
               <span className={`h-2 w-2 rounded-full shrink-0 ${DOT_CLASSES[color]}`} />
               <span className="text-[12px] text-[var(--text-primary)]">{label}</span>
-              {count !== null && count !== "0" && (
-                <span className="text-[10px] font-mono text-[var(--text-muted)]">
-                  ({count})
-                </span>
-              )}
+              <span className="text-[10px] text-[var(--text-muted)]">{description}{requestDetail}</span>
             </div>
           );
         })}
       </div>
+      <p className="text-xs text-[var(--text-muted)]">Completion describes the investigation run. Skipped or failed sources leave gaps in coverage.</p>
     </div>
   );
 }

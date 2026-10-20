@@ -29,6 +29,16 @@ export type InfraCluster = {
   description: string;
 };
 
+export type SourceEntry = {
+  status: string;
+  count?: number;
+  requests?: number;
+  [key: string]: unknown;
+};
+
+// Older saved investigations contain status strings; new runs include counts.
+export type SourceResult = SourceEntry | string;
+
 export type InvestigationSummary = {
   id: number;
   run_id: string;
@@ -46,7 +56,7 @@ export type InvestigationSummary = {
   summary?: string | null;
   infrastructure_clusters?: InfraCluster[];
   paste_sources_used?: string[];
-  sources_used?: Record<string, string>;
+  sources_used?: Record<string, SourceResult>;
 };
 
 export type InvestigationEntity = {

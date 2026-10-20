@@ -32,7 +32,7 @@ voidaccess status
 
 ## What It Does
 
-- **Parallel collection** - searches Tor indexes, paste sites, code forges, security feeds, and curated `.onion` seeds.
+- **Parallel collection** - searches Tor indexes, code forges, security feeds, and curated `.onion` seeds; discovered public paste URLs can also be fetched.
 - **Entity extraction** - finds IOCs, wallets, credentials, handles, vulnerabilities, actors, malware, people, and organizations.
 - **Multi-source enrichment** - adds reputation, breach, passive DNS, sandbox, blockchain, and threat-feed context.
 - **Actor intelligence** - persists aliases, infrastructure, notes, timelines, and cross-investigation relationships.
@@ -46,7 +46,7 @@ voidaccess status
 | Stage | Action |
 |---|---|
 | 1 | Refine the investigation query with the selected LLM |
-| 2 | Collect from Tor search, paste sites, code forges, RSS feeds, and curated seeds in parallel |
+| 2 | Collect from Tor search, code forges, RSS feeds, and curated seeds in parallel |
 | 3 | Filter noisy or irrelevant pages |
 | 4 | Enrich the query and early indicators from threat-intelligence sources |
 | 5 | Discover additional `.onion` links recursively |
@@ -58,6 +58,12 @@ voidaccess status
 | 11 | Cross-reference entities against historical and seed datasets |
 | 12 | Build relationships, communities, and infrastructure clusters |
 | 13 | Generate the final intelligence summary and export-ready result |
+
+Anonymous global search is unavailable for the configured Pastebin, dpaste,
+paste.ee, and Rentry connectors; these searches are reported as skipped.
+Etherscan lookups use API V2 for Ethereum mainnet and require an Etherscan key.
+Source rows distinguish disabled, unconfigured, skipped, failed, partial, and
+empty results. A completed investigation can still have gaps in coverage.
 
 Full pipeline behavior, timeouts, recovery, and data flow are documented in [Architecture](docs/architecture.md).
 

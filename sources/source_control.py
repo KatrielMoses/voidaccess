@@ -483,7 +483,7 @@ def resolve_status(
         return STATUS_DISABLED
     tracker = get_tracker()
     state = tracker.states.get(source_id)
-    if state in (STATUS_DISABLED, STATUS_SKIPPED_BY_ALLOWLIST):
+    if state in (STATUS_DISABLED, STATUS_SKIPPED_BY_ALLOWLIST, STATUS_SKIPPED):
         return state
     if timed_out:
         return STATUS_TIMED_OUT
@@ -539,6 +539,8 @@ def normalize_module_status(source_id: str, raw: object) -> str:
     text = str(raw or "").strip().lower()
     if text.startswith("ok"):
         return resolve_status(source_id)
+    if text == "skipped_disabled":
+        return STATUS_DISABLED
     if text == "disabled":
         return disabled_reason(source_id)
     if text in ("skipped_by_allowlist", STATUS_NO_KEY) or text.startswith("skipped_no_key"):
@@ -608,6 +610,9 @@ def finalize_sources_used(sources_used: dict) -> dict:
             sources_used[source_id]["requests"] = made
 
     # Every present entry carries a request count.
+    for source_id in tracker.snapshot_states():
+        if source_id not in sources_used:
+            sources_used[source_id] = source_entry(source_id)
     for source_id, entry in sources_used.items():
         if isinstance(entry, dict):
             entry.setdefault("requests", tracker.request_count(source_id))
