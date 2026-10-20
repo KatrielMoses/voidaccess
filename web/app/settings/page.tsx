@@ -57,7 +57,7 @@ const API_KEY_DEFS: ApiKeyDef[] = [
   {
     key_name: "OPENAI_API_KEY",
     label: "OpenAI",
-    description: "Enables GPT-4o and GPT-4 models",
+    description: "Enables current OpenAI text and reasoning models",
   },
   {
     key_name: "ANTHROPIC_API_KEY",
@@ -72,12 +72,12 @@ const API_KEY_DEFS: ApiKeyDef[] = [
   {
     key_name: "OPENROUTER_API_KEY",
     label: "OpenRouter",
-    description: "Access 100+ models including free tier options",
+    description: "Model catalogue and routing; availability and pricing depend on the model",
   },
   {
     key_name: "GROQ_API_KEY",
-    label: "Groq (Free tier)",
-    description: "Fast inference — Llama 3.3 70B free. Sign up at console.groq.com",
+    label: "Groq",
+    description: "Hosted GPT-OSS and other available models. Account limits and pricing apply.",
   },
   {
     key_name: "OTX_API_KEY",
@@ -181,7 +181,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="mb-6 rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-yellow-400">
-          💡 Free options: Groq offers fast Llama 3 inference with no credit card required (console.groq.com). OpenRouter has free model access. Google Gemini has a free tier via AI Studio. You can also run models locally with Ollama (no API key needed).
+          Provider model lists use your configured keys. Availability, pricing, and free quotas depend on the provider and your account. Ollama uses models installed on your local server and needs no API key.
         </div>
 
         {error && (

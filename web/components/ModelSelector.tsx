@@ -39,33 +39,6 @@ interface ValidateResult {
 }
 
 // ---------------------------------------------------------------------------
-// Client-side cache (localStorage with 5-min TTL)
-// ---------------------------------------------------------------------------
-
-const CACHE_KEY = "va_model_list_cache";
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-function getCachedModelList(): ModelListResponse | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const { ts, data } = JSON.parse(raw);
-    if (Date.now() - ts > CACHE_TTL_MS) return null;
-    return data as ModelListResponse;
-  } catch {
-    return null;
-  }
-}
-
-function setCachedModelList(data: ModelListResponse) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
-  } catch {
-    // ignore quota errors
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -102,11 +75,6 @@ interface ModelSelectorProps {
 // ---------------------------------------------------------------------------
 
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
-  const DEFAULT_MODEL_ID    = "openrouter/deepseek/deepseek-chat";
-  const DEFAULT_MODEL_LABEL = "DeepSeek Chat";
-  // Keep backward-compat alias used elsewhere in the component
-  const DEFAULT_PLATFORM_MODEL = DEFAULT_MODEL_ID;
-
   const [modelList, setModelList] = useState<ModelListResponse | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
@@ -114,10 +82,6 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<"browse" | "custom">("browse");
   const [search, setSearch] = useState("");
-
-  // Start with the DeepSeek default so the button shows the correct label
-  // instantly on page load — no flash of Llama or empty state.
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL_ID);
 
   const [customInput, setCustomInput] = useState("");
   const [validating, setValidating] = useState(false);
@@ -129,24 +93,23 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
-  // Notify parent immediately on mount so the form always has a valid model
-  // selected even before the async list fetch completes.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   useEffect(() => {
-    if (!value) {
-      onChangeRef.current(DEFAULT_MODEL_ID);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (value || !modelList) return;
+    const available = modelList.providers
+      .filter((provider) => provider.configured)
+      .flatMap((provider) => provider.models);
+    const initial = available.find((model) => model.default)
+      ?? available.find((model) => model.recommended)
+      ?? available[0];
+    if (initial) onChangeRef.current(initial.id);
+  }, [value, modelList]);
 
   // ── Fetch model list ──────────────────────────────────────────────────────
 
-  const fetchModelList = useCallback(async (force = false) => {
-    if (!force) {
-      const cached = getCachedModelList();
-      if (cached) { setModelList(cached); return; }
-    }
+  // The server cache is scoped to the authenticated user; localStorage is not.
+  const fetchModelList = useCallback(async () => {
     setLoadingList(true);
     setListError(null);
     try {
@@ -157,7 +120,6 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
       if (!res.ok) throw new Error(`Failed to load models (${res.status})`);
       const data: ModelListResponse = await res.json();
       setModelList(data);
-      setCachedModelList(data);
     } catch (e) {
       setListError(e instanceof Error ? e.message : "Failed to load models");
     } finally {
@@ -166,17 +128,6 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   }, []);
 
   useEffect(() => { void fetchModelList(); }, [fetchModelList]);
-
-  // ── Sync when parent passes a value, or when the fetched list has a
-  //    server-side default that differs from our client-side default.
-
-  useEffect(() => {
-    // Only sync when parent explicitly controls the value
-    if (value) {
-      setSelectedModel(value);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
 
   // ── Close on outside click ────────────────────────────────────────────────
 
@@ -229,7 +180,6 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const handleCustomInput = (v: string) => {
     setCustomInput(v);
     triggerValidation(v);
-    if (v.trim()) onChange(v.trim());
   };
 
   // ── Flat filterable model list for browse mode ────────────────────────────
@@ -284,13 +234,10 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
 
   // ── Derived display name ──────────────────────────────────────────────────
 
-  const displayModelId = value || selectedModel;
+  const displayModelId = value;
 
   const displayName = (() => {
-    if (!displayModelId) return DEFAULT_MODEL_LABEL;
-    // If the list hasn't loaded yet, fall back to the label for the default
-    if (displayModelId === DEFAULT_MODEL_ID && allModels.length === 0)
-      return DEFAULT_MODEL_LABEL;
+    if (!displayModelId) return loadingList ? "Loading models…" : "Select a model";
     const found = allModels.find((m) => m.id === displayModelId);
     return found ? found.name : parseModelDisplayName(displayModelId);
   })();
@@ -324,7 +271,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
       <button
         id="model-selector-trigger"
         type="button"
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={isOpen}
         onClick={() => setIsOpen((v) => !v)}
         className="flex items-center gap-2 rounded-md border border-[var(--border-dim)] bg-[var(--bg-overlay)] px-2.5 py-1 font-mono text-[11px] text-[var(--text-secondary)] outline-none transition-colors hover:border-[var(--border-subtle)] hover:text-[var(--text-primary)] focus:border-[var(--accent-border)]"
@@ -394,6 +341,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                   <input
                     ref={searchRef}
                     type="text"
+                    aria-label="Search models"
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setFocusedIndex(-1); }}
                     placeholder="Search models..."
@@ -402,6 +350,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                   {search && (
                     <button
                       type="button"
+                      aria-label="Clear model search"
                       onClick={() => setSearch("")}
                       className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                     >
@@ -429,12 +378,12 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                   </div>
                 )}
                 {grouped.map(({ provider, models }) => (
-                  <div key={provider}>
+                  <div key={provider} role="listbox" aria-label={`${provider} models`}>
                     <div className="sticky top-0 z-10 bg-[var(--bg-surface)] px-3 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
                       {provider}
                     </div>
                     {models.map((m) => {
-                      const globalIdx = allModels.findIndex((am) => am.id === m.id);
+                      const globalIdx = filtered.findIndex((am) => am.id === m.id);
                       return (
                         <button
                           key={m.id}
@@ -480,12 +429,14 @@ aria-selected={displayModelId === m.id}
             <div className="p-3">
               <p className="mb-2 font-mono text-[10px] text-[var(--text-muted)]">
                 Enter any model ID supported by your configured providers.
+                Validation sends a short prompt to the selected provider and may incur charges.
               </p>
               <input
                 type="text"
+                aria-label="Custom model ID"
                 value={customInput}
                 onChange={(e) => handleCustomInput(e.target.value)}
-                placeholder="e.g. openrouter/mistralai/mistral-7b-instruct"
+                placeholder="e.g. gpt-6-luna or openrouter/deepseek/deepseek-v4.1-flash"
                 className="w-full rounded-md border border-[var(--border-dim)] bg-[var(--bg-overlay)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-border)]"
               />
               {validating && (
@@ -500,7 +451,7 @@ aria-selected={displayModelId === m.id}
                 </p>
               )}
               <p className="mt-1 font-mono text-[9px] text-[var(--text-muted)]">
-                Default: DeepSeek Chat via OpenRouter (fast, affordable, no refusals)
+                Select a model from a provider you have configured.
               </p>
               <button
                 type="button"

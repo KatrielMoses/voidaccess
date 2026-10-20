@@ -381,17 +381,17 @@ else:
 
 
 DEFAULT_MODELS = {
-    "openrouter": "deepseek/deepseek-chat",
-    "openai":     "gpt-4o-mini",
-    "anthropic":  "claude-haiku-4-5-20251001",
-    "google":     "gemini-1.5-flash",
-    "groq":       "llama-3.3-70b-versatile",
-    "ollama":     "llama3.2",
+    "openrouter": "deepseek/deepseek-v4.1-flash",
+    "openai":     "gpt-6-luna",
+    "anthropic":  "claude-haiku-5-5",
+    "google":     "gemini-3.8-flash",
+    "groq":       "openai/gpt-oss-120b",
+    "ollama":     "gemma4",
 }
 
 DEFAULT_MODEL = os.getenv(
     "DEFAULT_MODEL",
-    "openrouter/deepseek/deepseek-chat"
+    f"openrouter/{DEFAULT_MODELS['openrouter']}"
 )
 
 REQUIRED_KEYS = [

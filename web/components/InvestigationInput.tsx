@@ -64,7 +64,7 @@ export function InvestigationInput() {
 
   const handleSubmit = async () => {
     const q = value.trim();
-    if (!q || loading) return;
+    if (!q || !model || loading) return;
     setError(null);
     setLoading(true);
     try {
@@ -166,7 +166,7 @@ export function InvestigationInput() {
           <button
             type="button"
             onClick={() => void handleSubmit()}
-            disabled={loading || !hasValue}
+            disabled={loading || !hasValue || !model}
             className="flex h-9 items-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--text-inverse)] transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-30"
           >
             {loading ? (

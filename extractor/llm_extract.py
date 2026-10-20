@@ -513,7 +513,11 @@ async def _extract_chunk(chunk: str, llm) -> str:
             response = await asyncio.wait_for(
                 silent_llm.ainvoke(prompt), timeout=_llm_chunk_timeout()
             )
-        content = response.content if hasattr(response, "content") else str(response)
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.messages import AIMessage
+
+        raw = response.content if hasattr(response, "content") else str(response)
+        content = StrOutputParser().invoke(AIMessage(content=raw))
         return content.strip()
     except asyncio.TimeoutError:
         logger.warning("LLM chunk extraction timed out after %ss", _llm_chunk_timeout())

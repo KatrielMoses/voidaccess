@@ -50,7 +50,6 @@ _common_callbacks = [BufferedStreamingHandler(buffer_limit=60)]
 
 # Define common parameters for most LLMs
 _common_llm_params = {
-    "temperature": 0,
     "streaming": True,
     "callbacks": _common_callbacks,
     "timeout": 30.0,
@@ -58,94 +57,94 @@ _common_llm_params = {
 
 RECOMMENDED_MODELS = [
     {
-        "id": "openrouter/deepseek/deepseek-chat",
-        "name": "DeepSeek Chat",
+        "id": "openrouter/deepseek/deepseek-v4.1-flash",
+        "name": "DeepSeek V4.1 Flash",
         "provider": "OpenRouter",
         "free_tier": False,
         "recommended": True,
         "default": True,
-        "note": "Recommended default — fast, cheap, no refusals"
+        "note": "Cost-efficient default via OpenRouter",
     },
     {
-        "id": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-        "name": "Llama 3.3 70B (Free)",
-        "provider": "OpenRouter",
-        "free_tier": True,
+        "id": "groq/openai/gpt-oss-120b",
+        "name": "GPT-OSS 120B",
+        "provider": "Groq",
+        "free_tier": False,
         "recommended": True,
         "default": False,
-        "note": "Free via OpenRouter — rate limited"
+        "note": "Hosted inference; account limits and pricing apply",
     },
     {
-        "id": "groq/llama-3.3-70b-versatile",
-        "name": "Llama 3.3 70B",
+        "id": "groq/openai/gpt-oss-20b",
+        "name": "GPT-OSS 20B",
         "provider": "Groq",
-        "free_tier": True,
+        "free_tier": False,
         "recommended": True,
         "default": False,
-        "note": "Free via Groq — fastest inference"
+        "note": "Smaller hosted model; account limits and pricing apply",
     },
     {
-        "id": "groq/llama-3.1-8b-instant",
-        "name": "Llama 3.1 8B Instant",
-        "provider": "Groq",
-        "free_tier": True,
-        "recommended": False,
-        "default": False,
-        "note": "Free via Groq — fastest, lower quality"
-    },
-    {
-        "id": "openrouter/deepseek/deepseek-r1",
-        "name": "DeepSeek R1",
-        "provider": "OpenRouter",
-        "free_tier": False,
-        "recommended": False,
-        "default": False,
-        "note": "Reasoning model — slower but thorough"
-    },
-    {
-        "id": "openrouter/google/gemini-2.0-flash-001",
-        "name": "Gemini 2.0 Flash",
-        "provider": "OpenRouter",
-        "free_tier": False,
-        "recommended": False,
-        "default": False,
-        "note": "Fast, large context"
-    },
-    {
-        "id": "openrouter/anthropic/claude-haiku-4-5",
-        "name": "Claude Haiku",
-        "provider": "OpenRouter",
-        "free_tier": False,
-        "recommended": False,
-        "default": False,
-        "note": "Fast Anthropic model via OpenRouter"
-    },
-    {
-        "id": "gpt-4o-mini",
-        "name": "GPT-4o Mini",
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
         "provider": "OpenAI",
         "free_tier": False,
         "recommended": True,
         "default": False,
-        "note": "Best OpenAI price/performance"
+        "note": "Cost-sensitive, high-volume tasks",
     },
     {
-        "id": "claude-haiku-4-5-20251001",
-        "name": "Claude Haiku",
+        "id": "gpt-6.1-sol",
+        "name": "GPT-6.1 Sol",
+        "provider": "OpenAI",
+        "free_tier": False,
+        "recommended": True,
+        "default": False,
+        "note": "General-purpose reasoning",
+    },
+    {
+        "id": "gpt-6-astra",
+        "name": "GPT-6 Astra",
+        "provider": "OpenAI",
+        "free_tier": False,
+        "recommended": True,
+        "default": False,
+        "note": "Demanding reasoning tasks",
+    },
+    {
+        "id": "claude-haiku-5-5",
+        "name": "Claude Haiku 5.5",
         "provider": "Anthropic",
         "free_tier": False,
         "recommended": True,
         "default": False,
-        "note": "Fastest Claude model"
+        "note": "Latency-sensitive extraction and classification",
     },
     {
-        "id": "gemini-1.5-flash",
-        "name": "Gemini 1.5 Flash",
-        "provider": "Google",
-        "free_tier": True,
+        "id": "claude-sonnet-5-5",
+        "name": "Claude Sonnet 5.5",
+        "provider": "Anthropic",
+        "free_tier": False,
         "recommended": True,
         "default": False,
-        "note": "Free tier via Google AI Studio"
+        "note": "General-purpose Claude model",
+    },
+    {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "provider": "Google",
+        "free_tier": False,
+        "recommended": True,
+        "default": False,
+        "note": "Current stable Flash model",
+    },
+    {
+        "id": "gemini-3.5-flash-lite",
+        "name": "Gemini 3.5 Flash-Lite",
+        "provider": "Google",
+        "free_tier": False,
+        "recommended": True,
+        "default": False,
+        "note": "Lower-cost Gemini option",
     },
 ]
 
@@ -382,75 +381,17 @@ def _is_set(v: Optional[str]) -> bool:
 
 # Changed it so the GUI only loaded available models
 def get_model_choices() -> List[str]:
-    """
-    Combine configured cloud models with locally available Ollama models.
-    Cloud models are shown only if required API keys are present.
-    """
-    gated_base_models: List[str] = []
-
-    openai_ok = _is_set(OPENAI_API_KEY)
-    anthropic_ok = _is_set(ANTHROPIC_API_KEY)
-    google_ok = _is_set(GOOGLE_API_KEY)
-    openrouter_ok = _is_set(OPENROUTER_API_KEY) and _is_set(OPENROUTER_BASE_URL)
-    groq_ok = _is_set(GROQ_API_KEY)
-
-    for k, cfg in _llm_config_map.items():
-        cls = cfg.get("class")
-        ctor = cfg.get("constructor_params", {}) or {}
-
-        # OpenRouter models (ChatOpenAI with base_url set to OpenRouter)
-        if cls is ChatOpenAI and (ctor.get("base_url") == OPENROUTER_BASE_URL or "openrouter" in k):
-            if openrouter_ok:
-                gated_base_models.append(k)
-            continue
-
-        # Groq models (ChatOpenAI with base_url set to Groq)
-        if cls is ChatOpenAI and ctor.get("base_url") == "https://api.groq.com/openai/v1":
-            if groq_ok:
-                gated_base_models.append(k)
-            continue
-
-        # Direct OpenAI models
-        if cls is ChatOpenAI:
-            if openai_ok:
-                gated_base_models.append(k)
-            continue
-
-        # Anthropic
-        if cls is ChatAnthropic:
-            if anthropic_ok:
-                gated_base_models.append(k)
-            continue
-
-        # Google Gemini
-        if cls is ChatGoogleGenerativeAI:
-            if google_ok:
-                gated_base_models.append(k)
-            continue
-
-        # Anything else: keep
-        gated_base_models.append(k)
-
-    # Local Models
-    dynamic_models = []
-
-    # Dynamic local models via Ollama-style API (/api/tags)
-    dynamic_models += fetch_ollama_models()
-
-    # Dynamic local models via llama.cpp which uses OpenAI style API
-    dynamic_models += fetch_llama_cpp_models()
-
-    normalized = {_normalize_model_name(m): m for m in gated_base_models}
-    for dm in dynamic_models:
-        key = _normalize_model_name(dm)
-        if key not in normalized:
-            normalized[key] = dm
-
-    ordered_dynamic = sorted(
-        [name for key, name in normalized.items() if name not in gated_base_models],
-        key=_normalize_model_name,
-    )
-    return gated_base_models + ordered_dynamic
+    """Current recommendations for configured providers, plus installed models."""
+    key_names = {
+        "OpenRouter": "OPENROUTER_API_KEY", "Groq": "GROQ_API_KEY",
+        "OpenAI": "OPENAI_API_KEY", "Anthropic": "ANTHROPIC_API_KEY",
+        "Google": "GOOGLE_API_KEY",
+    }
+    choices = [
+        m["id"] for m in RECOMMENDED_MODELS
+        if _is_set(os.getenv(key_names[m["provider"]]) or globals().get(key_names[m["provider"]]))
+    ]
+    return choices + sorted(set(fetch_ollama_models() + fetch_llama_cpp_models()))
 
 
 
@@ -499,7 +440,7 @@ def _resolve_key(key_name: str, api_keys: Optional[dict]) -> Optional[str]:
         v = api_keys.get(key_name)
         if v and str(v).strip():
             return str(v).strip()
-    return globals().get(key_name) or None
+    return os.getenv(key_name) or globals().get(key_name) or None
 
 
 def _make_openrouter_llm(model_id: str, api_keys: Optional[dict] = None):
@@ -629,7 +570,7 @@ def _resolve_model_config_by_prefix(model_choice: str) -> Optional[dict]:
             },
         }
 
-    if mc.startswith("gpt-"):
+    if mc.startswith(("gpt-", "chatgpt-", "o1-", "o3-", "o4-")) or mc in ("o1", "o3", "o4"):
         return {
             "class": ChatOpenAI,
             "constructor_params": {"model_name": mc, "api_key": OPENAI_API_KEY},
