@@ -2,9 +2,9 @@ import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const token = getSessionAuthorization();
-    const { id } = params;
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const token = await getSessionAuthorization();
+    const { id } = await params;
   let body: unknown;
   try {
     body = await request.json();

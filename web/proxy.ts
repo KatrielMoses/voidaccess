@@ -3,7 +3,7 @@ import { jwtVerify } from "jose"
 
 const PUBLIC_ROUTES = ["/login", "/reset-password"]
 
-export async function isValidToken(token: string): Promise<boolean> {
+async function isValidToken(token: string): Promise<boolean> {
   try {
     const secret = new TextEncoder().encode(process.env.JWT_SECRET)
     if (!secret || secret.length === 0) {
@@ -16,7 +16,7 @@ export async function isValidToken(token: string): Promise<boolean> {
   }
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {

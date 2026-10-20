@@ -4,7 +4,7 @@ import type { CreateInvestigationBody } from "@/lib/api";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function POST(request: Request) {
-  const token = getSessionAuthorization();
+  const token = await getSessionAuthorization();
     let body: unknown;
   try {
     body = await request.json();

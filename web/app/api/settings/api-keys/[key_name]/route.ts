@@ -5,7 +5,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ key_name: string }> }
 ) {
-  const token = getSessionAuthorization();
+  const token = await getSessionAuthorization();
   const { key_name } = await params;
   try {
     const res = await fetch(

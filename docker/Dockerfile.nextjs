@@ -2,11 +2,12 @@
 # VoidAccess Next.js Dockerfile (Optimized)
 # ============================================================
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 # Set build-time environment variables
 ARG NEXT_PUBLIC_API_URL=http://fastapi:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
 
@@ -25,7 +26,7 @@ RUN npm run build
 
 
 # --- Production stage ---
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
@@ -42,6 +43,7 @@ COPY --from=builder /app/public ./public
 
 # Runtime Environment
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=http://fastapi:8000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
