@@ -1,18 +1,17 @@
 """
 shared_corpus/consent.py — the private-mode / contribution switch (2.4).
 
-Contribution to the shared corpus is **default-on with a clear opt-out** (the
-owner decision that every install feeds the corpus by default). A private-mode
-install reads nothing from and writes nothing to the central corpus.
+Contribution to the shared corpus is opt-in. A private-mode install reads
+nothing from and writes nothing to the central corpus. Search, enrichment,
+hosted LLM requests, and local investigation storage are separate operations.
 
 This is the single predicate every shared read/write path consults. It is
 deliberately **independent of whether S3 is configured**: an operator can run
 privately even with object storage set up, and the snapshot store already
 no-ops when unconfigured — this makes the posture explicit and switchable.
 
-The flag is read *live* from ``config`` (which reads the environment), so a test
-or a one-shot ``VOIDACCESS_PRIVATE_MODE`` override takes effect without a
-re-import.
+The predicate reads the current value of ``config.PRIVATE_MODE``. Configure
+``VOIDACCESS_PRIVATE_MODE`` before importing the application.
 """
 
 from __future__ import annotations
@@ -27,4 +26,4 @@ def contribution_enabled() -> bool:
     """
     import config
 
-    return not bool(getattr(config, "PRIVATE_MODE", False))
+    return not bool(getattr(config, "PRIVATE_MODE", True))

@@ -1336,7 +1336,6 @@ At least one LLM provider key is needed for query refinement, result filtering, 
 | `GROQ_API_KEY` | — | Enables Groq fast inference |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Enables local Ollama models |
 | `LLAMA_CPP_BASE_URL` | `http://127.0.0.1:8080` | Enables llama.cpp server |
-| `VOIDACCESS_SAFETY_BYPASS_PROMPT` | `on` | When `off`, omits the LLM authorization preamble from refine, filter, and summary prompts (cloud runners). Mandatory content-safety gates are unchanged. |
 
 ### 13.3 Threat Intelligence Enrichment
 
@@ -1716,4 +1715,3 @@ Opt-in. With neither switch set, a run produces exactly the events, files and te
 **Following one URL.** `url_id` (`u1`, `u2`, ...) is allocated once per URL string per run, so `url.found` → `url.kept` / `url.dropped` → `page.fetched` → `page.entities` share it. `entity_id` (`e1`, ...) is allocated once per (type, value); `entity.found` is sent on the first sighting with the `url_id` of that page. Entities extracted from enrichment pages carry no `url_id` (those pages have no `url.found`).
 
 **Known limits.** `too_large` is in the vocabulary but the scraper truncates at 1 MB and keeps the page, so such a page reports `ok`. Successful fetches arrive together at the end of the scrape batch (after the safety scan); failures arrive live. Pages whose content duplicates another page are reported `url.dropped {reason: "duplicate"}` at the fetch stage after their `page.fetched`. The search stage's alternative queries (asked of the LLM when the first query finds fewer than 5 results) are `query.refined` events with `index` 1 and 2 in the `collect` stage.
-

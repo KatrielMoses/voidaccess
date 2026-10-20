@@ -305,13 +305,11 @@ INGEST_REGISTER_WINDOW_SECONDS = _clean_int("INGEST_REGISTER_WINDOW_SECONDS", 36
 # ---------------------------------------------------------------------------
 # Shared-corpus consent / private mode (P2.2 / requirement 2.4)
 # ---------------------------------------------------------------------------
-# Contribution to the shared corpus is default-ON with a clear opt-out. Set
-# VOIDACCESS_PRIVATE_MODE=true to run a fully private install: it reads nothing
-# from and writes nothing to the central corpus, INDEPENDENT of whether S3 is
-# configured. Read via shared_corpus.consent.contribution_enabled() (which reads
-# this value live, so tests and a one-shot override take effect).
+# Corpus sharing is opt-in: VOIDACCESS_PRIVATE_MODE=false enables shared reads
+# and writes, including configured object storage. Private mode does not block
+# search, enrichment, hosted LLM requests, or local investigation persistence.
 PRIVATE_MODE = (
-    (_clean_env("VOIDACCESS_PRIVATE_MODE", "false") or "false").strip().lower()
+    (_clean_env("VOIDACCESS_PRIVATE_MODE", "true") or "true").strip().lower()
     in ("1", "true", "yes", "on")
 )
 
@@ -443,5 +441,3 @@ def validate_config():
         # Store the guard on the process-wide logging module so compatibility
         # wrappers/reloads cannot reset it and reintroduce warning spam.
         setattr(logging, _OPTIONAL_CONFIG_WARNING_STATE, True)
-
-

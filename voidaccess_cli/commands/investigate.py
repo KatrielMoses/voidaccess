@@ -190,22 +190,6 @@ def run(
     if use_proxies:
         os.environ["VOIDACCESS_USE_PROXY"] = "true"
 
-    try:
-        import spacy
-        spacy.load("en_core_web_sm")
-    except Exception:
-        import subprocess
-        import sys
-        if not quiet:
-            console.print(
-                "  [dim]→[/dim] Installing spaCy NER model (one-time)..."
-            )
-        subprocess.run(
-            [sys.executable, "-m", "spacy",
-             "download", "en_core_web_sm"],
-            capture_output=True
-        )
-
     if quiet:
         import warnings
 
@@ -229,7 +213,7 @@ def run(
     from sources.enrichment_allowlist import EnrichmentAllowlistError, validate_enrichment_allowlist
 
     try:
-        validate_enrichment_allowlist()
+        enrichment_sources = validate_enrichment_allowlist()
     except EnrichmentAllowlistError as exc:
         console.print(f"[red]Invalid VOIDACCESS_ENRICHMENT_SOURCES:[/red] {exc}")
         raise typer.Exit(code=2)
@@ -254,6 +238,23 @@ def run(
     if fmt not in ("json", "md", "both"):
         console.print(f"[red]Invalid format:[/red] {fmt}")
         raise typer.Exit(code=2)
+
+    if not quiet:
+        console.print(
+            "[dim]Network use: search providers receive your query. Enabled "
+            "enrichment providers may receive discovered indicators, including "
+            "email addresses. Corpus private mode does not disable these requests.[/dim]"
+        )
+        if not no_llm:
+            console.print(
+                "[dim]The selected model receives your query and collected page text; "
+                "hosted models send that data to their provider.[/dim]"
+            )
+        console.print(
+            "[dim]Enrichment sources: "
+            + (", ".join(sorted(enrichment_sources)) if enrichment_sources is not None else "all eligible sources")
+            + ". Set VOIDACCESS_ENRICHMENT_SOURCES to select them.[/dim]"
+        )
 
     out_dir = Path(output).expanduser() if output else cli_config.get_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)

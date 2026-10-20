@@ -28,6 +28,13 @@ voidaccess actors
 voidaccess status
 ```
 
+Investigations make external requests. Search providers receive the query;
+hosted LLM providers receive the query and collected text, and enabled enrichment
+services may receive discovered indicators, including email addresses. Corpus
+sharing is disabled by default, but corpus private mode does not make an
+investigation offline. See [data disclosure and first-run settings](docs/self-hosting.md#data-disclosure-and-first-run-settings)
+before investigating personal information. An empty report does not prove no exposure.
+
 ![VoidAccess investigation demo](public/cli_investigation_gif.gif)
 
 ## What It Does

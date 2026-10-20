@@ -48,7 +48,8 @@ async def _reader(ref: str):
 
 
 @pytest.fixture(autouse=True)
-def _clear_blobs():
+def _clear_blobs(monkeypatch):
+    monkeypatch.setattr("config.PRIVATE_MODE", False)
     _BLOBS.clear()
     yield
     _BLOBS.clear()

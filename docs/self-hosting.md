@@ -62,6 +62,48 @@ The checked-in [`.env.example`](../.env.example) documents all supported setting
 
 The Docker build definitions and override example live in [`docker/`](../docker/). To customize local service settings, copy `docker/docker-compose.override.yml.example` to `docker-compose.override.yml` in the repository root.
 
+## Data disclosure and first-run settings
+
+An investigation contacts external sources. Search engines, code forges and paste
+searches can receive your query. Hosted LLM providers receive the query and
+collected page text. Enabled enrichment providers can receive discovered email
+addresses, domains, IPs, hashes and wallets. Optional ScrapingAnt transport sees
+the clearnet requests it handles; DeepL receives text submitted for translation.
+Tor routing for onion pages does not route these separate clearnet services.
+
+`VOIDACCESS_PRIVATE_MODE=true` is the default: shared-corpus reads, contributions
+and configured snapshot uploads are disabled. It does not disable the requests
+above or prevent local reports, page text and caches from being stored. Set it
+to `false` only when you intend to participate in the configured corpus. Snapshot
+uploads additionally require the operator's S3 endpoint, bucket and credentials.
+
+The supplied `.env.example` selects `cisa_kev,nvd,mitre_attack` for enrichment.
+These download public reference datasets rather than sending discovered email
+addresses to breach services. `VOIDACCESS_ENRICHMENT_SOURCES` controls enrichment
+only: unsetting it or leaving it blank enables every eligible enrichment source.
+Use the IDs in `sources/enrichment_allowlist.py` to select additional services;
+`VOIDACCESS_DISABLED_SOURCES` can also disable individual search or enrichment
+sources using the IDs in `sources/source_control.py`.
+
+For a first CLI experiment, use a public project name and disable Tor and LLM
+processing. In PowerShell:
+
+```powershell
+$env:VOIDACCESS_PRIVATE_MODE = "true"
+$env:VOIDACCESS_ENRICHMENT_SOURCES = "cisa_kev,nvd,mitre_attack"
+voidaccess investigate "PUBLIC PROJECT NAME" --no-tor --no-llm --depth shallow
+```
+
+This still contacts clearnet search and feed providers. Do not enter passwords,
+private documents or production credentials. Inspect the report's sources and
+coverage: missing results or an unavailable service cannot establish that no
+exposure exists. Treat inferred relationships and generated detection rules as
+leads to verify before acting on them.
+
+The CLI does not install the spaCy model during an investigation. Install it
+explicitly during setup with `python -m spacy download en_core_web_sm` if named
+entity recognition is needed; fixed-pattern extraction works without it.
+
 ## API authentication
 
 The setup wizard creates the administrator account. Request a JWT with the configured credentials:
