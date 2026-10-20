@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 import pacing
 from sources import http_pool
+from sources.source_control import record_source_failure
 from sources.enrichment_allowlist import (
     is_enrichment_source_enabled,
     validate_enrichment_allowlist,
@@ -25,7 +26,7 @@ from db.queries import upsert_entity_canonical
 logger = logging.getLogger(__name__)
 
 BLOCKCYPHER_BASE = "https://api.blockcypher.com/v1/btc/main"
-ETHERSCAN_BASE = "https://api.etherscan.io/api"
+ETHERSCAN_BASE = "https://api.etherscan.io/v2/api"
 
 # Reasonable caps to avoid hammering free APIs
 MAX_TRANSACTIONS_PER_WALLET = 50
@@ -223,6 +224,7 @@ async def lookup_ethereum_address(
             async with session.get(
                 ETHERSCAN_BASE,
                 params={
+                    "chainid": "1",
                     "module": "account",
                     "action": "balance",
                     "address": address,
@@ -231,16 +233,24 @@ async def lookup_ethereum_address(
                 },
                 timeout=timeout,
             ) as resp:
+                if resp.status != 200:
+                    result["error"] = f"http_{resp.status}"
+                    return result
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("status") == "1":
                         wei_to_eth = 1 / 10**18
                         result["balance_eth"] = int(data.get("result", 0)) * wei_to_eth
+                    else:
+                        record_source_failure("etherscan")
+                        result["error"] = "provider_rejected_balance"
+                        return result
             
             # Get transactions
             async with session.get(
                 ETHERSCAN_BASE,
                 params={
+                    "chainid": "1",
                     "module": "account",
                     "action": "txlist",
                     "address": address,
@@ -253,8 +263,20 @@ async def lookup_ethereum_address(
                 },
                 timeout=timeout,
             ) as resp:
+                if resp.status != 200:
+                    result["error"] = f"http_{resp.status}"
+                    return result
                 if resp.status == 200:
                     data = await resp.json()
+                    if (data.get("status") == "0"
+                            and data.get("result") == []
+                            and str(data.get("message", "")).lower() == "no transactions found"):
+                        result["lookup_successful"] = True
+                        return result
+                    if data.get("status") != "1":
+                        record_source_failure("etherscan")
+                        result["error"] = "provider_rejected_transactions"
+                        return result
                     if data.get("status") == "1":
                         txs = data.get("result", [])
                         result["transaction_count"] = len(txs)

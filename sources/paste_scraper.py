@@ -45,7 +45,9 @@ from urllib.parse import quote_plus
 import aiohttp
 
 import pacing
-from sources.source_control import is_source_disabled, note_gate_refusal, STATUS_DISABLED
+from sources.source_control import (
+    is_source_disabled, note_gate_refusal, STATUS_DISABLED, STATUS_SKIPPED,
+)
 from sources import http_pool
 from sources.proxy_client import clearnet_fetch
 from utils.content_safety import is_blocked_query, sanitize_content
@@ -60,7 +62,8 @@ logger = logging.getLogger(__name__)
 PASTE_SOURCES = [
     {
         "name": "Pastebin",
-        "search_url": "https://pastebin.com/search?q={query}",
+        # Anonymous search redirects to login; do not treat it as a public API.
+        "search_url": None,
         "paste_url": "https://pastebin.com/raw/{id}",
         "result_pattern": r'href="/([a-zA-Z0-9]{8})"',
         "requires_key": False,
@@ -78,7 +81,8 @@ PASTE_SOURCES = [
     },
     {
         "name": "dpaste",
-        "search_url": "https://dpaste.org/search/?q={query}",
+        # This search route returns 404; the documented API creates snippets.
+        "search_url": None,
         "paste_url": "https://dpaste.org/{id}/raw/",
         "result_pattern": r'href="/([A-Z0-9]{5,8})/"',
         "requires_key": False,
@@ -86,7 +90,8 @@ PASTE_SOURCES = [
     },
     {
         "name": "paste.ee",
-        "search_url": "https://paste.ee/search?q={query}",
+        # No public global search; the API lists an authenticated user's pastes.
+        "search_url": None,
         "paste_url": "https://paste.ee/r/{id}",
         "result_pattern": r'href="/p/([a-zA-Z0-9]+)"',
         "requires_key": False,
@@ -235,12 +240,17 @@ class PasteScraper:
         # Run every (source, term) pair concurrently.
         tasks: list = []
         for source in PASTE_SOURCES:
-            if not source.get("search_url"):
-                continue
             if _paste_source_disabled(source):
+                continue
+            if not source.get("search_url"):
+                note_gate_refusal(PASTE_SOURCE_IDS[source["name"]], STATUS_SKIPPED)
                 continue
             for term in search_terms[:2]:
                 tasks.append(self._scrape_source(source, term))
+
+        if not tasks:
+            note_gate_refusal("paste_sites", STATUS_SKIPPED)
+            logger.info("Paste search skipped: no supported anonymous search endpoints; discovered URLs remain eligible for scraping")
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -506,6 +516,7 @@ async def scrape_paste_sites(
     Returns [] when paste scraping is disabled via env var.
     """
     if not _is_paste_scraping_enabled():
+        note_gate_refusal("paste_sites", STATUS_DISABLED)
         logger.info("Paste scraping disabled via PASTE_SCRAPING_ENABLED=false")
         return []
 

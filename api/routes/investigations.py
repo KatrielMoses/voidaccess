@@ -17,6 +17,7 @@ import hashlib
 import io
 import logging
 import os
+import re
 import uuid
 from typing import Any, Optional
 
@@ -114,10 +115,32 @@ def _set_sources_used(investigation_id: str, sources_used: dict) -> None:
     fresh values immediately after the pipeline updates them, while still
     surviving a restart that drops the in-memory cache.
     """
-    _sources_used_cache[investigation_id] = sources_used
+    from sources import source_control
+
+    # Keep the runners' module-specific results local; publish the same shape
+    # as the CLI, including request failures and gates recorded by transports.
+    canonical_ids = {local: registered for registered, local in _SOURCE_KEY_ALIASES.items()}
+    reported = {}
+    known = source_control.all_source_ids()
+    for key, raw in sources_used.items():
+        source_id = canonical_ids.get(key, key)
+        entry = dict(raw) if isinstance(raw, dict) else {}
+        raw_status = str(entry.get("status", raw))
+        match = re.match(r"ok_(\d+)_", raw_status)
+        count = entry.get("count", int(match[1]) if match else 0)
+        status = ("pending" if raw_status == "pending" else
+                  source_control.normalize_module_status(source_id, raw_status))
+        if source_id in known:
+            details = source_control.source_entry(source_id, count=count, status=status)
+            entry.update(details)
+        else:
+            entry.update(status=status, count=count)
+        reported[source_id] = entry
+    source_control.finalize_sources_used(reported)
+    _sources_used_cache[investigation_id] = reported
     _update_investigation_metadata(
         investigation_id,
-        {"sources_used": sources_used},
+        {"sources_used": reported},
     )
 
 
@@ -1679,7 +1702,7 @@ async def _run_investigation_task(
                 return "error"
             return f"ok_{count}_results" if count > 0 else "ok_0_results"
 
-        sources_used: dict[str, str] = {}
+        sources_used: dict[str, Any] = {}
 
         # Keyed sources — show "skipped_no_key" when the key is absent
         if not _otx_key:
@@ -1814,12 +1837,7 @@ async def _run_investigation_task(
         sources_used["hudsonrock"] = "pending"
         # VOIDACCESS_DISABLED_SOURCES / the enrichment allowlist: a source that
         # was switched off never reads ``ok_*`` here.
-        source_control.overlay_status_strings(sources_used, _SOURCE_KEY_ALIASES)
-        _sources_used_cache[investigation_id] = sources_used
-        _update_investigation_metadata(
-            investigation_id,
-            {"sources_used": sources_used},
-        )
+        _set_sources_used(investigation_id, sources_used)
         # ── end sources_used ──────────────────────────────────────────────────
 
         if len(search_urls) < 2:
@@ -2560,6 +2578,8 @@ async def _run_investigation_task(
         except Exception as update_exc:
             logger.warning("Failed to persist investigation failure status: %s", update_exc)
     finally:
+        if "sources_used" in locals():
+            _set_sources_used(investigation_id, sources_used)
         _cancel_tokens.pop(investigation_id, None)
 
 
