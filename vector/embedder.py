@@ -12,7 +12,6 @@ from vector.model_singleton import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOKENS = 512
 _EMBEDDER = None
 
 
@@ -35,7 +34,7 @@ def _truncate_to_model_limit(text: str, model) -> str:
             text,
             add_special_tokens=True,
             truncation=True,
-            max_length=_MAX_TOKENS,
+            max_length=int(model.max_seq_length),
         )
         return tok.decode(encoded, skip_special_tokens=True)
     except Exception:
