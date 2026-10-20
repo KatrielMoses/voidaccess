@@ -64,7 +64,7 @@ class SearchHit:
     language: Optional[str] = None
     category: Optional[str] = None
     score: Optional[float] = None
-    # A leading excerpt of the sanitized snapshot text, carried so downstream
+    # A query-centered excerpt of the sanitized snapshot text, carried so downstream
     # consumers (e.g. P3.2 semantic ranking) have text to embed without a second
     # round-trip to R2. Truncated to keep hit payloads small.
     snippet: Optional[str] = None
@@ -83,7 +83,7 @@ class SearchHit:
             category=hit.get("category"),
             # Meili exposes the ranking score as ``_rankingScore`` when requested.
             score=hit.get("_rankingScore"),
-            snippet=(hit.get("content") or "")[:_SNIPPET_MAX] or None,
+            snippet=((hit.get("_formatted") or {}).get("content") or hit.get("content") or "")[:_SNIPPET_MAX] or None,
         )
 
 
@@ -205,6 +205,11 @@ class OwnedIndex:
             "q": query or "",
             "limit": limit,
             "showRankingScore": True,
+            # Let later passages reach the downstream semantic ranker instead
+            # of always embedding the first 1,000 characters of a document.
+            "attributesToCrop": ["content"],
+            "cropLength": 120,
+            "cropMarker": "",
         }
         filter_str = _build_filter(filters)
         if filter_str:

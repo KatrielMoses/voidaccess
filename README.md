@@ -59,6 +59,11 @@ voidaccess status
 | 12 | Build relationships, communities, and infrastructure clusters |
 | 13 | Generate the final intelligence summary and export-ready result |
 
+The local semantic encoder has a 256-token context. Owned-index keyword search
+covers stored document text and supplies excerpts around query matches to the
+semantic ranker, including later passages. This does not provide exhaustive
+semantic recall over every passage in a document.
+
 Full pipeline behavior, timeouts, recovery, and data flow are documented in [Architecture](docs/architecture.md).
 
 ## Entity Types
