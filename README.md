@@ -1,153 +1,123 @@
 <p align="center">
-  <img src="public/logo_circle.png" width="160" alt="VoidAccess logo">
+  <a href="https://voidaccess.pro/?ref=github"><img src="docs/assets/readme/hero.png" alt="VoidAccess: dark-web threat intel in your browser" width="100%"></a>
 </p>
-
-<h1 align="center">VoidAccess</h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <a href="docker-compose.yml"><img src="https://img.shields.io/badge/Docker-Compose-blue.svg" alt="Docker Compose"></a>
-  <a href="https://pypi.org/project/voidaccess/"><img src="https://img.shields.io/pypi/v/voidaccess?logo=pypi&logoColor=white" alt="PyPI version"></a>
-  <a href="https://pypi.org/project/voidaccess/"><img src="https://img.shields.io/pypi/dm/voidaccess" alt="PyPI downloads"></a>
+  <a href="https://voidaccess.pro/?ref=github"><img src="https://img.shields.io/badge/hosted-voidaccess.pro-6E6BE8?style=flat-square&labelColor=17171C" alt="Hosted at voidaccess.pro"></a>
+  <a href="https://pypi.org/project/voidaccess/"><img src="https://img.shields.io/pypi/v/voidaccess?style=flat-square&labelColor=17171C&color=F3F1EC&label=pypi" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/voidaccess/"><img src="https://img.shields.io/pepy/dt/voidaccess?style=flat-square&labelColor=17171C&color=F3F1EC&label=downloads" alt="Downloads"></a>
+  <a href="https://github.com/KatrielMoses/VoidAccess/stargazers"><img src="https://img.shields.io/github/stars/KatrielMoses/VoidAccess?style=flat-square&labelColor=17171C&color=F3F1EC" alt="GitHub stars"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-F3F1EC?style=flat-square&labelColor=17171C" alt="License: MIT"></a>
 </p>
 
-Self-hostable OSINT for turning dark-web research queries into structured threat intelligence. Built for security researchers, threat-intelligence teams, and authorized investigators who need collection, enrichment, relationship mapping, and export in one workflow.
+<p align="center">
+  <b>Ask one question. Get a sourced report, a graph you can search, and IOCs you can load.</b><br>
+  For security researchers, threat-intel teams, MSSPs and authorized investigators.
+</p>
 
-## Terminal Output
+<p align="center">
+  <a href="https://voidaccess.pro/?ref=github"><b>Use it hosted → voidaccess.pro</b></a>
+  &nbsp;·&nbsp;
+  <a href="#run-it-yourself"><b>Run it yourself → <code>pip install voidaccess</code></b></a>
+</p>
 
-![VoidAccess](public/terminal-hero.png)
+<p align="center">
+  <img src="docs/assets/readme/demo.gif" alt="An investigation on voidaccess.pro: the live view collects and filters dark-web results, then the results open as a searchable graph" width="100%">
+</p>
 
-## Quick Start
+## Hosted, at voidaccess.pro
 
-```bash
-pip install voidaccess
-voidaccess investigate "LockBit ransomware" --no-llm --no-tor --depth shallow
-voidaccess list
-voidaccess actors
-voidaccess status
-```
+<a href="https://voidaccess.pro/?ref=github"><img src="docs/assets/readme/hosted.png" alt="Skip the setup. Keep your distance." width="100%"></a>
 
-![VoidAccess investigation demo](public/cli_investigation_gif.gif)
+The hosted version runs this engine for you. Searches and page fetches go out from our servers through Tor, so your research doesn't start from your laptop or office network. A live view shows every link found, kept or discarded (duplicates, 404s, timeouts, the safety filter), then the results open as a graph with every value searchable by category.
 
-## What It Does
+**[Start free at voidaccess.pro →](https://voidaccess.pro/?ref=github)**
 
-- **Parallel collection** - searches Tor indexes, paste sites, code forges, security feeds, and curated `.onion` seeds.
-- **Entity extraction** - finds IOCs, wallets, credentials, handles, vulnerabilities, actors, malware, people, and organizations.
-- **Multi-source enrichment** - adds reputation, breach, passive DNS, sandbox, blockchain, and threat-feed context.
-- **Actor intelligence** - persists aliases, infrastructure, notes, timelines, and cross-investigation relationships.
-- **Relationship graphs** - builds co-occurrence graphs, communities, paths, and infrastructure clusters.
-- **Content safety** - filters prohibited queries, URLs, content, and extracted entities at mandatory pipeline gates.
-- **Structured exports** - produces STIX 2.1, MISP, Sigma, YARA, Snort, Suricata, CSV, Markdown, JSON, and IOC packages.
-- **CLI and web UI** - runs locally with SQLite or as a Docker Compose stack with PostgreSQL and a browser interface.
+## How it works
 
-## Pipeline
+<img src="docs/assets/readme/how-it-works.png" alt="Ask, collect, filter, extract, deliver" width="100%">
 
-| Stage | Action |
-|---|---|
-| 1 | Refine the investigation query with the selected LLM |
-| 2 | Collect from Tor search, paste sites, code forges, RSS feeds, and curated seeds in parallel |
-| 3 | Filter noisy or irrelevant pages |
-| 4 | Enrich the query and early indicators from threat-intelligence sources |
-| 5 | Discover additional `.onion` links recursively |
-| 6 | Reuse recently processed pages from the vector cache |
-| 7 | Fetch selected pages through Tor with response-size limits |
-| 8 | Persist newly collected content |
-| 9 | Merge collected and enriched intelligence |
-| 10 | Extract entities with regex, NER, and optional LLM analysis |
-| 11 | Cross-reference entities against historical and seed datasets |
-| 12 | Build relationships, communities, and infrastructure clusters |
-| 13 | Generate the final intelligence summary and export-ready result |
+One query fans out in parallel to 12+ Tor search engines, code hosts, security feeds and curated `.onion` seeds, then follows new `.onion` links as it finds them. Prohibited queries, URLs and content are dropped at mandatory safety gates. The full pipeline, with timeouts and recovery, is in [Architecture](docs/architecture.md).
 
-Full pipeline behavior, timeouts, recovery, and data flow are documented in [Architecture](docs/architecture.md).
-
-## Entity Types
+## What it finds
 
 | Category | Examples |
 |---|---|
-| Cryptocurrency | Bitcoin, Ethereum, Monero, Litecoin, Zcash, Solana, Tron, ENS |
-| Network indicators | IPv4, IPv6, domains, URLs, `.onion` addresses, MAC addresses, PGP keys |
-| File indicators | MD5, SHA-1, SHA-256, malware families |
-| Credentials | Cloud keys, tokens, JWTs, API keys, stealer logs, combo-list entries |
+| Threat actors | Actor handles, ransomware groups, malware families, MITRE ATT&CK techniques |
+| Infrastructure | IPv4/IPv6, domains, URLs, `.onion` addresses, file hashes |
+| Crypto wallets | Bitcoin, Ethereum, Monero, Litecoin, Zcash, Solana, Tron and more |
+| Credentials | Cloud keys, tokens, JWTs, API keys, stealer-log and combo-list entries (masked) |
 | Messaging | Telegram, Discord, XMPP, Tox, Session, Matrix, Wire, ICQ, Wickr |
-| Vulnerabilities | CVEs, MITRE ATT&CK techniques and tactics, Exploit-DB IDs |
-| Detection content | YARA rules, Nuclei templates, Snort and Suricata indicators |
-| Threat intelligence | Actor handles, ransomware groups, paste links, people, organizations, locations |
+| Vulnerabilities | CVEs, Exploit-DB IDs |
 
-## Collection and Enrichment
+Entities are linked into a relationship graph with communities and infrastructure clusters, and cross-referenced against earlier findings.
 
-| Layer | Sources |
-|---|---|
-| Dark-web search | 16+ Tor search engines and curated `.onion` seeds |
-| Open-web collection | Pastebin, dpaste, paste.ee, Rentry, GitHub, GitLab, and curated RSS feeds |
-| Threat feeds | AlienVault OTX, abuse.ch, MalwareBazaar, ThreatFox, URLhaus, ransomware.live, CISA KEV |
-| IP and domain context | Shodan InternetDB, GreyNoise, AbuseIPDB, Feodo Tracker, C2IntelFeeds, crt.sh, URLScan.io, Wayback Machine, CIRCL PDNS, RDAP |
-| File and identity context | VirusTotal, Hybrid Analysis, Have I Been Pwned, EmailRep |
-| Blockchain | BlockCypher and Etherscan |
+<img src="docs/assets/readme/exports.png" alt="Nine export formats: STIX 2.1, MISP, Sigma, YARA, Snort, Suricata, CSV, JSON, Markdown" width="100%">
 
-Sources that need API keys skip cleanly when their keys are absent. The complete key and configuration reference is in [Architecture](docs/architecture.md#13-configuration-reference).
+## Run it yourself
 
-### Optional vector embeddings
-
-The default installation can run without PyTorch. When the embedding stack is
-unavailable, VoidAccess logs that it is using a deterministic SHA-256 fallback
-encoder. Install the optional NLP dependencies to enable full
-sentence-transformer vector embeddings:
+<img src="docs/assets/readme/open-source.png" alt="Open source at the core. MIT." width="100%">
 
 ```bash
-pip install "voidaccess[nlp]"
+pip install voidaccess
+voidaccess configure                      # LLM provider, enrichment keys, Tor
+voidaccess investigate "LockBit ransomware"
+voidaccess export <id> --format stix     # stix, misp, sigma, yara, snort, suricata, package, csv, md, json
 ```
 
-## LLM Providers
+No Tor or LLM key yet? `voidaccess investigate "LockBit ransomware" --no-llm --no-tor --depth shallow` runs a clearnet-only pass. For the full stack (PostgreSQL, Tor, API and web UI) with Docker Compose, see the [self-hosting guide](docs/self-hosting.md). Python 3.10+.
 
-| Provider | Typical models | Notes |
-|---|---|---|
-| OpenRouter | DeepSeek, Llama, Claude | Default route; free models are available |
-| Groq | Llama | Fast hosted inference with a free tier |
-| OpenAI | GPT models | API key required |
-| Anthropic | Claude | Claude Haiku is the tested default |
-| Google Gemini | Gemini Flash and Pro | Google AI Studio key required |
-| Ollama | Any installed local model | Local and suitable for air-gapped deployments |
-
-## CLI Reference
+<details>
+<summary><b>CLI reference</b></summary>
 
 | Command | Description |
 |---------|-------------|
 | `voidaccess investigate "QUERY"` | Run an investigation |
 | `voidaccess show` | Open the interactive entity browser |
-| `voidaccess export INVESTIGATION_ID --format FORMAT` | Export as STIX, MISP, Sigma, YARA, Snort, Suricata, package, CSV, Markdown, or JSON |
-| `voidaccess package INVESTIGATION_ID` | Build an IOC package ZIP |
-| `voidaccess enrich INVESTIGATION_ID` | Re-enrich a saved investigation |
+| `voidaccess export ID --format FORMAT` | Export as STIX, MISP, Sigma, YARA, Snort, Suricata, package, CSV, Markdown or JSON |
+| `voidaccess package ID` | Build an IOC package ZIP |
+| `voidaccess enrich ID` | Re-enrich a saved investigation |
 | `voidaccess list` | List saved investigations |
-| `voidaccess status` | Show configuration, Tor, cache, engine, and seed status |
+| `voidaccess status` | Show configuration, Tor, cache, engine and seed status |
 | `voidaccess actors` | List persistent actor profiles |
-| `voidaccess actor HANDLE` | Show an actor profile |
-| `voidaccess actor HANDLE --timeline` | Show an actor activity timeline |
-| `voidaccess actor HANDLE --note "TEXT"` | Add an analyst note to an actor profile |
-| `voidaccess timeline HANDLE` | Open an actor timeline directly |
-| `voidaccess configure` | Run the setup wizard |
-| `voidaccess configure llm` | Configure the LLM provider, model, and key |
-| `voidaccess configure keys` | Configure enrichment API keys |
-| `voidaccess configure tor` | Override the Tor proxy host and port |
+| `voidaccess actor HANDLE [--timeline] [--note "TEXT"]` | Show an actor, its timeline, or add a note |
+| `voidaccess configure [llm \| keys \| tor]` | Run the setup wizard, or one part of it |
 | `voidaccess version` | Print the installed version |
 
-Optional clearnet requests can use [ScrapingAnt](https://scrapingant.com/?ref=mzliyzh) with `--use-scraping-api` or `--use-proxies`; Tor, `.onion`, GitHub, and GitLab traffic are unaffected.
+Optional clearnet requests can use [ScrapingAnt](https://scrapingant.com/?ref=mzliyzh) with `--use-scraping-api` or `--use-proxies`; Tor, `.onion`, GitHub and GitLab traffic are unaffected.
+</details>
 
-## Self-Hosting
+<details>
+<summary><b>Sources and enrichment</b></summary>
 
-Run the full PostgreSQL, Tor, FastAPI, and Next.js stack with Docker Compose. The [self-hosting guide](docs/self-hosting.md) covers guided setup, environment configuration, operations, and troubleshooting.
+| Layer | Sources |
+|---|---|
+| Dark-web search | 12+ Tor search engines and curated `.onion` seeds |
+| Open-web collection | Paste sites, GitHub, GitLab and curated RSS feeds |
+| Threat feeds | AlienVault OTX, abuse.ch (MalwareBazaar, ThreatFox, URLhaus), CISA KEV |
+| IP and domain context | Shodan InternetDB, GreyNoise, AbuseIPDB, Feodo Tracker, crt.sh, URLScan.io, Wayback Machine, CIRCL PDNS, RDAP |
+| File and identity context | VirusTotal, Hybrid Analysis, Have I Been Pwned, EmailRep |
+| Blockchain | BlockCypher and Etherscan |
+
+Sources that need an API key are skipped cleanly without one. The hosted version uses a subset whose terms allow it. Full configuration: [Architecture](docs/architecture.md#13-configuration-reference). For full sentence-transformer embeddings, `pip install "voidaccess[nlp]"`; without it, a deterministic fallback encoder is used.
+</details>
+
+<details>
+<summary><b>LLM providers</b></summary>
+
+| Provider | Typical models | Notes |
+|---|---|---|
+| OpenRouter | DeepSeek, Llama, Claude | Default route; free models available |
+| Groq | Llama | Fast hosted inference with a free tier |
+| OpenAI | GPT models | API key required |
+| Anthropic | Claude | Claude Haiku is the tested default |
+| Google Gemini | Gemini Flash and Pro | Google AI Studio key required |
+| Ollama | Any installed local model | Local, suitable for air-gapped deployments |
+</details>
 
 ## Links
 
-| | |
-|-|-|
-| [Self-hosting guide](docs/self-hosting.md) | Docker Compose, environment setup, operations, and troubleshooting |
-| [Architecture](docs/architecture.md) | Pipeline internals, modules, schema, API, enrichment, graph, and configuration reference |
-| [Contributing](CONTRIBUTING.md) | Development setup, standards, and pull requests |
-| [Security](SECURITY.md) | Supported versions and private vulnerability reporting |
-| [Usage policy](docs/USAGE_POLICY.md) | Authorized-use requirements and prohibited activity |
-| [PyPI](https://pypi.org/project/voidaccess/) | Published package and release files |
-| [GitHub](https://github.com/KatrielMoses/VoidAccess) | Source, issues, and releases |
+[voidaccess.pro](https://voidaccess.pro/?ref=github) · [Self-hosting](docs/self-hosting.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Usage policy](docs/USAGE_POLICY.md) · [PyPI](https://pypi.org/project/voidaccess/)
 
 ## License
 
