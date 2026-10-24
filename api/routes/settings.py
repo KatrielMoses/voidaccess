@@ -31,7 +31,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 ALLOWED_KEY_NAMES = {
     "OPENAI_API_KEY": {
         "label": "OpenAI",
-        "description": "Enables GPT-4o and GPT-4 models",
+        "description": "Enables current OpenAI text and reasoning models",
         "test_url": "https://api.openai.com/v1/models",
         "test_header": "Authorization",
         "test_prefix": "Bearer ",
@@ -46,20 +46,20 @@ ALLOWED_KEY_NAMES = {
     "GOOGLE_API_KEY": {
         "label": "Google Gemini",
         "description": "Enables Gemini models (free tier available)",
-        "test_url": "https://generativelanguage.googleapis.com/v1/models?key={key}",
-        "test_header": None,
-        "test_prefix": None,
+        "test_url": "https://generativelanguage.googleapis.com/v1beta/models",
+        "test_header": "x-goog-api-key",
+        "test_prefix": "",
     },
     "OPENROUTER_API_KEY": {
         "label": "OpenRouter",
-        "description": "Access 100+ models including free tier options",
-        "test_url": "https://openrouter.ai/api/v1/models",
+        "description": "Model catalogue and routing; availability and pricing depend on the model",
+        "test_url": "https://openrouter.ai/api/v1/key",
         "test_header": "Authorization",
         "test_prefix": "Bearer ",
     },
     "GROQ_API_KEY": {
-        "label": "Groq (Free tier)",
-        "description": "Fast inference — Llama 3.3 70B free. Sign up at console.groq.com",
+        "label": "Groq",
+        "description": "Hosted GPT-OSS and other available models. Account limits and pricing apply.",
         "test_url": "https://api.groq.com/openai/v1/models",
         "test_header": "Authorization",
         "test_prefix": "Bearer ",
@@ -320,6 +320,7 @@ async def upsert_api_key(
 
         await session.commit()
 
+    _models_cache.pop(current_user.user.id, None)
     return UpsertKeyResponse(key_name=body.key_name, is_set=True)
 
 
@@ -340,6 +341,7 @@ async def delete_api_key(key_name: str, current_user: CurrentUser = Depends(get_
             await session.delete(record)
             await session.commit()
 
+    _models_cache.pop(current_user.user.id, None)
     return Response(status_code=204)
 
 
@@ -423,6 +425,8 @@ async def test_api_key(body: TestKeyRequest) -> TestKeyResponse:
         headers[test_header] = f"{test_prefix}{body.value}"
     elif test_header:
         headers[test_header] = body.value
+    if body.key_name == "ANTHROPIC_API_KEY":
+        headers["anthropic-version"] = "2023-06-01"
 
     try:
         import aiohttp
@@ -497,7 +501,7 @@ def _infer_provider(model_id: str) -> str:
         return "OpenRouter"
     if mc.startswith("groq/"):
         return "Groq"
-    if mc.startswith("gpt-"):
+    if mc.startswith(("gpt-", "chatgpt-", "o1-", "o3-", "o4-")) or mc in ("o1", "o3", "o4"):
         return "OpenAI"
     if mc.startswith("claude-"):
         return "Anthropic"
@@ -509,7 +513,7 @@ def _infer_provider(model_id: str) -> str:
 
 
 async def _fetch_openrouter_models(api_key: str) -> List[ModelInfo]:
-    """Fetch models from OpenRouter API, capped at 100."""
+    """Fetch the current text-model catalogue from OpenRouter."""
     import aiohttp
     try:
         timeout = aiohttp.ClientTimeout(total=10)
@@ -517,25 +521,29 @@ async def _fetch_openrouter_models(api_key: str) -> List[ModelInfo]:
             async with s.get(
                 "https://openrouter.ai/api/v1/models",
                 headers={"Authorization": f"Bearer {api_key}"},
+                params={"output_modalities": "text"},
             ) as resp:
                 if resp.status != 200:
                     return []
                 data = await resp.json()
         raw = data.get("data", [])
         models = []
-        for m in raw[:100]:
+        from config import DEFAULT_MODELS
+
+        for m in raw:
             mid = m.get("id", "")
             if not mid:
                 continue
             name = m.get("name") or mid.split("/")[-1]
             ctx = m.get("context_length") or m.get("context_window")
-            is_free = ":free" in mid or "free" in (m.get("pricing", {}).get("prompt", "") or "0")
+            pricing = m.get("pricing") or {}
+            is_free = all(float(pricing.get(k, "1")) == 0 for k in ("prompt", "completion"))
             models.append(ModelInfo(
                 id=f"openrouter/{mid}",
                 name=name,
                 provider="OpenRouter",
                 free_tier=is_free,
-                recommended=is_free,
+                recommended=mid == DEFAULT_MODELS["openrouter"],
                 context_window=int(ctx) if ctx else None,
             ))
         return models
@@ -560,14 +568,13 @@ async def _fetch_groq_models(api_key: str) -> List[ModelInfo]:
         models = []
         for m in raw:
             mid = m.get("id", "")
-            if not mid:
+            if not mid or any(part in mid for part in ("whisper", "orpheus", "prompt-guard", "safeguard")):
                 continue
             models.append(ModelInfo(
                 id=f"groq/{mid}",
                 name=mid.replace("-", " ").title(),
                 provider="Groq",
-                free_tier=True,
-                recommended="llama-3.3" in mid or "70b" in mid,
+                recommended=mid in ("openai/gpt-oss-120b", "openai/gpt-oss-20b"),
             ))
         return models
     except Exception:
@@ -575,7 +582,7 @@ async def _fetch_groq_models(api_key: str) -> List[ModelInfo]:
 
 
 async def _fetch_openai_models(api_key: str) -> List[ModelInfo]:
-    """Fetch GPT-4* and GPT-3.5* models from OpenAI."""
+    """Fetch available general-purpose text models, including reasoning models."""
     import aiohttp
     try:
         timeout = aiohttp.ClientTimeout(total=10)
@@ -591,17 +598,86 @@ async def _fetch_openai_models(api_key: str) -> List[ModelInfo]:
         models = []
         for m in raw:
             mid = m.get("id", "")
-            if not (mid.startswith("gpt-4") or mid.startswith("gpt-3.5")):
+            if not mid.startswith(("gpt-", "chatgpt-", "o1", "o3", "o4")):
+                continue
+            if any(part in mid for part in ("audio", "realtime", "transcribe", "tts", "image", "codex", "search", "deep-research")):
                 continue
             models.append(ModelInfo(
                 id=mid,
                 name=mid,
                 provider="OpenAI",
-                recommended="gpt-4o" in mid,
+                recommended=mid in ("gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"),
             ))
         return sorted(models, key=lambda x: x.id)
     except Exception:
         return []
+
+
+async def _fetch_anthropic_models(api_key: str) -> List[ModelInfo]:
+    """List Claude models accessible to this key, following all result pages."""
+    import aiohttp
+    from config import DEFAULT_MODELS
+
+    models = []
+    params = {"limit": 100}
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
+            while True:
+                async with s.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                    params=params,
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                for m in data.get("data", []):
+                    if m.get("id") and m.get("lifecycle") != "retired":
+                        models.append(ModelInfo(
+                            id=m["id"], name=m.get("display_name") or m["id"],
+                            provider="Anthropic", context_window=m.get("max_input_tokens"),
+                            recommended=m["id"] == DEFAULT_MODELS["anthropic"],
+                        ))
+                if not data.get("has_more") or not data.get("last_id"):
+                    break
+                params["after_id"] = data["last_id"]
+    except (aiohttp.ClientError, ValueError, asyncio.TimeoutError):
+        return models
+    return models
+
+
+async def _fetch_google_models(api_key: str) -> List[ModelInfo]:
+    """List Gemini text-generation models accessible to this key."""
+    import aiohttp
+    from config import DEFAULT_MODELS
+
+    models = []
+    params = {"pageSize": 1000}
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
+            while True:
+                async with s.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    headers={"x-goog-api-key": api_key}, params=params,
+                ) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+                for m in data.get("models", []):
+                    mid = m.get("name", "").removeprefix("models/")
+                    if "generateContent" not in m.get("supportedGenerationMethods", []):
+                        continue
+                    if not mid.startswith("gemini-") or any(p in mid for p in ("image", "tts", "live", "robotics")):
+                        continue
+                    models.append(ModelInfo(
+                        id=mid, name=m.get("displayName") or mid, provider="Google",
+                        context_window=m.get("inputTokenLimit"),
+                        recommended=mid == DEFAULT_MODELS["google"],
+                    ))
+                if not data.get("nextPageToken"):
+                    break
+                params["pageToken"] = data["nextPageToken"]
+    except (aiohttp.ClientError, ValueError, asyncio.TimeoutError):
+        return models
+    return models
 
 
 async def _fetch_ollama_models(base_url: str) -> List[ModelInfo]:
@@ -673,6 +749,12 @@ async def get_models(
     if openai_key:
         fetch_tasks.append(_fetch_openai_models(openai_key))
         task_labels.append("openai")
+    if anthropic_key:
+        fetch_tasks.append(_fetch_anthropic_models(anthropic_key))
+        task_labels.append("anthropic")
+    if google_key:
+        fetch_tasks.append(_fetch_google_models(google_key))
+        task_labels.append("google")
     if ollama_url:
         fetch_tasks.append(_fetch_ollama_models(ollama_url))
         task_labels.append("ollama")
@@ -682,18 +764,6 @@ async def get_models(
         results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
         for label, result in zip(task_labels, results):
             fetched_results[label] = result if isinstance(result, list) else []
-
-    # Hardcoded model lists for providers without free list APIs
-    anthropic_models = [
-        ModelInfo(id="claude-opus-4-5", name="Claude Opus 4.5", provider="Anthropic", recommended=True),
-        ModelInfo(id="claude-sonnet-4-5", name="Claude Sonnet 4.5", provider="Anthropic", recommended=True),
-        ModelInfo(id="claude-haiku-4-5-20251001", name="Claude Haiku 4.5", provider="Anthropic"),
-    ]
-    google_models = [
-        ModelInfo(id="gemini-2.0-flash", name="Gemini 2.0 Flash", provider="Google", recommended=True),
-        ModelInfo(id="gemini-1.5-pro", name="Gemini 1.5 Pro", provider="Google"),
-        ModelInfo(id="gemini-1.5-flash", name="Gemini 1.5 Flash", provider="Google"),
-    ]
 
     providers = [
         ProviderInfo(
@@ -712,7 +782,7 @@ async def get_models(
             name="Anthropic",
             key_name="ANTHROPIC_API_KEY",
             configured=bool(anthropic_key),
-            models=anthropic_models if anthropic_key else [],
+            models=fetched_results.get("anthropic", []),
         ),
         ProviderInfo(
             name="OpenAI",
@@ -724,7 +794,7 @@ async def get_models(
             name="Google",
             key_name="GOOGLE_API_KEY",
             configured=bool(google_key),
-            models=google_models if google_key else [],
+            models=fetched_results.get("google", []),
         ),
         ProviderInfo(
             name="Ollama",
@@ -750,7 +820,7 @@ async def validate_model(
 ) -> ValidateModelResponse:
     """
     Test whether a model ID is accessible with the current keys.
-    Makes a minimal 1-token API call and returns typed success/failure.
+    Makes a short API call (at most 64 output tokens) and returns success/failure.
     Rate limited to 10 requests per minute per user.
     """
     user_id = current_user.user.id
@@ -789,42 +859,10 @@ async def validate_model(
     provider = _infer_provider(model_id)
 
     try:
-        from voidaccess.llm_utils import resolve_model_config, _common_llm_params
-
-        config = resolve_model_config(model_id)
-        if config is None:
-            return ValidateModelResponse(
-                valid=False,
-                model_id=model_id,
-                provider=provider,
-                error="model_not_found",
-                message=f"Model '{model_id}' could not be resolved to any provider.",
-                suggestion="Check the model ID or browse available models.",
-            )
-
-        llm_class = config["class"]
-        ctor_params = dict(config.get("constructor_params", {}))
-
-        # Inject user-override API keys into constructor params
-        _ENV_TO_PARAM = {
-            "OPENAI_API_KEY": "api_key",
-            "OPENROUTER_API_KEY": "api_key",
-            "ANTHROPIC_API_KEY": "anthropic_api_key",
-            "GOOGLE_API_KEY": "google_api_key",
-            "GROQ_API_KEY": "api_key",
-        }
-        for env_key, param_key in _ENV_TO_PARAM.items():
-            user_val = api_keys.get(env_key)
-            if user_val:
-                ctor_params[param_key] = user_val
-
-        # Build minimal (non-streaming) LLM instance for probe
-        probe_params = {k: v for k, v in _common_llm_params.items() if k != "streaming"}
-        probe_params["streaming"] = False
-        all_params = {**probe_params, **ctor_params, "max_tokens": 1}
+        from voidaccess.llm import get_llm
 
         def _probe():
-            llm = llm_class(**all_params)
+            llm = get_llm(model_id, api_keys=api_keys, streaming=False, callbacks=[], max_tokens=64)
             llm.invoke("hi")
 
         await asyncio.wait_for(asyncio.to_thread(_probe), timeout=15)

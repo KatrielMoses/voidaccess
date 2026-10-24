@@ -18,6 +18,7 @@ import io
 import logging
 import os
 import uuid
+import config as config_module
 from typing import Any, Optional
 
 from api.ownership import require_resource_owner
@@ -675,7 +676,7 @@ LLM_EXTRACTION_LABEL = "Extracting entities (LLM tier)"
 
 class InvestigationRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=500, description="Search query (3-500 chars)")
-    model: str = Field(default="openrouter/deepseek/deepseek-chat", description="LLM model ID to use")
+    model: str = Field(default_factory=lambda: config_module.DEFAULT_MODEL, description="LLM model ID to use")
     run_crawler: bool = False
 
     @validator("query")
@@ -995,21 +996,10 @@ async def _update_progress(
 
 
 async def _get_investigation_model_choice(model: Optional[str]) -> tuple[str, Any]:
-    """Get model choices and selected model in a short-lived session."""
-    from db.session import get_session
-    from voidaccess.llm_utils import get_model_choices
+    """Choose the requested/default model; credentials are checked by get_llm."""
     import config as config_module
 
-    with get_session() as session:
-        model_choices = get_model_choices()
-        if not model_choices:
-            raise RuntimeError("No LLM models available")
-        selected_model = (
-            model
-            or config_module.DEFAULT_MODEL
-            or "openrouter/deepseek/deepseek-chat"
-        )
-        return selected_model, model_choices
+    return model or config_module.DEFAULT_MODEL, []
 
 
 # ---------------------------------------------------------------------------

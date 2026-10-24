@@ -49,7 +49,7 @@ KEYS_WITH_DEDICATED_STEP = {
 
 PROVIDERS = [
     ("openrouter", "OpenRouter (free models available)"),
-    ("groq",       "Groq (completely free)"),
+    ("groq",       "Groq (hosted inference)"),
     ("google",     "Google Gemini (free tier)"),
     ("openai",     "OpenAI (paid)"),
     ("anthropic",  "Anthropic (paid)"),
@@ -57,12 +57,12 @@ PROVIDERS = [
 ]
 
 DEFAULT_MODELS = {
-    "openrouter": "openrouter/deepseek/deepseek-chat",
-    "groq":       "groq/llama-3.3-70b-versatile",
-    "google":     "gemini-1.5-flash",
-    "openai":     "gpt-4o-mini",
-    "anthropic":  "claude-haiku-4-5-20251001",
-    "ollama":     "ollama/llama3.2",
+    "openrouter": "openrouter/deepseek/deepseek-v4.1-flash",
+    "groq":       "groq/openai/gpt-oss-120b",
+    "google":     "gemini-3.8-flash",
+    "openai":     "gpt-6-luna",
+    "anthropic":  "claude-haiku-5-5",
+    "ollama":     "ollama/gemma4",
 }
 
 

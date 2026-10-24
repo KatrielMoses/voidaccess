@@ -85,6 +85,7 @@ export default function LoginPage() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2 group">
+                <label htmlFor="email" className="block text-sm text-[#a1a1aa]">Email address</label>
                 <div className="relative">
                   <input
                     id="email"
@@ -92,7 +93,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    autoComplete="email"
+                    autoComplete="username"
                     className="w-full bg-[#27272a] border border-transparent rounded-xl px-4 py-3.5 text-[15px] text-white placeholder:text-[#a1a1aa] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all font-body font-medium"
                     placeholder="your@email.com"
                     style={{
@@ -103,6 +104,7 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2 group">
+                <label htmlFor="password" className="block text-sm text-[#a1a1aa]">Password</label>
                 <div className="relative">
                   <input
                     id="password"
@@ -134,6 +136,7 @@ export default function LoginPage() {
 
               {error && (
                 <motion.div
+                  role="alert"
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   className="text-[13px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg p-3 flex items-start gap-2"

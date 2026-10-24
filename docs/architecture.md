@@ -1327,8 +1327,8 @@ At least one LLM provider key is needed for query refinement, result filtering, 
 
 | Variable | Default | Notes |
 |---|---|---|
-| `DEFAULT_MODEL` | `openrouter/deepseek/deepseek-chat` | Model ID used when the request does not specify one. Format: `provider/model-name` |
-| `OPENAI_API_KEY` | — | Enables GPT-4o, GPT-4o Mini, etc. |
+| `DEFAULT_MODEL` | `openrouter/deepseek/deepseek-v4.1-flash` | Used when no model is specified; existing saved selections remain unchanged. |
+| `OPENAI_API_KEY` | — | Enables current OpenAI text and reasoning models. |
 | `ANTHROPIC_API_KEY` | — | Enables Claude models |
 | `GOOGLE_API_KEY` | — | Enables Gemini models |
 | `OPENROUTER_API_KEY` | — | Enables all OpenRouter-proxied models |
@@ -1337,6 +1337,14 @@ At least one LLM provider key is needed for query refinement, result filtering, 
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Enables local Ollama models |
 | `LLAMA_CPP_BASE_URL` | `http://127.0.0.1:8080` | Enables llama.cpp server |
 | `VOIDACCESS_SAFETY_BYPASS_PROMPT` | `on` | When `off`, omits the LLM authorization preamble from refine, filter, and summary prompts (cloud runners). Mandatory content-safety gates are unchanged. |
+
+The web model picker fetches the current catalogues from OpenRouter, Groq,
+OpenAI, Anthropic, Google and the configured Ollama server. Provider keys determine
+account access; pricing and free quotas vary. Key changes invalidate the server's
+five-minute model-list cache. Existing saved model selections are preserved.
+Native current OpenAI models use the Responses API; OpenRouter and Groq retain
+their OpenAI-compatible chat endpoints. Custom-model validation sends a short
+prompt with an output limit of 64 tokens and may incur provider charges.
 
 ### 13.3 Threat Intelligence Enrichment
 

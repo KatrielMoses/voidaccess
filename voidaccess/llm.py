@@ -9,7 +9,7 @@ os.environ["USE_TORCH"] = "1"
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage
 from langchain_core.output_parsers import StrOutputParser
-from voidaccess.llm_utils import _common_llm_params, resolve_model_config, get_model_choices, DEFAULT_MODELS, DEFAULT_MODEL
+from voidaccess.llm_utils import _common_llm_params, resolve_model_config, DEFAULT_MODELS, DEFAULT_MODEL
 import logging
 from typing import Any
 import re as re_module
@@ -241,123 +241,62 @@ def select_relevant_pages(
         return selected
 
 
-def get_llm(model_choice, api_keys: dict | None = None):
+def get_llm(model_choice, api_keys: dict | None = None, **overrides):
+    """Construct the selected provider's client with only that provider's key."""
+    import config as app_config
+
     if not model_choice or model_choice.strip().lower() in ("", "auto"):
         model_choice = DEFAULT_MODEL
-
-    parts = model_choice.split("/", 1)
-    if len(parts) == 2 and parts[1] == "":
-        provider = parts[0].lower()
-        if provider == "openrouter":
-            model_choice = f"openrouter/{DEFAULT_MODELS['openrouter']}"
-        elif provider == "groq":
-            model_choice = f"groq/{DEFAULT_MODELS['groq']}"
-        elif provider == "openai":
-            model_choice = DEFAULT_MODELS["openai"]
-        elif provider == "anthropic":
-            model_choice = DEFAULT_MODELS["anthropic"]
-        elif provider == "google":
-            model_choice = DEFAULT_MODELS["google"]
-        elif provider == "ollama":
-            model_choice = f"ollama/{DEFAULT_MODELS['ollama']}"
-
-    # Look up the configuration (cloud or local Ollama)
-    config = resolve_model_config(model_choice)
-
-    if config is None:  # Extra error check
-        supported_models = get_model_choices()
-        raise ValueError(
-            f"Unsupported LLM model: '{model_choice}'. "
-            f"Supported models (case-insensitive match) are: {', '.join(supported_models)}"
-        )
-
-    # Extract the necessary information from the configuration
-    llm_class = config["class"]
-    model_specific_params = dict(config["constructor_params"])
-
-    # Override API keys when per-user keys are available.
-    # Map env-var names → LangChain constructor param names.
-    _ENV_TO_LANGCHAIN: dict[str, str] = {
-        "OPENAI_API_KEY":     "openai_api_key",
-        "OPENROUTER_API_KEY": "openai_api_key",
-        "ANTHROPIC_API_KEY":  "anthropic_api_key",
-        "GOOGLE_API_KEY":     "google_api_key",
-        "GROQ_API_KEY":       "groq_api_key",
+    provider_defaults = {
+        "openrouter": f"openrouter/{DEFAULT_MODELS['openrouter']}",
+        "groq": f"groq/{DEFAULT_MODELS['groq']}",
+        "openai": DEFAULT_MODELS["openai"],
+        "anthropic": DEFAULT_MODELS["anthropic"],
+        "google": DEFAULT_MODELS["google"],
+        "ollama": f"ollama/{DEFAULT_MODELS['ollama']}",
     }
-    # Prefer explicitly supplied per-user keys, but also resolve the current
-    # process environment when callers omit api_keys.  The CLI injects its
-    # saved config at runtime, so relying only on import-time llm_utils values
-    # silently drops a valid OPENROUTER_API_KEY.
-    runtime_keys = dict(api_keys or {})
-    base_url = str(model_specific_params.get("base_url") or "").lower()
-    if "openrouter" in base_url:
-        runtime_keys.setdefault("OPENROUTER_API_KEY", os.getenv("OPENROUTER_API_KEY", ""))
-    elif "groq.com" in base_url:
-        runtime_keys.setdefault("GROQ_API_KEY", os.getenv("GROQ_API_KEY", ""))
-    elif "ChatAnthropic" in getattr(llm_class, "__name__", ""):
-        runtime_keys.setdefault("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY", ""))
-    elif "ChatGoogle" in getattr(llm_class, "__name__", ""):
-        runtime_keys.setdefault("GOOGLE_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
-    elif "ChatOpenAI" in getattr(llm_class, "__name__", ""):
-        runtime_keys.setdefault("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
+    if model_choice.endswith("/") and model_choice.count("/") == 1:
+        model_choice = provider_defaults.get(model_choice[:-1].lower(), model_choice)
 
-    for key_name, key_value in runtime_keys.items():
-        if key_value and key_name in _ENV_TO_LANGCHAIN:
-            param_name = _ENV_TO_LANGCHAIN[key_name]
-            model_specific_params[param_name] = key_value
-            # ChatOpenAI uses `api_key` as the canonical constructor field;
-            # keep it synchronized with the mapped alias when a model config
-            # was created from stale import-time defaults.
-            if param_name == "openai_api_key":
-                model_specific_params["api_key"] = key_value
+    config = resolve_model_config(model_choice)
+    if config is None:
+        raise ValueError(f"Unsupported LLM model: '{model_choice}'")
 
-    # Combine common parameters with model-specific parameters
-    # Model-specific parameters will override common ones if there are any conflicts
-    all_params = {**_common_llm_params, **model_specific_params}
-
-    # Validate that the required credentials exist before we hit the API
-    _ensure_credentials(model_choice, llm_class, model_specific_params)
-
-    # Create the LLM instance using the gathered parameters
-    llm_instance = llm_class(**all_params)
-
-    return llm_instance
-
-
-def _ensure_credentials(model_choice: str, llm_class, model_params: dict) -> None:
-    """Raise a clear error if the user selects a hosted model without a key."""
-
-    def _require(key_value, env_var, provider_name):
-        if key_value:
-            return
-        raise ValueError(
-            f"{provider_name} model '{model_choice}' selected but `{env_var}` is not set.\n"
-            "Add it to your .env file or export it before running the app."
-        )
-
-    params = model_params or {}
-    class_name = getattr(llm_class, "__name__", str(llm_class))
-
-    # v1.7 — use os.getenv() so the current runtime value (set by
-    # apply_env() from the CLI's saved config.json) is checked, not the
-    # stale module-level constant that was read from .env at import time.
-    if "ChatAnthropic" in class_name:
-        key = params.get("anthropic_api_key") or os.getenv("ANTHROPIC_API_KEY", "")
-        _require(key, "ANTHROPIC_API_KEY", "Anthropic")
-    elif "ChatGoogleGenerativeAI" in class_name:
-        key = params.get("google_api_key") or os.getenv("GOOGLE_API_KEY", "")
-        _require(key, "GOOGLE_API_KEY", "Google Gemini")
-    elif "ChatOpenAI" in class_name:
-        base_url = params.get("base_url", "").lower()
-        if "openrouter" in base_url:
-            key = params.get("api_key") or params.get("openai_api_key") or os.getenv("OPENROUTER_API_KEY", "")
-            _require(key, "OPENROUTER_API_KEY", "OpenRouter")
-        elif "groq" in base_url:
-            key = params.get("api_key") or params.get("openai_api_key") or os.getenv("GROQ_API_KEY", "")
-            _require(key, "GROQ_API_KEY", "Groq")
+    llm_class = config["class"]
+    params = dict(config["constructor_params"])
+    class_name = llm_class.__name__
+    base_url = str(params.get("base_url") or "").rstrip("/")
+    key_name = None
+    key_param = None
+    if "ChatOpenAI" in class_name:
+        key_param = "api_key"
+        if "api.groq.com" in base_url:
+            key_name = "GROQ_API_KEY"
+        elif base_url and base_url == (app_config.LLAMA_CPP_BASE_URL or "").rstrip("/"):
+            pass  # Local llama.cpp already supplies its placeholder key.
+        elif base_url:
+            key_name = "OPENROUTER_API_KEY"
         else:
-            key = params.get("api_key") or params.get("openai_api_key") or os.getenv("OPENAI_API_KEY", "")
-            _require(key, "OPENAI_API_KEY", "OpenAI")
+            key_name = "OPENAI_API_KEY"
+            model_id = params.get("model_name") or params.get("model") or ""
+            if not model_id.startswith(("gpt-3.5", "gpt-4")):
+                params["use_responses_api"] = True
+        params.pop("openai_api_key", None)
+    elif "ChatAnthropic" in class_name:
+        key_name, key_param = "ANTHROPIC_API_KEY", "anthropic_api_key"
+    elif "ChatGoogle" in class_name:
+        key_name, key_param = "GOOGLE_API_KEY", "google_api_key"
+
+    if key_name:
+        key = (api_keys or {}).get(key_name) or os.getenv(key_name) or params.get(key_param)
+        if not key or not str(key).strip():
+            raise ValueError(
+                f"Model '{model_choice}' selected but `{key_name}` is not set. "
+                "Add the selected provider's key in Settings or your environment."
+            )
+        params[key_param] = str(key).strip()
+
+    return llm_class(**{**_common_llm_params, **params, **overrides})
 
 
 _REFINED_QUERY_MAX_WORDS = 5
