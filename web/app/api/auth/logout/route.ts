@@ -3,7 +3,7 @@ import { getBackendUrl } from "@/lib/backend"
 import { getSessionAuthorization, sessionCookieOptions } from "@/lib/session"
 
 export async function POST() {
-  const authorization = getSessionAuthorization()
+  const authorization = await getSessionAuthorization()
   if (authorization) {
     try {
       const res = await fetch(`${getBackendUrl()}/auth/logout`, {

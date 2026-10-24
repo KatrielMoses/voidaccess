@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { getBackendUrl } from "@/lib/backend"
 
 export async function GET(request: Request) {
-  const token = getSessionAuthorization();
+  const token = await getSessionAuthorization();
       const BACKEND_URL = getBackendUrl()
 
   try {

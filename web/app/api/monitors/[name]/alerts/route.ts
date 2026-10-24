@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 /** Proxy GET /api/monitors/{name}/alerts → backend GET /monitors/{name}/alerts */
-export async function GET(request: Request, { params }: { params: { name: string } }) {
-  const token = getSessionAuthorization();
-    const { name } = params;
+export async function GET(request: Request, { params }: { params: Promise<{ name: string }> }) {
+  const token = await getSessionAuthorization();
+    const { name } = await params;
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
   const suffix = qs ? `?${qs}` : "";

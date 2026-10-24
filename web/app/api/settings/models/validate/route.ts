@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function POST(request: Request) {
-  const token = getSessionAuthorization();
+  const token = await getSessionAuthorization();
   const body = await request.json();
   try {
     const res = await fetch(`${getBackendUrl()}/settings/models/validate`, {

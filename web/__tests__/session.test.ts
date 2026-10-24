@@ -9,7 +9,7 @@ jest.mock("next/headers", () => ({ cookies: jest.fn() }))
 const mockedCookies = cookies as jest.Mock
 
 beforeEach(() => {
-  mockedCookies.mockReturnValue({ get: () => ({ value: "private-token" }) })
+  mockedCookies.mockResolvedValue({ get: () => ({ value: "private-token" }) })
   global.fetch = jest.fn()
 })
 
@@ -21,8 +21,8 @@ test("login returns only reset status and sets httpOnly SameSite session cookie"
   expect(response.headers.get("set-cookie")).toMatch(/SameSite=lax/i)
 })
 
-test("server reads authentication from the cookie", () => {
-  expect(getSessionAuthorization()).toBe("Bearer private-token")
+test("server reads authentication from the cookie", async () => {
+  expect(await getSessionAuthorization()).toBe("Bearer private-token")
 })
 
 test("logout revokes the backend token before clearing the session", async () => {

@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 /** Proxy POST /api/monitors/{name}/alerts/acknowledge → backend */
-export async function POST(request: Request, { params }: { params: { name: string } }) {
-  const token = getSessionAuthorization();
-    const { name } = params;
+export async function POST(request: Request, { params }: { params: Promise<{ name: string }> }) {
+  const token = await getSessionAuthorization();
+    const { name } = await params;
   let body: unknown = {};
   try {
     const text = await request.text();
