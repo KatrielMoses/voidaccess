@@ -280,6 +280,7 @@ async def extract_entities_from_page(
     disable_cache: Optional[bool] = None,
     persist: bool = True,
     force_skip_llm: bool = False,
+    page_title: str = "",
 ) -> ExtractionResult:
     """
     Run the full extraction pipeline for a single page.
@@ -374,6 +375,16 @@ async def extract_entities_from_page(
         logger.error("Normalization failed for %s: %s", page_url, exc)
         errors.append(f"normalize: {exc}")
         normalized = []
+
+    # Relevance gate (22R-4/22R-5): drop a common word typed as a threat name
+    # without a nearby threat cue, and an organisation that is the page's own
+    # site or a protocol/CMS/directory brand. Each removal is counted.
+    try:
+        from extractor.relevance_gate import gate_entities as _gate_entities
+
+        normalized = _gate_entities(normalized, page_text, page_url, page_title or "")
+    except Exception as exc:  # pragma: no cover - the gate never raises
+        logger.debug("Relevance gate skipped for %s: %s", page_url, exc)
 
     # Option A suppression happens before either direct or batch persistence.
     # Deterministic rules run in normalization; this bounded async pass adds
@@ -534,6 +545,7 @@ async def extract_entities_from_pages(
                     disable_cache=disable_cache,
                     persist=False,
                     force_skip_llm=not page_runs_llm,
+                    page_title=str(page.get("title") or ""),
                 )
             except Exception as exc:
                 logger.error("Page processing failed for %s: %s", url, exc)
