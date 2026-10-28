@@ -2,6 +2,38 @@
 
 All notable changes to VoidAccess are documented here.
 
+## 2.2.0 (unreleased)
+
+### Added
+
+- Relevance tiers. Every page, entity and relationship in the investigate JSON now carries `relevance`
+  (`direct`, `related` or `background`); pages and entities also carry `relevance_reason`, and pages a
+  `page_kind`. A top-level `relevance` object gives the query type, per-tier counts, the removal counts,
+  `feed_items_capped`, `filter_fallback` and `refined_query_restored`. Fields are only added; see
+  `docs/architecture.md` section 13.20.
+- The summary leads with direct findings, labels related material, and never presents background material as a
+  finding about the query. With no direct page it opens with "No collected page mentions <query> directly."
+- The Markdown report groups entities into Direct and Related and collapses Background into a short list at the
+  end; `voidaccess show` has a Tier column.
+- A `filter_fallback` trace event (counts only) when the LLM filter returns nothing usable.
+- `scripts/eval_relevance.py` scores runs per query and per tier; `scripts/build_relevance_data.py` regenerates
+  `data/ambiguous_threat_names.txt` and `data/threat_relations.json`.
+
+### Fixed
+
+- The query's selector is never lost: when the LLM rewrite drops or changes an e-mail, phone, domain, IP, CVE,
+  hash, onion address, wallet, @handle, threat name or person name, the original query is searched.
+- RSS: an article is relevant only when a query term or alias is in its title or summary. Recency orders results;
+  at most 5 recent unmatched articles are kept per run, as background feed items.
+- Common words in the threat gazetteer ("play", "royal", "snake", ...) are typed as threat names only with a threat
+  cue within about 8 tokens, or when the query names them; platform words ("php", "tor", "android") only when the
+  query names them. The removals are counted.
+- An organisation that is the page's own site or publisher, or a protocol, CMS or link-directory brand ("oauth",
+  "wordpress", "onionland"), is no longer extracted. Agencies such as the FBI are kept and marked background unless
+  they sit next to a direct match.
+- The content-safety rule in the LLM prompts is reworded so an echo of it can no longer trip the content-safety
+  detector on a summary, and the model is told never to restate it.
+
 ## [2.1.1] - 2026-10-28
 
 A security release. Upgrade promptly.

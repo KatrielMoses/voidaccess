@@ -61,6 +61,7 @@ is unchanged. Shape: `{type: "trace", schema: 2, run_id, seq, at, stage, kind, d
 | `enrich.source` | `source`\*, `status`\* (`ok` `error` `timeout` `disabled` `no_key` `skipped`), `hits` | enrich, per source |
 | `graph.progress` | `nodes`\*, `edges`\*, `communities` | graph |
 | `summary.status` | `kind`\* (`llm` `fallback` `none`), `attempt` | summarize |
+| `filter_fallback` | `scope`\* (`onion` `clearnet`), `candidates`\*, `kept`\* | filter, when the LLM filter returned nothing usable and the candidates were kept by default (counts only) |
 | `trace.truncated` | `kind`\*, `dropped`\* | once per capped kind, just before the terminal event |
 
 Rules a consumer can rely on:
