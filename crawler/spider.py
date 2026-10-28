@@ -42,7 +42,7 @@ from crawler.dedup import ContentDedup, UrlDedup
 from crawler.frontier import Frontier
 from crawler.utils import extract_onion_links, is_valid_onion, normalize_url
 from scraper import tor_pool
-from scraper.scrape import _extract_text
+from scraper.scrape import _extract_text, sniffs_as_text
 from vector import bulk_check_cache, upsert_page
 
 _logger = logging.getLogger(__name__)
@@ -240,6 +240,8 @@ class Spider:
                         chunks.append(chunk)
 
                     raw_bytes = b"".join(chunks)
+                    if not ct and not sniffs_as_text(raw_bytes):
+                        return None
                     html = raw_bytes.decode(resp.charset or "utf-8", errors="replace")
                     text = _extract_text(html)
                     return raw_bytes, html, text

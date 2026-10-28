@@ -72,6 +72,33 @@ MAX_EXTRACTED_TEXT_CHARS = 50_000
 MAX_RETURN_CHARS = 15_000
 ALLOWED_CONTENT_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
 
+# A response without a Content-Type is accepted only when its first bytes
+# look like text.
+SNIFF_BYTES = 512
+_BINARY_MAGIC = (
+    b"\x89PNG", b"\xff\xd8\xff", b"GIF8", b"RIFF", b"%PDF", b"PK\x03\x04",
+    b"ID3", b"OggS", b"\x1aE\xdf\xa3", b"BM", b"II*\x00", b"MM\x00*",
+    b"\x1f\x8b", b"7z\xbc\xaf", b"Rar!",
+)
+_CONTROL_BYTES = bytes(b for b in range(32) if b not in (9, 10, 12, 13, 27)) + b"\x7f"
+
+
+def sniffs_as_text(head: bytes) -> bool:
+    """True when *head* (the first bytes of a body) looks like text: no NUL
+    byte, no known binary signature, almost no control characters, and it
+    decodes as UTF-8 or Latin-1. An empty body counts as text."""
+    head = head[:SNIFF_BYTES]
+    if not head:
+        return True  # an empty body: nothing is stored either way
+    if b"\x00" in head:
+        return False
+    if head.startswith(_BINARY_MAGIC) or head[4:8] == b"ftyp":
+        return False
+    # Anything that is not UTF-8 decodes as Latin-1, so the last test is the
+    # share of control bytes.
+    controls = len(head) - len(head.translate(None, _CONTROL_BYTES))
+    return controls * 20 <= len(head)
+
 # Retry configuration — the `normal` pacing baseline.
 #
 # These were MAX_RETRIES=1 / RETRY_DELAYS=(1.0,) up to v1.9.4, which
@@ -644,6 +671,8 @@ async def _fetch_one_impl(
                             chunks.append(chunk)
 
                         raw_bytes = b"".join(chunks)
+                        if not content_type and not sniffs_as_text(raw_bytes):
+                            return "fail", "content_type", None, None, None
                         encoding = resp.charset or "utf-8"
                         return "ok", raw_bytes, encoding, None, None
 
