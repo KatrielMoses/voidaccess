@@ -33,6 +33,13 @@ from textual.widgets import (
 from extractor.identity import entity_canonical_id, entity_display_id
 
 
+# Relevance tier (22R) shown per entity; "—" for exports made before 2.2.
+_TIER_LABELS = {
+    "direct": "[green]direct[/green]",
+    "related": "[yellow]related[/yellow]",
+    "background": "[grey50]background[/grey50]",
+}
+
 # NOTE: keys are UPPERCASE to match the normalized entity_type returned by
 # voidaccess_cli.adapters.sqlite._entity_row. If you add a new type here,
 # use the canonical UPPERCASE name (e.g., "BITCOIN_ADDRESS", not "bitcoin_address").
@@ -143,7 +150,7 @@ class EntityBrowserApp(App):
     def on_mount(self) -> None:
         self.title = f"voidaccess — {self._title_text}"
         table: DataTable = self.query_one("#entity_table", DataTable)
-        table.add_columns("Cm", "T", "Value", "Priority", "Conn", "Badges")
+        table.add_columns("Cm", "T", "Tier", "Value", "Priority", "Conn", "Badges")
         self._populate_table()
 
     # -- helpers -----------------------------------------------------------
@@ -175,7 +182,8 @@ class EntityBrowserApp(App):
             cm = self.communities.get(str(e.get("id")))
             cm_label = f"[cyan]C{cm}[/cyan]" if cm is not None else ""
             priority = f"{(e.get('priority_score') or 0):.3f}"
-            table.add_row(cm_label, glyph, val, priority, str(conn), badges, key=e["id"])
+            tier = _TIER_LABELS.get(e.get("relevance") or "", "—")
+            table.add_row(cm_label, glyph, tier, val, priority, str(conn), badges, key=e["id"])
 
     # -- input handlers ----------------------------------------------------
 

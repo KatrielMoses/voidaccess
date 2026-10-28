@@ -52,6 +52,7 @@ TRACE_KINDS = (
     "enrich.source",
     "graph.progress",
     "summary.status",
+    "filter_fallback",
     "trace.truncated",
 )
 TRUNCATED_KIND = "trace.truncated"
@@ -733,6 +734,21 @@ def graph_progress(nodes: int, edges: int, communities: Optional[int] = None) ->
         if communities is not None:
             data["communities"] = max(0, int(communities))
         t.trace("graph", "graph.progress", data)
+    except Exception as exc:
+        logger.debug("trace hook failed (ignored): %s", exc)
+
+
+def filter_fallback(scope: str, candidates: int, kept: int) -> None:
+    """The relevance filter returned nothing usable; every candidate was kept (counts only)."""
+    t = current()
+    if t is None:
+        return
+    try:
+        t.trace("filter", "filter_fallback", {
+            "scope": scope if scope in ("onion", "clearnet") else "onion",
+            "candidates": max(0, int(candidates)),
+            "kept": max(0, int(kept)),
+        })
     except Exception as exc:
         logger.debug("trace hook failed (ignored): %s", exc)
 

@@ -528,7 +528,11 @@ def _filter_clearnet_pages(
     top_n: int,
     llm: Any = None,
 ) -> list[dict]:
-    """Filter side-source pages without changing the Tor candidate path."""
+    """Filter side-source pages without changing the Tor candidate path.
+
+    When the LLM filter returns nothing usable, every candidate is kept as
+    before, and each kept page is marked ``via_fallback`` (22R-7).
+    """
     candidates: list[dict] = []
     unique_pages: list[dict] = []
     seen_urls: set[str] = set()
@@ -555,15 +559,20 @@ def _filter_clearnet_pages(
             return [unique_pages[index - 1] for index in picked]
 
         from voidaccess.llm import filter_results
-        selected = filter_results(llm, query, candidates, top_n) or candidates
+        picked = filter_results(llm, query, candidates, top_n)
+        fallback = (not picked) or bool(getattr(picked, "fallback", False))
+        selected = picked or candidates
         selected_urls = {
             item.get("link") or item.get("url")
             for item in selected
         }
-        return [
+        kept = [
             page for page in unique_pages
             if (page.get("url") or page.get("link")) in selected_urls
         ]
+        if fallback:
+            kept = [{**page, "via_fallback": True} for page in kept]
+        return kept
     except Exception as exc:
         # Side-source enrichment is best effort; retain the previous behavior
         # if a secondary filter pass fails.
@@ -571,7 +580,7 @@ def _filter_clearnet_pages(
             "Clearnet relevance filter failed (%s); retaining all side pages",
             exc,
         )
-        return unique_pages
+        return [{**page, "via_fallback": True} for page in unique_pages]
 
 
 async def _cli_run_with_timeout(coro, timeout_seconds: int, phase_name: str, investigation_id: str):
@@ -725,6 +734,24 @@ async def _run_investigation_impl(
     reset_safety_drop_counts()
     STATUS_SKIPPED = source_control.STATUS_SKIPPED
 
+    # Relevance tiers (22R): what the user searched for, published for the
+    # extractor gate and the RSS scorer; per-run removal counters reset.
+    from extractor import relevance_gate as _relevance_gate
+    from voidaccess import relevance as _relevance
+    from voidaccess.query_intent import classify_query, ensure_refined_query
+
+    query_intent = classify_query(query)
+    _relevance.set_current_intent(query_intent)
+    _relevance_gate.reset_counts()
+    try:
+        from sources.rss_scraper import reset_run_stats as _reset_rss_stats
+
+        _reset_rss_stats()
+    except Exception:
+        pass
+    refined_restored = False
+    filter_fallback = {"onion": False, "clearnet": False}
+
     from voidaccess_cli.display import RichDisplaySink
 
     emitter.add_sink(RichDisplaySink(InvestigationDisplay(quiet=quiet)))
@@ -850,7 +877,13 @@ async def _run_investigation_impl(
             display.update_step("Refining query", "fail", str(exc))
             refined = query
         else:
-            display.update_step("Refining query", "ok", f"→ {refined!r}")
+            # G2: the selector / threat name / person name must survive the
+            # rewrite; otherwise the original query is searched.
+            refined, refined_restored = ensure_refined_query(refined, query_intent)
+            display.update_step(
+                "Refining query", "ok",
+                f"→ {refined!r}" + (" (original query kept)" if refined_restored else ""),
+            )
     else:
         display.update_step("Refining query", "skip", "--no-llm")
     sqlite_adapter.update_investigation(investigation_id, {"refined_query": refined})
@@ -1084,13 +1117,23 @@ async def _run_investigation_impl(
             from voidaccess.llm import filter_results
             # Twice the target, so the diversity rule and the backfill draw
             # only on links the LLM judged relevant (and safe).
-            llm_picked = await asyncio.to_thread(filter_results, llm, refined, search_links, onion_n * 2) or search_links
+            llm_raw = await asyncio.to_thread(filter_results, llm, refined, search_links, onion_n * 2)
+            filter_fallback["onion"] = (not llm_raw) or bool(getattr(llm_raw, "fallback", False))
+            llm_picked = llm_raw or search_links
             filtered_links, backfill_pool = select_diverse(llm_picked, onion_n)
             filter_drop_reason = "irrelevant"
             display.update_step("Filtering results", "ok", f"top {len(filtered_links)}")
         except Exception as exc:
             display.update_step("Filtering results", "fail", str(exc))
+            filter_fallback["onion"] = True
             filtered_links, backfill_pool = select_diverse(search_links, onion_n)
+        if filter_fallback["onion"]:
+            # 22R-7: pages reached only through the fallback earn a tier from
+            # their content alone.
+            for _link in (*filtered_links, *backfill_pool):
+                if isinstance(_link, dict):
+                    _link["via_fallback"] = True
+            _trace.filter_fallback("onion", len(search_links), len(filtered_links))
     elif no_llm and search_links:
         # No LLM: pick pages via the heuristic ranker instead of just
         # taking the first N (which are usually search-engine index
@@ -1129,6 +1172,9 @@ async def _run_investigation_impl(
         filter_top_n,
         llm,
     )
+    if any(p.get("via_fallback") for p in filtered_clearnet_pages if isinstance(p, dict)):
+        filter_fallback["clearnet"] = True
+        _trace.filter_fallback("clearnet", len(clearnet_pages), len(filtered_clearnet_pages))
 
     if _trace.active():
         _trace_filter(
@@ -1218,14 +1264,23 @@ async def _run_investigation_impl(
                     collect_outlinks=True,
                 )
 
+            _link_meta = {
+                str(_l.get("link") or ""): _l
+                for _l in (*filtered_links, *backfill_pool)
+                if isinstance(_l, dict) and _l.get("link")
+            }
+
             def _add_pages(batch_results) -> None:
                 claims = getattr(batch_results, "relationship_claims_by_url", {})
                 for url, text in batch_results.items():
                     if text:
+                        _meta = _link_meta.get(url) or {}
                         page_record = {
                             "url": url,
                             "text": text,
                             "source": "tor_search",
+                            "title": str(_meta.get("title") or ""),
+                            "via_fallback": bool(_meta.get("via_fallback")),
                             "dependency_extraction_invoked": no_llm,
                             "dependency_extraction_route": "core-scraper" if no_llm else None,
                         }
@@ -1298,6 +1353,9 @@ async def _run_investigation_impl(
             "text": text,
             "source": page.get("source") or page.get("source_type") or "clearnet",
             "source_type": page.get("source_type"),
+            "title": str(page.get("title") or ""),
+            "via_fallback": bool(page.get("via_fallback")),
+            "recency_only": bool(page.get("recency_only")),
             "dependency_relationships": page.get("dependency_relationships", []),
             "dependency_extraction_invoked": page.get(
                 "dependency_extraction_invoked", False
@@ -1880,7 +1938,12 @@ async def _run_investigation_impl(
     display.update_step("Generating summary", "active")
     summary_text = ""
     summary_kind = "none"
-    pages_to_summarize = scraped_pages[:10]
+    # 22R-2: tier every gated page (enrichment pages included) before the
+    # summary, so the summary leads with direct pages and labels the rest.
+    relevance_matcher = _relevance.QueryMatcher(query_intent, refined)
+    _relevance.annotate_pages(scraped_pages, relevance_matcher)
+    direct_page_count = sum(1 for p in scraped_pages if p.get("relevance") == "direct")
+    pages_to_summarize = _relevance.sort_by_tier(scraped_pages)[:10]
     if llm is not None:
         from voidaccess.llm import generate_summary
         from voidaccess.summary_fallback import summarize_with_fallback
@@ -1889,7 +1952,8 @@ async def _run_investigation_impl(
             # generate_summary raises SummaryUnavailable on a failed LLM, which
             # summarize_with_fallback turns into a retry and then the fallback.
             return await asyncio.to_thread(
-                generate_summary, llm, refined, call_pages, preset="threat_intel", **kwargs
+                generate_summary, llm, refined, call_pages, preset="threat_intel",
+                relevance_intent=query_intent, **kwargs
             )
 
         outcome = await cancel.run_cancellable(
@@ -1907,6 +1971,9 @@ async def _run_investigation_impl(
             "summarize",
         )
         summary_text, summary_kind = outcome.text, outcome.kind
+        if summary_text and direct_page_count == 0:
+            # 22R-8(b): with no direct page the summary opens by saying so.
+            summary_text = _relevance.prepend_no_direct_sentence(summary_text, query_intent)
         _trace.summary_status(outcome.kind, outcome.attempts)
         if outcome.kind == "llm":
             display.update_step("Generating summary", "ok")
@@ -1929,6 +1996,9 @@ async def _run_investigation_impl(
     final_entities, final_relationships = _gate_final_entities(
         final_entities, final_relationships
     )
+    # 22R-6/22R-9: entity and relationship tiers (added fields only).
+    _relevance.annotate_entities(final_entities, scraped_pages, relevance_matcher)
+    _relevance.annotate_relationships(final_relationships, final_entities)
     # Entity persistence may create Page rows for side-source pages after the
     # initial pre-extraction lookup. Refresh the lightweight manifest so it
     # agrees with relationship provenance and the persisted DB state.
@@ -2026,6 +2096,9 @@ async def _run_investigation_impl(
                 "page_id": p.get("page_id"),
                 "url": p["url"],
                 "source": p.get("source", ""),
+                "relevance": p.get("relevance", "background"),
+                "relevance_reason": p.get("relevance_reason", "none"),
+                "page_kind": p.get("page_kind", "other"),
             }
             for p in scraped_pages
         ],
@@ -2034,6 +2107,18 @@ async def _run_investigation_impl(
         "seeds_discovered": _discovered_count,
         # Items the content-safety gate dropped this run, by kind (counts only).
         "content_safety": _safety_counts(),
+        # How the output relates to the query (22R-9): per-tier counts and the
+        # only removals the tiers make. Counts only.
+        "relevance": _relevance.build_relevance_block(
+            query_intent,
+            scraped_pages,
+            final_entities,
+            final_relationships,
+            _relevance_gate.removal_counts(),
+            _rss_feed_items_capped(),
+            filter_fallback["onion"] or filter_fallback["clearnet"],
+            refined_restored,
+        ),
     }
 
     # Outputs are written to temp files and renamed into place only after the
@@ -2201,6 +2286,15 @@ def _gate_final_entities(
         if str(r.get("entity_a_id")) not in gone and str(r.get("entity_b_id")) not in gone
     ]
     return kept, rels
+
+
+def _rss_feed_items_capped() -> int:
+    try:
+        from sources.rss_scraper import last_run_stats
+
+        return int(last_run_stats().get("feed_items_capped", 0))
+    except Exception:
+        return 0
 
 
 def _safety_counts() -> dict[str, int]:
@@ -2741,22 +2835,65 @@ def _render_markdown(payload: dict[str, Any]) -> str:
     lines.append(f"- {payload.get('seeds_discovered', 0)} new .onion seeds discovered")
     lines.append("")
 
+    relevance = payload.get("relevance") or {}
+    tiers = ("direct", "related", "background")
+    by_tier: dict[str, list[dict]] = {t: [] for t in tiers}
+    for e in entities:
+        t = e.get("relevance")
+        by_tier[t if t in by_tier else "background"].append(e)
+    if relevance:
+        pages = relevance.get("pages") or {}
+        removed = relevance.get("removed") or {}
+        lines.append("## Relevance")
+        lines.append(
+            f"- Query type: {relevance.get('query_intent', 'topic')}"
+        )
+        lines.append(
+            "- Pages: "
+            + ", ".join(f"{pages.get(t, 0)} {t}" for t in tiers)
+        )
+        lines.append(
+            "- Entities: "
+            + ", ".join(f"{len(by_tier[t])} {t}" for t in tiers)
+        )
+        lines.append(
+            f"- Removed: {removed.get('gazetteer_context', 0)} common word(s) typed as threat "
+            f"names, {removed.get('org_boilerplate', 0)} site/boilerplate organisation(s)"
+        )
+        if relevance.get("filter_fallback"):
+            lines.append("- The relevance filter returned nothing usable; candidates were kept by default.")
+        lines.append("")
+
+    def _entity_tables(rows_in: list[dict], heading_level: str) -> None:
+        typed: dict[str, list[dict]] = {}
+        for e in rows_in:
+            typed.setdefault(e["entity_type"], []).append(e)
+        for etype in sorted(typed.keys()):
+            rows = typed[etype]
+            lines.append(f"\n{heading_level} {etype} ({len(rows)})")
+            lines.append("| Value | Priority | Confidence | Method | Tags |")
+            lines.append("|---|---|---|---|---|")
+            for r in rows[:50]:
+                tags = (r.get("corroborating_sources") or "").replace("|", "/")
+                val = entity_display_id(r).replace("|", "/")
+                conf = r.get("confidence")
+                lines.append(
+                    f"| {val} | {(r.get('priority_score') or 0):.3f} | "
+                    f"{conf:.2f} | {r.get('extraction_method') or ''} | {tags} |"
+                )
+            if len(rows) > 50:
+                lines.append(f"\n_…and {len(rows) - 50} more (see JSON)_")
+
     lines.append(f"## Entities ({len(entities)} total)")
-    for etype in sorted(by_type.keys()):
-        rows = by_type[etype]
-        lines.append(f"\n### {etype} ({len(rows)})")
-        lines.append("| Value | Priority | Confidence | Method | Tags |")
-        lines.append("|---|---|---|---|---|")
-        for r in rows[:50]:
-            tags = (r.get("corroborating_sources") or "").replace("|", "/")
-            val = entity_display_id(r).replace("|", "/")
-            conf = r.get("confidence")
-            lines.append(
-                f"| {val} | {(r.get('priority_score') or 0):.3f} | "
-                f"{conf:.2f} | {r.get('extraction_method') or ''} | {tags} |"
-            )
-        if len(rows) > 50:
-            lines.append(f"\n_…and {len(rows) - 50} more (see JSON)_")
+    if relevance:
+        # 22R-9: Direct and Related in full; Background is a short list at the end.
+        for tier, title in (("direct", "Direct"), ("related", "Related")):
+            lines.append(f"\n### {title} ({len(by_tier[tier])})")
+            if not by_tier[tier]:
+                lines.append("_None._")
+            _entity_tables(by_tier[tier], "####")
+    else:
+        _entity_tables(entities, "###")
     lines.append("")
 
     lines.append("## Sources used")
@@ -2773,5 +2910,26 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         if info.get("requests"):
             detail += f" [{info['requests']} requests]"
         lines.append(f"- {glyph} {name}{detail}")
+
+    if relevance:
+        background = by_tier["background"]
+        lines.append("")
+        lines.append(f"## Background ({len(background)} entities, not about the query)")
+        if not background:
+            lines.append("_None._")
+        else:
+            typed: dict[str, list[str]] = {}
+            for e in background:
+                typed.setdefault(e["entity_type"], []).append(
+                    entity_display_id(e).replace("|", "/")
+                )
+            lines.append("<details><summary>Show background entities</summary>")
+            lines.append("")
+            for etype in sorted(typed.keys()):
+                vals = typed[etype]
+                more = f" …and {len(vals) - 10} more" if len(vals) > 10 else ""
+                lines.append(f"- {etype} ({len(vals)}): {', '.join(vals[:10])}{more}")
+            lines.append("")
+            lines.append("</details>")
 
     return "\n".join(lines) + "\n"

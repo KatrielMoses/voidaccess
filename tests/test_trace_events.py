@@ -836,7 +836,10 @@ def test_full_run_emits_every_kind_and_validates(full_run):
     for line in lines:
         validator.validate(line)
     kinds = {line["kind"] for line in lines if line["type"] == "trace"}
-    assert kinds == set(tr.TRACE_KINDS), set(tr.TRACE_KINDS) - kinds
+    # filter_fallback needs an LLM filter that returned nothing usable; this
+    # run is --no-llm (its emission is covered in test_relevance_pipeline.py).
+    expected = set(tr.TRACE_KINDS) - {"filter_fallback"}
+    assert kinds == expected, expected - kinds
     assert [line["seq"] for line in lines] == list(range(1, len(lines) + 1))
     assert lines[-1]["type"] == "completed"
     started = [line["stage"] for line in lines if line["type"] == "stage" and line["status"] == "start"]

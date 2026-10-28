@@ -192,6 +192,9 @@ def _print_summary(data: dict) -> None:
     table.add_row("Status", str(inv.get("status") or ""))
     table.add_row("Entities", str(len(entities)))
     table.add_row("Relationships", str(len(relationships)))
+    if any(e.get("relevance") for e in entities):
+        tiers = {t: sum(1 for e in entities if e.get("relevance") == t) for t in ("direct", "related", "background")}
+        table.add_row("Tiers", ", ".join(f"{n} {t}" for t, n in tiers.items()))
     table.add_row("Created", str(inv.get("created_at") or "")[:19])
     table.add_row("Summary", (str(inv.get("summary") or "—"))[:120])
     console.print(table)

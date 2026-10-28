@@ -63,7 +63,7 @@
           "enum": [
             "query.refined", "search.request", "search.result", "url.found", "url.kept",
             "url.dropped", "page.fetched", "page.entities", "entity.found", "enrich.source",
-            "graph.progress", "summary.status", "trace.truncated"
+            "graph.progress", "summary.status", "filter_fallback", "trace.truncated"
           ]
         },
         "data": {"type": "object"}
@@ -79,6 +79,8 @@
          "then": {"properties": {"data": {"$ref": "#/$defs/urlFound"}}}},
         {"if": {"properties": {"kind": {"const": "url.kept"}}},
          "then": {"properties": {"data": {"$ref": "#/$defs/urlKept"}}}},
+        {"if": {"properties": {"kind": {"const": "filter_fallback"}}},
+         "then": {"properties": {"data": {"$ref": "#/$defs/filterFallback"}}}},
         {"if": {"properties": {"kind": {"const": "url.dropped"}}},
          "then": {"properties": {"data": {"$ref": "#/$defs/urlDropped"}}}},
         {"if": {"properties": {"kind": {"const": "page.fetched"}}},
@@ -203,6 +205,14 @@
         "communities": {"$ref": "#/$defs/count"}
       }
     },
+    "filterFallback": {
+      "type": "object", "additionalProperties": false, "required": ["scope", "candidates", "kept"],
+      "properties": {
+        "scope": {"enum": ["onion", "clearnet"]},
+        "candidates": {"$ref": "#/$defs/count"},
+        "kept": {"$ref": "#/$defs/count"}
+      }
+    },
     "summaryStatus": {
       "type": "object", "additionalProperties": false, "required": ["kind"],
       "properties": {
@@ -217,7 +227,7 @@
           "enum": [
             "query.refined", "search.request", "search.result", "url.found", "url.kept",
             "url.dropped", "page.fetched", "page.entities", "entity.found", "enrich.source",
-            "graph.progress", "summary.status"
+            "graph.progress", "summary.status", "filter_fallback"
           ]
         },
         "dropped": {"type": "integer", "minimum": 1}
