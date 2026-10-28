@@ -282,3 +282,50 @@ def test_safety_bypass_prompt_on_retains_fragment(monkeypatch):
     assert "CRITICAL AUTHORIZATION" in llm.safety_bypass_prompt_fragment()
     for name, sent in _all_prompts(llm).items():
         assert "CRITICAL AUTHORIZATION" in sent, name
+
+
+# ---------------------------------------------------------------------------
+# (f) Normalised detection applies on every path
+# ---------------------------------------------------------------------------
+
+
+def _obfuscated_page_text() -> str:
+    marker = CONTENT_BLOCKLIST[1].replace(" ", "-").upper().replace("O", "0")
+    return ("benign context. " * 40) + f" {marker} " + ("more context. " * 40)
+
+
+def test_gate_pages_drops_obfuscated_text_on_dict_and_record_paths():
+    pages, dropped = gate_pages({"http://obf.onion/": _obfuscated_page_text()})
+    assert (pages, dropped) == ({}, 1)
+    records, dropped = gate_pages([
+        {"url": "https://paste.example/raw/3", "text": _obfuscated_page_text(), "source_type": "paste_site"},
+        {"url": "http://clean.onion/", "text": _clean_page_text(), "source": "tor_search"},
+    ])
+    assert dropped == 1
+    assert [r["url"] for r in records] == ["http://clean.onion/"]
+
+
+def test_shared_archive_sanitizer_drops_obfuscated_text():
+    from sanitizer.gate import sanitize_page
+
+    assert sanitize_page(_obfuscated_page_text()) is None
+
+
+@pytest.mark.asyncio
+async def test_scrape_multiple_drops_obfuscated_tor_page(db_engine, monkeypatch):
+    from db.queries import get_page_by_url
+    from db.session import get_session
+    from scraper import scrape as scrape_module
+
+    url = "http://cli-obfuscated-parity.onion/page"
+
+    async def _fake_gather(*_args, **_kwargs):
+        return [(url, f"Title - {_obfuscated_page_text()}", b"<html/>", _obfuscated_page_text(), None)]
+
+    monkeypatch.setattr(scrape_module, "_gather_all", _fake_gather)
+    monkeypatch.setattr(scrape_module, "validate_urls_for_scraping", lambda urls: (urls, []))
+
+    result = await scrape_module.scrape_multiple([{"link": url, "title": "Title"}])
+    assert url not in result
+    with get_session() as session:
+        assert get_page_by_url(session, url) is None
