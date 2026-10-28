@@ -1,0 +1,18 @@
+# Manual allow-override for scripts/build_relevance_data.py.
+# Distinct threat names that happen to be dictionary words. Names listed here
+# are NOT treated as ambiguous: they are typed as threat names without a
+# nearby threat cue. One lower-case name per line.
+clop
+redline
+locky
+rhadamanthys
+latrodectus
+karakurt
+trigona
+samsam
+lapsus
+ducktail
+dispossessor
+javali
+hafnium
+sandworm

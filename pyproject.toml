@@ -199,6 +199,9 @@ exclude = [
     "seed_data.json.gz",
     "monitors.yaml",
     "blocked_hosts.sha256",
+    "ambiguous_threat_names.txt",
+    "ambiguous_threat_names_allow.txt",
+    "threat_relations.json",
 ]
 
 # Alembic's runtime startup hook resolves its config relative to the installed
