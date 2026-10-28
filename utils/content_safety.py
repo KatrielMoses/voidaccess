@@ -288,8 +288,12 @@ _PATTERNS_RE = tuple(re.compile(p.removeprefix(r"\b")) for p in BLOCKED_PATTERNS
 # or token-anchored in the squashed form; URL terms only token-anchored.
 _PHRASE_NEEDLES = _needles(CONTENT_BLOCKLIST, substring=True)
 _GORE_NEEDLES = _needles(SAFETY_VOCAB["gore"], substring=True, skip=_PHRASE_NEEDLES)
+# A bare name: blocked in URLs (is_blocked_url's raw check) but too common in prose.
+URL_ONLY_TERMS = ("daisy",)
 _URL_TERM_NEEDLES = _needles(
-    BLOCKED_URL_TERMS, substring=False, skip=_PHRASE_NEEDLES + _GORE_NEEDLES
+    [t for t in BLOCKED_URL_TERMS if t not in URL_ONLY_TERMS],
+    substring=False,
+    skip=_PHRASE_NEEDLES + _GORE_NEEDLES,
 )
 # A run of one-character tokens ("k i d s") in " " + spaced + " ".
 _SINGLE_CHAR_RUN_RE = re.compile(r" ((?:[a-z0-9] )+[a-z0-9])(?= )")

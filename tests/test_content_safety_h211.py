@@ -589,3 +589,10 @@ def test_every_minor_and_sexual_term_is_a_whole_token_class():
         norm = cs._Normalized(f"{term} {_gap(2)} {SEXUAL}")
         assert cs._proximity_hit(cs._proximity_tokens(norm)), term
         assert detect_prohibited(norm.spaced) is not None, term
+
+
+def test_url_only_term_is_not_a_page_text_rule():
+    from utils.content_safety import detect_prohibited, is_blocked_url
+
+    assert detect_prohibited("Daisy wrote a new post about the garden") is None
+    assert is_blocked_url("http://example.onion/daisy/")[0] is True
