@@ -198,6 +198,7 @@ exclude = [
     "domain_stopwords_en.txt",
     "seed_data.json.gz",
     "monitors.yaml",
+    "blocked_hosts.sha256",
 ]
 
 # Alembic's runtime startup hook resolves its config relative to the installed

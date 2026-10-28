@@ -1,0 +1,10 @@
+# Content-safety host blocklist.
+# One lower-case hex SHA-256 per line: the hash of a normalised host
+# (lower-case, no scheme, no port, no trailing dot), never the host itself.
+# Lines starting with "#" and blank lines are ignored.
+0a48f0052abff49a6f5bb2e43d5168a22b0062adca9a233da4f019de8c6b4ed6
+37f0e73253da9a9bc601b2a34866b95e25dfb5c56178947fa091d963eb40a800
+724fc33ce445fa9ca711526f1cdc45309477b3c9171d28fe1f005317f42b871e
+a269238446aa84929379fac30f35cae346c752491d93cb30d64d06a957a7d4b1
+c0f40bcb2f37c55849dfaa0a67fbcaff99e952518c160eb47288140fa6f9b63e
+e36b198f60a652c9507df1b9a535eadac66fd208f7c212291ec46fc0953fde6c
