@@ -2,6 +2,15 @@
 
 All notable changes to VoidAccess are documented here.
 
+## [2.1.1] - 2026-10-28
+
+A security release. Upgrade promptly.
+
+### Security
+
+- Security: stronger content-safety detection for page text, titles, URLs and entities.
+- A response without a `Content-Type` header is kept only when its body looks like text.
+
 ## [2.1.0] - 2026-10-18
 
 A security release for multi-user self-hosted installs, plus everything built since 2.0.3: a shared knowledge
