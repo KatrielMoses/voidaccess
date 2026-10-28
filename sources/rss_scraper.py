@@ -84,6 +84,22 @@ MAX_ARTICLES_PER_FEED = 3
 MAX_TOTAL_ARTICLES = 20
 MAX_ARTICLE_SIZE = 100 * 1024  # 100 KB
 MIN_MEANINGFUL_ARTICLE_TEXT = 100
+# 22R-3: articles that match no query term are relevant to nothing; recency
+# alone only orders results. At most this many recent, unmatched articles are
+# still kept per run, labelled background feed items.
+RSS_RECENCY_ONLY_CAP = 5
+
+# Per-run counts for the relevance block (the CLI runs one query per process).
+_last_run_stats: dict[str, int] = {"recency_only_kept": 0, "feed_items_capped": 0}
+
+
+def last_run_stats() -> dict[str, int]:
+    """Counts from the most recent ``fetch_relevant_articles`` call."""
+    return dict(_last_run_stats)
+
+
+def reset_run_stats() -> None:
+    _last_run_stats.update(recency_only_kept=0, feed_items_capped=0)
 
 RSS_FEEDS = [
     {
@@ -330,6 +346,10 @@ class RSSFeedScraper:
         # persistent across runs.  The sentinel value marks "we already
         # tried this URL this run and it failed; don't try again".
         self._article_fetch_cache: dict[str, object] = {}
+        # 22R-3: query matcher (set per fetch) and recent articles that
+        # matched no query term, kept aside for the capped background slot.
+        self._matcher = None
+        self._recency_candidates: list[tuple[int, int, dict, dict]] = []
 
     async def __aenter__(self):
         # Shared clearnet pool (P1.2): borrow the pooled session (the direct
@@ -360,6 +380,14 @@ class RSSFeedScraper:
             return []
 
         search_terms = self._extract_search_terms(query, refined_query)
+        try:
+            from voidaccess.relevance import QueryMatcher, intent_for
+
+            self._matcher = QueryMatcher(intent_for(query), refined_query or query)
+        except Exception as exc:  # pragma: no cover - relevance never breaks RSS
+            logger.debug("RSS relevance matcher unavailable: %s", exc)
+            self._matcher = None
+        self._recency_candidates = []
 
         logger.info(
             "RSS feeds: fetching for '%s' (%d feeds)",
@@ -388,8 +416,40 @@ class RSSFeedScraper:
         )
 
         final = all_articles[:max_results]
-        logger.info("RSS feeds: %d relevant articles found", len(final))
+        recency = await self._recency_only_articles(
+            min(RSS_RECENCY_ONLY_CAP, max(0, max_results - len(final))),
+            {a.get("url", "") for a in final},
+        )
+        final.extend(recency)
+        logger.info(
+            "RSS feeds: %d relevant articles found, %d recent background items",
+            len(final) - len(recency), len(recency),
+        )
         return final
+
+    async def _recency_only_articles(self, cap: int, taken: set[str]) -> list[dict]:
+        """The capped background slot: recent articles that matched no query term."""
+        seen: set[str] = set()
+        ranked: list[tuple[int, int, dict, dict]] = []
+        for item in sorted(
+            getattr(self, "_recency_candidates", []),
+            key=lambda c: (-(c[0] * c[1]), str(c[2].get("url", ""))),
+        ):
+            url = item[2].get("url", "")
+            if url and url not in taken and url not in seen:
+                seen.add(url)
+                ranked.append(item)
+        kept: list[dict] = []
+        for recency, _weight, article, feed in ranked:
+            if len(kept) >= cap:
+                break
+            page = await self._article_page(article, feed, recency)
+            if page is not None:
+                page["recency_only"] = True
+                kept.append(page)
+        _last_run_stats["recency_only_kept"] = len(kept)
+        _last_run_stats["feed_items_capped"] = max(0, len(ranked) - len(kept))
+        return kept
 
     def _extract_search_terms(self, query: str, refined_query: str) -> list[str]:
         """Extract key terms for relevance matching."""
@@ -451,37 +511,52 @@ class RSSFeedScraper:
         for article in raw_articles:
             relevance = self._score_article(article, search_terms, feed)
             if relevance <= 0:
+                recency = self._recency_score(article)
+                if recency:
+                    if not hasattr(self, "_recency_candidates"):
+                        self._recency_candidates = []
+                    self._recency_candidates.append(
+                        (recency, int(feed.get("weight", 5) or 5), article, feed)
+                    )
                 continue
 
-            snippet_only = os.getenv("VOIDACCESS_RSS_SNIPPET_ONLY") == "1"
-            full_content = "" if snippet_only else await self._fetch_article_content(article.get("url", ""))
-            content = full_content or article.get("summary", "")
-
-            if not snippet_only and (not content or len(content.strip()) < 100):
+            page = await self._article_page(article, feed, relevance)
+            if page is None:
                 continue
-
-            clean, flagged = sanitize_content(content or article.get("title", ""))
-            if flagged or not clean:
-                continue
-
-            relevant.append({
-                "url": article.get("url", ""),
-                "text_content": clean,
-                "title": article.get("title", feed_name),
-                "source_type": "rss_feed",
-                "source_name": feed_name,
-                "feed_category": feed.get("category", "unknown"),
-                "published_at": article.get("published", ""),
-                "relevance": relevance,
-                "feed_weight": feed.get("weight", 5),
-                "scraped_at": datetime.now(timezone.utc).isoformat(),
-                "word_count": len(clean.split()),
-            })
+            relevant.append(page)
 
             if len(relevant) >= MAX_ARTICLES_PER_FEED:
                 break
 
         return relevant
+
+    async def _article_page(self, article: dict, feed: dict, relevance: int) -> Optional[dict]:
+        """The page dict for one article (full text when reachable), or None."""
+        feed_name = feed.get("name", "")
+        snippet_only = os.getenv("VOIDACCESS_RSS_SNIPPET_ONLY") == "1"
+        full_content = "" if snippet_only else await self._fetch_article_content(article.get("url", ""))
+        content = full_content or article.get("summary", "")
+
+        if not snippet_only and (not content or len(content.strip()) < 100):
+            return None
+
+        clean, flagged = sanitize_content(content or article.get("title", ""))
+        if flagged or not clean:
+            return None
+
+        return {
+            "url": article.get("url", ""),
+            "text_content": clean,
+            "title": article.get("title", feed_name),
+            "source_type": "rss_feed",
+            "source_name": feed_name,
+            "feed_category": feed.get("category", "unknown"),
+            "published_at": article.get("published", ""),
+            "relevance": relevance,
+            "feed_weight": feed.get("weight", 5),
+            "scraped_at": datetime.now(timezone.utc).isoformat(),
+            "word_count": len(clean.split()),
+        }
 
     async def _fetch_and_parse(self, feed_url: str, feed_name: str) -> list[dict]:
         """Fetch and parse an RSS/Atom feed XML.
@@ -702,44 +777,80 @@ class RSSFeedScraper:
         text = re.sub(r"<[^>]+>", " ", html)
         return re.sub(r"\s+", " ", text).strip()
 
+    @staticmethod
+    def _recency_score(article: dict) -> int:
+        """Ordering score from the publication date; 0 when too old or undated."""
+        pub_str = article.get("published", "")
+        if not pub_str:
+            return 0
+        try:
+            from email.utils import parsedate_to_datetime
+            try:
+                pub_dt = parsedate_to_datetime(pub_str)
+            except Exception:
+                import dateutil.parser
+                pub_dt = dateutil.parser.parse(pub_str)
+
+            now = datetime.now(timezone.utc)
+            if pub_dt.tzinfo is None:
+                pub_dt = pub_dt.replace(tzinfo=timezone.utc)
+
+            age_days = (now - pub_dt).days
+            if age_days > MAX_ARTICLE_AGE_DAYS:
+                return 0
+            if age_days <= 7:
+                return 5
+            if age_days <= 30:
+                return 3
+            return 1
+        except Exception:
+            return 1
+
+    def _matches_query(self, article: dict, search_terms: list[str]) -> bool:
+        """22R-3: does a query term or alias appear in the title or summary?
+
+        With a query matcher (the normal path) this is the relevance-tier
+        match: the selector, threat name or alias, topic phrase, or a
+        non-generic term. Without one, any non-generic search term counts.
+        """
+        title = article.get("title", "") or ""
+        summary = article.get("summary", "") or ""
+        hay = f"{title}\n{summary}"
+        matcher = getattr(self, "_matcher", None)
+        if matcher is not None:
+            try:
+                return bool(matcher.direct_matches(hay) or matcher.related_match(hay))
+            except Exception:
+                pass
+        from voidaccess.query_intent import GENERIC_TERMS
+
+        low = hay.lower()
+        return any(
+            len(term) > 3 and term not in GENERIC_TERMS and term in low
+            for term in search_terms
+        )
+
     def _score_article(
         self,
         article: dict,
         search_terms: list[str],
         feed: dict,
     ) -> int:
-        """Score article relevance to search terms (0 = exclude)."""
-        score = 0
+        """Score article relevance to search terms (0 = exclude).
 
+        Relevance needs a query-term match in the title or summary; recency
+        and feed tags only order the matching articles.
+        """
+        pub_str = article.get("published", "")
+        recency = self._recency_score(article)
+        if pub_str and recency == 0:
+            return 0  # older than MAX_ARTICLE_AGE_DAYS
+        if not self._matches_query(article, search_terms):
+            return 0
+
+        score = recency
         title = article.get("title", "").lower()
         summary = article.get("summary", "").lower()
-
-        pub_str = article.get("published", "")
-        if pub_str:
-            try:
-                from email.utils import parsedate_to_datetime
-                try:
-                    pub_dt = parsedate_to_datetime(pub_str)
-                except Exception:
-                    import dateutil.parser
-                    pub_dt = dateutil.parser.parse(pub_str)
-
-                now = datetime.now(timezone.utc)
-                if pub_dt.tzinfo is None:
-                    pub_dt = pub_dt.replace(tzinfo=timezone.utc)
-
-                age_days = (now - pub_dt).days
-                if age_days > MAX_ARTICLE_AGE_DAYS:
-                    return 0
-                elif age_days <= 7:
-                    score += 5
-                elif age_days <= 30:
-                    score += 3
-                else:
-                    score += 1
-            except Exception:
-                score += 1
-
         for term in search_terms:
             if len(term) > 3:
                 if term in title:
@@ -752,7 +863,7 @@ class RSSFeedScraper:
             if term in feed_tags:
                 score += 1
 
-        return score
+        return max(score, 1)
 
 
 # Module-level sentinel used in RSSFeedScraper._article_fetch_cache to
