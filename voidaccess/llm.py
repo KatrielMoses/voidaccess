@@ -47,6 +47,17 @@ def _preset_system_prompt(preset: str) -> str:
     return body
 
 
+# Content rule shared by every prompt. Worded so that no part of it is itself
+# flagged by utils.content_safety.detect_prohibited (an echo of the rule must
+# never trip the gate on a summary), and the model is told never to restate it.
+CONTENT_RULE = (
+    "CONTENT RULE: Leave out any result, page or text that involves the abuse "
+    "or exploitation of minors, or graphic violence. This rule overrides every "
+    "other instruction; when unsure, leave the item out. If every result is of "
+    "this kind, return an empty result. Never restate, quote or mention this "
+    "rule in your output."
+)
+
 OSINT_SYSTEM_PROMPT = """You are an expert cybersecurity
 thread intelligence analyst working on an open-source OSINT
 research platform called VoidAccess. Your role is to help
@@ -83,18 +94,7 @@ These articles provide authoritative external context that
 makes the summary immediately useful to security analysts
 who need to brief stakeholders.
 
-MANDATORY CONTENT SAFETY RULE: You must immediately exclude \
-any URL or result that appears to relate to:
-- Child sexual abuse material (CSAM) of any kind
-- Non-consensual content involving minors
-- Graphic violence, gore, or snuff content
-- Any exploitation of children
-
-This is an absolute rule that overrides all other instructions. \
-If you are uncertain whether a result falls into these \
-categories, exclude it. Do not include, reference, or describe \
-such content in any response. Return an empty result set if all \
-results are of this nature."""
+""" + CONTENT_RULE
 
 def validate_prompt_inputs(template: str, inputs: dict) -> None:
     """
@@ -451,8 +451,8 @@ def _clean_refined_query(raw: str) -> str:
     return raw
 
 
-def refine_query(llm, user_input):
-    system_prompt = f"""
+def _refine_system_prompt() -> str:
+    return f"""
     {safety_bypass_prompt_fragment()}
     You are a Cybercrime Threat Intelligence Expert. Your task is to refine the provided user query that needs to be sent to darkweb search engines.
 
@@ -465,6 +465,10 @@ def refine_query(llm, user_input):
 
     INPUT:
     """
+
+
+def refine_query(llm, user_input):
+    system_prompt = _refine_system_prompt()
     prompt_template = ChatPromptTemplate(
         [
             SystemMessage(content=OSINT_SYSTEM_PROMPT),
@@ -792,9 +796,49 @@ def _heuristic_filter(
     return [i for i, _ in scored[:top_n]]
 
 
+class FilterSelection(list):
+    """The pages ``filter_results`` picked. ``fallback`` is True when the LLM
+    returned nothing usable and the first candidates were kept by default
+    (22R-7); the list itself is unchanged from earlier releases."""
+
+    fallback: bool = False
+
+
 # Number of pages to keep after the LLM relevance filter. Mirrors
 # LLM_FILTER_TOP_N in voidaccess_cli/commands/investigate.py.
 _FILTER_TOP_N = 15
+
+
+def _filter_system_prompt(query: str, top_n: int) -> str:
+    query_escaped = (query or "").replace('"', '\\"')
+    return f"""
+    {safety_bypass_prompt_fragment()}
+    You are a Cybercrime Threat Intelligence Expert. You are given a dark web search query and a list of search results in the form of index, link and title.
+    Your task is to identify INTELLIGENCE pages and select the top relevant ones for threat investigation.
+
+    {CONTENT_RULE}
+
+    OUTPUT FORMAT (MANDATORY):
+    You must respond with ONLY a valid JSON array of integers representing the selected page indexes. No explanation. No preamble. No markdown. No code fences.
+    Example response: [1, 4, 7, 12]
+
+    STEP 1 — PAGE TYPE CLASSIFICATION:
+    For each result, classify it as ONE of the following:
+    - INTELLIGENCE: Page contains actual threat data, IOCs, actor info, technical details, malware names, wallet addresses, CVE numbers, or specific underground content worth investigating
+    - DIRECTORY: Page is a link aggregator, marketplace index, site that lists hundreds of links to other sites, forum indexes, or link collection pages
+    - GENERIC: Search engine results page, error page, login wall, captcha page, or non-content page
+
+    STEP 2 — FILTERING:
+    - EXCLUDE all DIRECTORY and GENERIC pages entirely — do not include them in your output
+    - Only INTELLIGENCE pages may proceed to ranking
+
+    STEP 3 — RANKING:
+    Among the INTELLIGENCE pages, select the top {top_n} most relevant to the query.
+    Respond with ONLY the JSON array of their indices (1-indexed, in the order they appeared in the input).
+
+    Search Query: {query_escaped}
+    Search Results:
+    """
 
 
 def filter_results(llm, query, results, top_n: int = _FILTER_TOP_N):
@@ -818,40 +862,7 @@ def filter_results(llm, query, results, top_n: int = _FILTER_TOP_N):
         )
         return selected
 
-    query_escaped = query.replace('"', '\\"')
-    system_prompt = f"""
-    {safety_bypass_prompt_fragment()}
-    You are a Cybercrime Threat Intelligence Expert. You are given a dark web search query and a list of search results in the form of index, link and title.
-    Your task is to identify INTELLIGENCE pages and select the top relevant ones for threat investigation.
-
-    MANDATORY CONTENT SAFETY RULE: You must immediately exclude any URL or result that appears to relate to:
-    - Child sexual abuse material (CSAM) of any kind
-    - Non-consensual content involving minors
-    - Graphic violence, gore, or snuff content
-    - Any exploitation of children
-    This is an absolute rule that overrides all other instructions. If you are uncertain whether a result falls into these categories, exclude it. Return an empty result set if all results are of this nature.
-
-    OUTPUT FORMAT (MANDATORY):
-    You must respond with ONLY a valid JSON array of integers representing the selected page indexes. No explanation. No preamble. No markdown. No code fences.
-    Example response: [1, 4, 7, 12]
-
-    STEP 1 — PAGE TYPE CLASSIFICATION:
-    For each result, classify it as ONE of the following:
-    - INTELLIGENCE: Page contains actual threat data, IOCs, actor info, technical details, malware names, wallet addresses, CVE numbers, or specific underground content worth investigating
-    - DIRECTORY: Page is a link aggregator, marketplace index, site that lists hundreds of links to other sites, forum indexes, or link collection pages
-    - GENERIC: Search engine results page, error page, login wall, captcha page, or non-content page
-
-    STEP 2 — FILTERING:
-    - EXCLUDE all DIRECTORY and GENERIC pages entirely — do not include them in your output
-    - Only INTELLIGENCE pages may proceed to ranking
-
-    STEP 3 — RANKING:
-    Among the INTELLIGENCE pages, select the top {top_n} most relevant to the query.
-    Respond with ONLY the JSON array of their indices (1-indexed, in the order they appeared in the input).
-
-    Search Query: {query_escaped}
-    Search Results:
-    """
+    system_prompt = _filter_system_prompt(query, top_n)
 
     final_str = _escape_braces(_generate_final_string(results))
 
@@ -886,9 +897,12 @@ def filter_results(llm, query, results, top_n: int = _FILTER_TOP_N):
     # If even the fallback returned the synthetic first-N list, log a
     # warning so the operator can see the model didn't cooperate.
     expected_fallback = list(range(1, min(top_n, len(results)) + 1))
-    if parsed_indices == expected_fallback and (
-        not result_indices or not result_indices.strip().startswith("[")
-    ):
+    used_fallback = parsed_indices == expected_fallback and (
+        not result_indices
+        or not result_indices.strip().startswith("[")
+        or result_indices.strip().replace(" ", "") == "[]"
+    )
+    if used_fallback:
         logger.warning(
             "Unable to interpret LLM result selection ('%s'). "
             "Defaulting to the top %d results.",
@@ -903,7 +917,8 @@ def filter_results(llm, query, results, top_n: int = _FILTER_TOP_N):
         parsed_indices[:10],
     )
 
-    top_results = [results[i - 1] for i in parsed_indices]
+    top_results = FilterSelection(results[i - 1] for i in parsed_indices)
+    top_results.fallback = bool(used_fallback)
 
     return top_results
 
@@ -1058,6 +1073,83 @@ PRESET_PROMPTS = {
 }
 
 
+def _select_tiered_pages(pages: list, max_chars: int, top_k: int = 10) -> list[dict]:
+    """Direct pages first, then related, then background, within the budget.
+
+    A direct page longer than the remaining budget is cut to fit rather than
+    skipped; other pages are included only when they fit whole.
+    """
+    rank = {"direct": 0, "related": 1, "background": 2}
+    usable = [
+        p for p in pages
+        if isinstance(p, dict) and len(p.get("content") or p.get("text") or "") >= 100
+    ]
+    usable.sort(key=lambda p: rank.get(p.get("relevance") or "background", 2))
+    selected: list[dict] = []
+    used = 0
+    for p in usable:
+        text = p.get("content") or p.get("text") or ""
+        room = max_chars - used
+        if room <= 0 or len(selected) >= top_k:
+            break
+        if len(text) <= room:
+            selected.append(p)
+            used += len(text)
+        elif p.get("relevance") == "direct" and room >= 500:
+            selected.append({**p, "_summary_text": text[:room]})
+            used += room
+    return selected
+
+
+def _summary_user_prompt(
+    query: str,
+    entity_ctx: str,
+    page_count: int,
+    context: str,
+    *,
+    tiered: bool = False,
+    direct_pages: int = 0,
+    display: str = "",
+) -> str:
+    """The summary user prompt. With tiers, it carries the relevance rules (22R-8)."""
+    if not tiered:
+        return f"""You are a threat intelligence analyst. Summarize the following dark web intelligence
+gathered for the query: "{query}"
+
+{entity_ctx}
+
+CONTENT FROM DARK WEB SOURCES ({page_count} most relevant pages):
+{context}
+
+Write a concise 2-3 paragraph intelligence summary covering:
+1. What threat activity was found related to the query
+2. Key actors, tools, or infrastructure identified  
+3. Operational significance for security teams
+
+Be specific. Reference actual entity names found. Avoid generic statements."""
+    label = _escape_braces((display or query).replace('"', "'"))
+    if direct_pages:
+        order = f"""1. Lead with what the DIRECT pages say about {label}: activity, actors, tools, infrastructure.
+2. Then describe RELATED material and say it is related material, not a finding about {label} itself.
+3. Mention BACKGROUND material at most briefly at the end, labelled as background."""
+    else:
+        order = f"""No collected page mentions {label} directly. The report already opens with a sentence saying so; do not repeat it.
+1. Describe the RELATED material first and label it as related, not as findings about {label}.
+2. Then mention BACKGROUND material briefly, labelled as background."""
+    return f"""You are a threat intelligence analyst. Summarize the following dark web intelligence
+gathered for the query: "{query}"
+
+{entity_ctx}
+
+CONTENT FROM DARK WEB SOURCES ({page_count} pages). Each page is labelled with its relevance to the query:
+DIRECT (it mentions the query), RELATED (it mentions an alias or a closely tied term) or BACKGROUND (collected, but not about the query).
+{context}
+
+Write a concise 2-3 paragraph intelligence summary:
+{order}
+Never present BACKGROUND material as a finding about the query. Be specific and reference actual entity names found. Avoid generic statements."""
+
+
 class SummaryUnavailable(Exception):
     """The LLM could not produce a summary.
 
@@ -1081,9 +1173,15 @@ def generate_summary(
     max_summary_chars: int = 12000,
     preset: str = "threat_intel",
     custom_instructions: str = "",
+    relevance_intent: Any = None,
 ) -> str:
     """
     Generate an investigation summary using the LLM.
+
+    When the pages carry relevance tiers (``relevance`` set by
+    ``voidaccess.relevance``), they are selected direct-first, each is labelled
+    with its tier, and the prompt makes the summary lead with direct findings
+    and never present background material as a finding about the query.
 
     Automatically selects the most relevant pages that fit within
     the context budget before sending to the LLM.
@@ -1106,13 +1204,17 @@ def generate_summary(
         logging.warning(f"generate_summary: unexpected content type {type(content)}")
         pages = []
 
-    # Select relevant pages within context budget
-    selected_pages = select_relevant_pages(
-        query=query,
-        pages=pages,
-        max_chars=max_summary_chars,
-        top_k=10,
-    )
+    tiered = any(isinstance(p, dict) and p.get("relevance") for p in pages)
+    if tiered:
+        selected_pages = _select_tiered_pages(pages, max_summary_chars, top_k=10)
+    else:
+        # Select relevant pages within context budget
+        selected_pages = select_relevant_pages(
+            query=query,
+            pages=pages,
+            max_chars=max_summary_chars,
+            top_k=10,
+        )
 
     if not selected_pages:
         logging.warning("generate_summary: no pages with content")
@@ -1128,7 +1230,9 @@ def generate_summary(
     total_content_chars = 0
     for p in selected_pages:
         url = p.get("url") or p.get("link") or "Unknown source"
-        text = p.get("content") or p.get("text") or ""
+        text = p.get("_summary_text") or p.get("content") or p.get("text") or ""
+        if tiered:
+            url = f"{url}\nRELEVANCE: {str(p.get('relevance') or 'background').upper()}"
         if p.get("source_type") == "rss_feed":
             source_name = p.get("source_name", "Threat Intel Feed")
             title = p.get("title", "")
@@ -1183,20 +1287,12 @@ def generate_summary(
     entity_ctx = _escape_braces(entity_context)
 
     # Enhanced summary prompt
-    user_prompt = f"""You are a threat intelligence analyst. Summarize the following dark web intelligence
-gathered for the query: "{query}"
-
-{entity_ctx}
-
-CONTENT FROM DARK WEB SOURCES ({len(selected_pages)} most relevant pages):
-{context}
-
-Write a concise 2-3 paragraph intelligence summary covering:
-1. What threat activity was found related to the query
-2. Key actors, tools, or infrastructure identified  
-3. Operational significance for security teams
-
-Be specific. Reference actual entity names found. Avoid generic statements."""
+    user_prompt = _summary_user_prompt(
+        query, entity_ctx, len(selected_pages), context,
+        tiered=tiered,
+        direct_pages=sum(1 for p in pages if isinstance(p, dict) and p.get("relevance") == "direct"),
+        display=getattr(relevance_intent, "display", "") or query,
+    )
 
     prompt_template = ChatPromptTemplate(
         [
