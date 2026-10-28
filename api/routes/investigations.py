@@ -1300,6 +1300,9 @@ async def _run_investigation_task(
                             "source_engine": source_name,
                             "source_weight": 0.7,
                         })
+                    from utils.content_safety import gate_search_results
+
+                    all_links, _ = gate_search_results(all_links)
                     lang_results = _search_dedupe(all_links)
                     lang_results.sort(key=lambda r: r.get("source_weight", 0.5), reverse=True)
                     for result in lang_results:
@@ -1349,6 +1352,9 @@ async def _run_investigation_task(
             except Exception as _rank_exc:
                 logger.info("[%s] Merge/semantic-rank failed (non-fatal): %s", inv_uuid, _rank_exc)
                 search_results = all_search_results
+            from utils.content_safety import gate_search_results
+
+            search_results, _ = gate_search_results(search_results)
             logger.info("[%s] Total search results: %d (from %d languages)", inv_uuid, len(search_results), len(expanded_queries))
 
             if not search_results:

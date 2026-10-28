@@ -719,6 +719,10 @@ async def _run_investigation_impl(
 
     source_control.reset_tracker()
     source_entry = source_control.source_entry
+
+    from utils.content_safety import reset_safety_drop_counts
+
+    reset_safety_drop_counts()
     STATUS_SKIPPED = source_control.STATUS_SKIPPED
 
     from voidaccess_cli.display import RichDisplaySink
@@ -1028,6 +1032,14 @@ async def _run_investigation_impl(
                 "[no-tor] Stripped %d .onion link(s) from search results before scraping",
                 _stripped,
             )
+
+    # Content safety: a result whose URL or title is flagged never reaches
+    # the filter, the scraper or the summary.
+    from utils.content_safety import gate_search_results
+
+    search_links, _unsafe_links = gate_search_results(search_links)
+    for _link in _unsafe_links:
+        _trace.url_dropped("collect", str(_link.get("link", "")), "safety")
 
     if not no_tor and search_summary:
         display.update_step(
@@ -1914,6 +1926,9 @@ async def _run_investigation_impl(
     display.update_step("Finalizing results", "active")
     final_entities = sqlite_adapter.get_entities(investigation_id)
     final_relationships = sqlite_adapter.get_relationships(investigation_id)
+    final_entities, final_relationships = _gate_final_entities(
+        final_entities, final_relationships
+    )
     # Entity persistence may create Page rows for side-source pages after the
     # initial pre-extraction lookup. Refresh the lightweight manifest so it
     # agrees with relationship provenance and the persisted DB state.
@@ -2017,6 +2032,8 @@ async def _run_investigation_impl(
         "communities": communities,
         "community_count": len(set(communities.values())) if communities else 0,
         "seeds_discovered": _discovered_count,
+        # Items the content-safety gate dropped this run, by kind (counts only).
+        "content_safety": _safety_counts(),
     }
 
     # Outputs are written to temp files and renamed into place only after the
@@ -2156,6 +2173,43 @@ async def _run_investigation_impl(
     # Close any cached aiohttp sessions so the event loop exits cleanly
     # (otherwise aiohttp prints "Unclosed client session" warnings).
     await _close_cached_sessions()
+
+
+def _gate_final_entities(
+    entities: list[dict], relationships: list[dict]
+) -> tuple[list[dict], list[dict]]:
+    """Drop entities the content-safety gate flags, whatever path stored them,
+    and the relationships that touch them."""
+    from utils.content_safety import entity_is_unsafe
+
+    kept: list[dict] = []
+    gone: set[str] = set()
+    for ent in entities or []:
+        etype = str(ent.get("entity_type") or "")
+        if any(
+            entity_is_unsafe(etype, str(ent.get(key) or ""))
+            for key in ("value", "canonical_value")
+            if ent.get(key)
+        ):
+            gone.add(str(ent.get("id")))
+            continue
+        kept.append(ent)
+    if not gone:
+        return kept, relationships
+    rels = [
+        r for r in relationships or []
+        if str(r.get("entity_a_id")) not in gone and str(r.get("entity_b_id")) not in gone
+    ]
+    return kept, rels
+
+
+def _safety_counts() -> dict[str, int]:
+    try:
+        from utils.content_safety import safety_drop_counts
+
+        return safety_drop_counts()
+    except Exception:
+        return {}
 
 
 def _extra_fetch_links(

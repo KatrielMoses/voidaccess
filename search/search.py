@@ -3,7 +3,7 @@ import logging
 import random
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import aiohttp
@@ -25,6 +25,7 @@ from search.engine_catalog import SEARCH_ENGINES
 from sources.source_control import record_request, source_gate
 from progress import trace as _trace
 from utils import cancel
+from utils.content_safety import gate_search_results
 from utils.async_utils import run_async
 from search import config as search_config
 
@@ -73,6 +74,8 @@ class EngineResult:
     links: list[dict]
     error: Optional[str] = None
     took_ms: int = 0
+    # Results the content-safety gate removed from ``links`` (traced, never used).
+    safety_dropped: list[dict] = field(default_factory=list)
 
 
 def _get_tor_session():
@@ -323,6 +326,7 @@ async def _search_async(
         try:
             result = await asyncio.wait_for(fetch_with_engine_session(), timeout=timeout)
             result.took_ms = int((time.monotonic() - start) * 1000)
+            result.links, result.safety_dropped = gate_search_results(result.links)
             if result.error == "cancelled":
                 # A cancel is not an engine failure: leave the breaker alone.
                 return result
@@ -474,6 +478,8 @@ def _trace_engine_result(result: EngineResult, query_index: int) -> None:
     )
     for link in result.links:
         _trace.url_found("collect", link.get("link", ""), engine=result.name, title=link.get("title"))
+    for link in result.safety_dropped:
+        _trace.url_dropped("collect", link.get("link", ""), "safety")
 
 
 def _trace_merged_links(all_links: list[dict], deduped: list[dict], ranked: list[dict]) -> None:
@@ -523,6 +529,9 @@ def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_
     from search.ranking import merge_and_rank
 
     unique = run_async(merge_and_rank(query, unique))
+    unique, unsafe = gate_search_results(unique)
+    for link in unsafe:
+        _trace.url_dropped("collect", link.get("link", ""), "safety")
     if _trace.active():
         try:
             _trace_merged_links(all_links, deduped, unique)

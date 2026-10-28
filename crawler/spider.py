@@ -354,6 +354,12 @@ class Spider:
         `scraper.scrape._fetch_one` uses, and it is what lets unit tests drive
         this method with a mock session instead of a live circuit.
         """
+        from utils.content_safety import scan_page_text, url_is_blocked
+
+        if url_is_blocked(url):
+            self._pages_failed += 1
+            return
+
         domain = (urlparse(url).hostname or url).lower()
         await self._polite_delay(domain)
 
@@ -371,6 +377,12 @@ class Spider:
                     return
 
                 raw_bytes, html, text = result
+                # A page the content-safety gate drops is not stored, returned
+                # or followed.
+                text, dropped = scan_page_text(url, text or "")
+                if dropped:
+                    self._pages_failed += 1
+                    return
                 content_hash = hashlib.sha256(raw_bytes).hexdigest()
 
                 # Content dedup: skip DB write if hash already stored

@@ -1200,8 +1200,6 @@ async def scrape_multiple(
     outlinks_by_url: dict[str, list[str]] = {}
     for row in raw_results:
         url, display_text, raw_bytes, db_text, posted_at = row[:5]
-        if len(row) > 5 and row[5]:
-            relationship_claims_by_url[url] = row[5]
         if not url:
             continue
         if raw_bytes is None:
@@ -1213,7 +1211,9 @@ async def scrape_multiple(
         if dropped:
             _trace.page_fetched(url, "safety_dropped")
             continue
-        if db_text:
+        # display_text is "{title} - {db_text}": when it ends with db_text the
+        # scan above already covered it.
+        if db_text and not display_text.endswith(db_text):
             db_text, db_dropped = scan_page_text(url, db_text)
             if db_dropped:
                 _trace.page_fetched(url, "safety_dropped")
@@ -1221,6 +1221,8 @@ async def scrape_multiple(
         # Reported only now, after the safety scan, so a page the filter
         # drops is never first announced as fetched.
         _trace.page_fetched(url, "ok" if db_text else "empty")
+        if len(row) > 5 and row[5]:
+            relationship_claims_by_url[url] = row[5]
         if not db_text:
             continue  # fetched, but no text: not a page either
         if collect_outlinks and is_onion_url(url):
