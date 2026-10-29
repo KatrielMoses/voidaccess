@@ -253,10 +253,12 @@ async def extract_relationships_for_page(
         for i, e in enumerate(trimmed)
     )
     content = page_text[:max_chunk_chars]
-    prompt = _PROMPT_TEMPLATE.format(
+    from voidaccess.fence import format_prompt
+    prompt = format_prompt(
+        _PROMPT_TEMPLATE,
         entities=entity_lines,
         content=content,
-        compatibility_guide=_COMPATIBILITY_GUIDE,
+        trusted={"compatibility_guide": _COMPATIBILITY_GUIDE},
     )
 
     try:

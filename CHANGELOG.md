@@ -2,6 +2,22 @@
 
 All notable changes to VoidAccess are documented here.
 
+## 2.2.1 (unreleased)
+
+### Security
+
+- Prompt-injection fencing. Scraped page text, search-result titles and links, URLs and page-derived entity values
+  now reach the LLM only inside a data fence with a random per-call boundary (`voidaccess/fence.py`), in the
+  summary, relevance filter, entity and relationship extraction, and Sigma enrichment prompts. Invisible and
+  control characters are scrubbed, and fake fence markers, chat-template tokens and the boundary itself are
+  defanged inside the data. Each prompt states that fenced text is data and that instructions in it must be
+  ignored. Measured overhead: about 3% of a typical summary prompt's tokens.
+- Pages whose text looks like a prompt-injection attempt are still summarised but labelled for the model as
+  suspect; the CLI `completed` progress metrics carry `prompt_injection_suspects` (count of flagged pages).
+- The LLM query rewrite now keeps every identifier in the query exactly (e-mail, phone with its `+`, domain, IP,
+  CVE, crypto wallet, onion address, hash, @handle); if the rewrite drops or alters one, the original query is
+  used.
+
 ## 2.2.0 (2026-10-29)
 
 ### Search and sources

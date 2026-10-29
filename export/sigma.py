@@ -151,7 +151,9 @@ def _enrich_with_llm(rule: dict, llm: Any) -> dict:
     """
     try:
         base_json = json.dumps(rule, indent=2)
-        prompt = _LLM_PROMPT_TEMPLATE.format(base_rule_json=base_json)
+        # The rule carries entity values taken from scraped pages.
+        from voidaccess.fence import format_prompt
+        prompt = format_prompt(_LLM_PROMPT_TEMPLATE, base_rule_json=base_json)
 
         # Support both LangChain-style (invoke) and simple (predict/call) interfaces
         if hasattr(llm, "invoke"):

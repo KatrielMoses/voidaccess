@@ -105,6 +105,8 @@ class Selector:
     kind: str
     value: str
     forms: tuple[str, ...] = ()
+    # The selector exactly as typed in the query (not part of equality).
+    raw: str = field(default="", compare=False)
 
 
 @dataclass
@@ -187,7 +189,9 @@ def find_selectors(query: str) -> list[Selector]:
     def add(kind: str, value: str, forms: tuple[str, ...], span: tuple[int, int]) -> None:
         taken.append(span)
         if not any(s.kind == kind and s.value == value for s in found):
-            found.append(Selector(kind, value, tuple(dict.fromkeys(f for f in forms if f))))
+            found.append(Selector(
+                kind, value, tuple(dict.fromkeys(f for f in forms if f)), raw=q[span[0]:span[1]]
+            ))
 
     for m in _EMAIL_RE.finditer(q):
         v = m.group(0).lower()
@@ -482,6 +486,52 @@ def ensure_refined_query(refined: Optional[str], intent: QueryIntent) -> tuple[s
             return text, False
         return original, True
     return text, False
+
+
+def _raw_present(raw: str, text: str, *, case_sensitive: bool = False) -> bool:
+    flags = 0 if case_sensitive else re.I
+    pattern = r"(?<![A-Za-z0-9])" + re.escape(raw) + r"(?![A-Za-z0-9])"
+    return re.search(pattern, text, flags) is not None
+
+
+def identifier_preserved(selector: Selector, text: str) -> bool:
+    """True when *text* still carries *selector* unchanged.
+
+    Stricter than :func:`selector_present`: a phone typed with a country-code
+    marker must keep it (``+79001234567`` is not preserved by ``79001234567``),
+    and a base58 wallet must keep its exact case.
+    """
+    if not text:
+        return False
+    raw = selector.raw or selector.value
+    if selector.kind in ("domain", "cve"):
+        return selector_present(selector, text)
+    if selector.kind == "phone":
+        compact = re.sub(r"[\s().\-]", "", text)
+        digits = selector.forms[-1] if selector.forms else re.sub(r"\D", "", selector.value)
+        if selector.value.startswith("+"):
+            raw_compact = re.sub(r"[\s().\-]", "", raw)
+            return any(
+                re.search(r"(?<![\d+])" + re.escape(form) + r"(?!\d)", compact)
+                for form in dict.fromkeys(("+" + digits, raw_compact))
+            )
+        return re.search(r"(?<![\d+])" + re.escape(digits) + r"(?!\d)", compact) is not None
+    if selector.kind == "wallet":
+        return _raw_present(raw, text, case_sensitive=not raw.lower().startswith(("0x", "bc1")))
+    return _raw_present(raw, text)
+
+
+def missing_identifiers(original: str, rewritten: Optional[str]) -> list[str]:
+    """Identifiers of *original* (as typed) that *rewritten* dropped or altered.
+
+    Covers every selector kind (e-mail, phone, domain, IP, CVE, hash, onion,
+    wallet, @handle). Used to guard LLM rewrites of the user's query.
+    """
+    return [
+        s.raw or s.value
+        for s in find_selectors(original or "")
+        if not identifier_preserved(s, rewritten or "")
+    ]
 
 
 def _squash(text: str) -> str:
