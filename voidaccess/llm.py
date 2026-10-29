@@ -482,7 +482,18 @@ def refine_query(llm, user_input):
     from utils.investigation_metrics import record_llm_call
     record_llm_call()
     raw = chain.invoke({"query": query_safe})
-    return _clean_refined_query(raw)
+    refined = _clean_refined_query(raw)
+    # Identifier guard (adapted from Robin, MIT): every exact identifier in the
+    # user's query (e-mail, phone, domain, IP, CVE, wallet, onion, hash,
+    # @handle) must survive the rewrite unchanged; otherwise the original
+    # query is searched, as ensure_refined_query does for the CLI.
+    from voidaccess.query_intent import missing_identifiers
+    if refined and missing_identifiers(user_input or "", refined):
+        logger.warning(
+            "refine_query: the rewrite lost or altered an identifier; using the original query"
+        )
+        return user_input
+    return refined
 
 
 def _parse_filter_response(
