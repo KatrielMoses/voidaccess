@@ -294,6 +294,11 @@ def test_onion_engines_torch_and_haystack_are_denied_individually(monkeypatch):
     monkeypatch.setattr(engines.tor_pool, "acquire_tor_session", acquire)
     monkeypatch.setattr(engines.tor_pool, "release_tor_session", lambda k: None)
     monkeypatch.setenv(sc.DISABLED_ENV, "torch")
+    # 23B quarantined both; the deny-list path is what this test checks.
+    monkeypatch.setattr(
+        engines, "_ONIONSEARCH_ENGINES",
+        [dict(e, status="active") for e in engines._ONIONSEARCH_ENGINES],
+    )
     asyncio.run(engines.search_onionsearch("lockbit"))
     status = engines.get_last_onionsearch_status()
     assert status["Torch"] == "disabled"

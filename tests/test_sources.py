@@ -144,7 +144,18 @@ def _patch_connector():
 # ===========================================================================
 
 class TestOnionSearch:
-    """Tests for sources.engines.search_onionsearch."""
+    """Tests for sources.engines.search_onionsearch.
+
+    Torch and Haystack are quarantined (23B); these tests exercise the
+    scraping path with both set back to active."""
+
+    @pytest.fixture(autouse=True)
+    def _engines_active(self, monkeypatch):
+        import sources.engines as engines
+        monkeypatch.setattr(
+            engines, "_ONIONSEARCH_ENGINES",
+            [dict(e, status="active") for e in engines._ONIONSEARCH_ENGINES],
+        )
 
     def _run(self, *args, **kwargs):
         from sources.engines import search_onionsearch

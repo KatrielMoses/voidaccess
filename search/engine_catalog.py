@@ -27,8 +27,15 @@ SEARCH_ENGINES = [
     {"name": "Ahmia (Clearnet Proxy)", "url": "https://ahmia.fi/search/?q={query}", "status": "active"},
     {"name": "Ahmia", "url": "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/search/?q={query}", "status": "active"},
     {"name": "OnionLand", "url": "http://3bbad7fauom4d6sgppalyqddsqbf5u5p56b5k5uk2zxsy3d6ey2jobad.onion/search?q={query}", "status": "active"},
-    {"name": "Torgle", "url": "http://iy3544gmoeclh5de6gez2256v6pjh4omhpqdh2wpeeppjtvqmjhkfwad.onion/torgle/?query={query}", "status": "active"},
-    {"name": "Amnesia", "url": "http://amnesia7u5odx5xbwtpnqk3edybgud5bmiagu75bnqx2crntw5kry7ad.onion/search?query={query}", "status": "active"},
+    # quarantined 2026-10-29 (23B) — down 11/11 (timeouts) in the competitor study probe 2026-10-29
+    # (11 queries, tools/competition results/ENGINES.md), confirmed by a 3-query
+    # live re-check the same day. Retained for P3 freshness re-probe.
+    {"name": "Torgle", "url": "http://iy3544gmoeclh5de6gez2256v6pjh4omhpqdh2wpeeppjtvqmjhkfwad.onion/torgle/?query={query}", "status": "quarantined"},
+    # quarantined 2026-10-29 (23B) — answers, but the same 16 links for every query including gibberish
+    # (page chrome, not results); 0 direct in the competitor study probe 2026-10-29
+    # (11 queries, tools/competition results/ENGINES.md), confirmed by a 3-query
+    # live re-check the same day. Retained for P3 freshness re-probe.
+    {"name": "Amnesia", "url": "http://amnesia7u5odx5xbwtpnqk3edybgud5bmiagu75bnqx2crntw5kry7ad.onion/search?query={query}", "status": "quarantined"},
     # quarantined 2026-09-05 — 0% success over 12 probe attempts (timeouts) in the
     # end-stage live-Tor baseline (benchmark/artifacts/INT-B1_probe.json); retained
     # for P3 freshness re-probe. See INT-B2_cull_dispositions.md.
@@ -39,7 +46,11 @@ SEARCH_ENGINES = [
     # 7.2% unique-result share over 4 live Tor samples in a Cloud Run Job
     # (benchmark/artifacts/E1B_engine_probe.json). Retained for P3 freshness re-probe.
     {"name": "TorNet", "url": "http://tornetupfu7gcgidt33ftnungxzyfq2pygui5qdoyss34xbgx2qruzid.onion/search?q={query}", "status": "quarantined"},
-    {"name": "Torland", "url": "http://torlbmqwtudkorme6prgfpmsnile7ug2zm4u3ejpcncxuhpu4k2j4kyd.onion/index.php?a=search&q={query}", "status": "active"},
+    # quarantined 2026-10-29 (23B) — answers, but the same 6 links for every query including gibberish
+    # (page chrome, not results); 0 direct in the competitor study probe 2026-10-29
+    # (11 queries, tools/competition results/ENGINES.md), confirmed by a 3-query
+    # live re-check the same day. Retained for P3 freshness re-probe.
+    {"name": "Torland", "url": "http://torlbmqwtudkorme6prgfpmsnile7ug2zm4u3ejpcncxuhpu4k2j4kyd.onion/index.php?a=search&q={query}", "status": "quarantined"},
     # quarantined 2026-09-05 — 0% success over 12 probe attempts (timeouts) in the
     # end-stage live-Tor baseline (benchmark/artifacts/INT-B1_probe.json). See ledger.
     {"name": "Find Tor", "url": "http://findtorroveq5wdnipkaojfpqulxnkhblymc7aramjzajcvpptd4rjqd.onion/search?q={query}", "status": "quarantined"},
@@ -49,7 +60,10 @@ SEARCH_ENGINES = [
     # quarantined 2026-10-11 (E1B) — p90 latency 48.6 s (above the 25 s search deadline) and
     # 0% unique-result share (0 results on every sample); see E1B_engine_probe.json.
     {"name": "OSS", "url": "http://3fzh7yuupdfyjhwt3ugzqqof6ulbcl27ecev33knxe3u7goi3vfn2qqd.onion/oss/index.php?search={query}", "status": "quarantined"},
-    {"name": "Torgol", "url": "http://torgolnpeouim56dykfob6jh5r2ps2j73enc42s2um4ufob3ny4fcdyd.onion/?q={query}", "status": "active"},
+    # quarantined 2026-10-29 (23B) — answers HTTP 200 but 0 links on every query in the competitor study probe 2026-10-29
+    # (11 queries, tools/competition results/ENGINES.md), confirmed by a 3-query
+    # live re-check the same day. Retained for P3 freshness re-probe.
+    {"name": "Torgol", "url": "http://torgolnpeouim56dykfob6jh5r2ps2j73enc42s2um4ufob3ny4fcdyd.onion/?q={query}", "status": "quarantined"},
     {"name": "The Deep Searches", "url": "http://searchgf7gdtauh7bhnbyed4ivxqmuoat3nm6zfrg3ymkq6mtnpye3ad.onion/search?q={query}", "status": "active"},
 ]
 
