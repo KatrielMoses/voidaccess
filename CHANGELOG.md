@@ -2,7 +2,7 @@
 
 All notable changes to VoidAccess are documented here.
 
-## 2.2.1 (unreleased)
+## 2.2.1 (2026-10-29)
 
 ### Security
 
