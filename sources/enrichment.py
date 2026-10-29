@@ -14,7 +14,7 @@ import os
 import re
 import time
 from typing import Any, Iterable, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import aiohttp
 
@@ -1037,6 +1037,22 @@ _RANSOMLOOK_BASE = "https://www.ransomlook.io/api"
 # every mirror it ever saw (LockBit 3.0: 120); each becomes a seed page, so an
 # uncapped list floods the run with near-identical stub pages (22S).
 RANSOMLOOK_MAX_ONIONS_PER_GROUP = 10
+# The API answers slowly (14-26 s per call measured 2026-10-29, and timeouts),
+# so its answers are cached on disk (22S): the group list and a group's detail
+# for 6 h, the recent posts for 30 min. A failed call falls back to the stale
+# copy (sources.cache.CachedFeed). Tests point the directory at tmp_path.
+RANSOMLOOK_CACHE_DIR = "/tmp"
+_RANSOMLOOK_TTL_S = 21600
+_RANSOMLOOK_RECENT_TTL_S = 1800
+
+
+def _ransomlook_feed(path: str, name: str, ttl: int) -> CachedFeed:
+    return CachedFeed(
+        f"{_RANSOMLOOK_BASE}/{path}",
+        os.path.join(RANSOMLOOK_CACHE_DIR, f"voidaccess_ransomlook_{name}.json"),
+        ttl_seconds=ttl,
+        headers=_RANSOMLOOK_HEADERS,
+    )
 _RANSOMLOOK_HEADERS = {"User-Agent": "VoidAccess-OSINT/1.1 (security research)", "Accept": "application/json"}
 
 
@@ -1079,93 +1095,83 @@ async def fetch_ransomlook(query: str) -> list[dict]:
         return []
 
     results: list[dict] = []
-    timeout = aiohttp.ClientTimeout(total=25)
 
     try:
-        async with http_pool.clearnet_session() as session:
-            # ── 1. Match groups from the full group name index ─────────────────
-            async with session.get(
-                f"{_RANSOMLOOK_BASE}/groups",
-                headers=_RANSOMLOOK_HEADERS, timeout=timeout,
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning("ransomlook.io /groups HTTP %s", resp.status)
-                    return []
-                all_groups = await resp.json(content_type=None)
+        # ── 1. Match groups from the full group name index ─────────────────────
+        all_groups = await _ransomlook_feed("groups", "groups", _RANSOMLOOK_TTL_S).fetch()
+        if all_groups is None:
+            logger.warning("ransomlook.io: group list unavailable")
+            return []
 
-            group_names = [g for g in all_groups if isinstance(g, str)] if isinstance(all_groups, list) else []
-            matched = [name for name in group_names if _group_matches_query(name, query)]
+        group_names = [g for g in all_groups if isinstance(g, str)] if isinstance(all_groups, list) else []
+        matched = [name for name in group_names if _group_matches_query(name, query)]
 
-            if not matched:
-                logger.info("ransomlook.io: no groups matched %r", query)
-                return []
+        if not matched:
+            logger.info("ransomlook.io: no groups matched %r", query)
+            return []
 
-            matched = matched[:5]
-            logger.info("ransomlook.io: %d group(s) matched %r", len(matched), query)
+        matched = matched[:5]
+        logger.info("ransomlook.io: %d group(s) matched %r", len(matched), query)
 
-            # ── 2. Fetch detail for each matched group ─────────────────────────
-            async def _fetch_group_detail(gname: str) -> tuple[str, Optional[dict]]:
-                try:
-                    async with session.get(
-                        f"{_RANSOMLOOK_BASE}/group/{gname}",
-                        headers=_RANSOMLOOK_HEADERS, timeout=timeout,
-                    ) as r:
-                        if r.status == 200:
-                            data = await r.json(content_type=None)
-                            if isinstance(data, list) and data and isinstance(data[0], dict):
-                                return gname, data[0]
-                            if isinstance(data, dict):
-                                return gname, data
-                except Exception:
-                    pass
-                return gname, None
-
-            detail_pairs = await asyncio.gather(
-                *[_fetch_group_detail(g) for g in matched],
-                return_exceptions=True,
-            )
-            group_details: dict[str, dict] = {}
-            for pair in detail_pairs:
-                if isinstance(pair, Exception):
-                    continue
-                gname, detail = pair
-                group_details[gname] = detail if isinstance(detail, dict) else {}
-
-            # ── 3. Pull recent posts and filter by matched group names ─────────
-            recent_by_group: dict[str, list[dict]] = {name.lower(): [] for name in matched}
+        # ── 2. Detail for each matched group, and the recent posts ─────────────
+        async def _fetch_group_detail(gname: str) -> tuple[str, Optional[dict]]:
+            slug = re.sub(r"[^a-z0-9_-]", "_", gname.lower())[:80]
             try:
-                async with session.get(
-                    f"{_RANSOMLOOK_BASE}/recent",
-                    headers=_RANSOMLOOK_HEADERS, timeout=timeout,
-                ) as r:
-                    if r.status == 200:
-                        recent = await r.json(content_type=None)
-                        for post in (recent if isinstance(recent, list) else []):
-                            if not isinstance(post, dict):
-                                continue
-                            gname = (post.get("group_name") or "").lower()
-                            if gname in recent_by_group:
-                                recent_by_group[gname].append(post)
+                data = await _ransomlook_feed(
+                    f"group/{quote(gname, safe='')}", f"group_{slug}", _RANSOMLOOK_TTL_S
+                ).fetch()
             except Exception:
-                pass
+                data = None
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                return gname, data[0]
+            if isinstance(data, dict):
+                return gname, data
+            return gname, None
 
-            # ── 4. Assemble results ────────────────────────────────────────────
-            for gname in matched:
-                detail = group_details.get(gname, {})
-                onion_urls = _ransomlook_onion_from_locations(
-                    detail.get("locations") or []
-                )[:RANSOMLOOK_MAX_ONIONS_PER_GROUP]
-                profile_refs = detail.get("profile") if isinstance(detail.get("profile"), list) else []
-                meta = detail.get("meta")
-                description = meta if isinstance(meta, str) else ""
-                victims = recent_by_group.get(gname.lower(), [])
-                results.append({
-                    "group": gname,
-                    "description": description,
-                    "onion_urls": onion_urls,
-                    "references": [r for r in (profile_refs or []) if isinstance(r, str)][:20],
-                    "victims": victims[:50],
-                })
+        async def _fetch_recent():
+            try:
+                return await _ransomlook_feed("recent", "recent", _RANSOMLOOK_RECENT_TTL_S).fetch()
+            except Exception:
+                return None
+
+        gathered = await asyncio.gather(
+            _fetch_recent(),
+            *[_fetch_group_detail(g) for g in matched],
+            return_exceptions=True,
+        )
+        recent, detail_pairs = gathered[0], gathered[1:]
+        group_details: dict[str, dict] = {}
+        for pair in detail_pairs:
+            if isinstance(pair, BaseException):
+                continue
+            gname, detail = pair
+            group_details[gname] = detail if isinstance(detail, dict) else {}
+
+        recent_by_group: dict[str, list[dict]] = {name.lower(): [] for name in matched}
+        for post in (recent if isinstance(recent, list) else []):
+            if not isinstance(post, dict):
+                continue
+            gname = (post.get("group_name") or "").lower()
+            if gname in recent_by_group:
+                recent_by_group[gname].append(post)
+
+        # ── 3. Assemble results ────────────────────────────────────────────────
+        for gname in matched:
+            detail = group_details.get(gname, {})
+            onion_urls = _ransomlook_onion_from_locations(
+                detail.get("locations") or []
+            )[:RANSOMLOOK_MAX_ONIONS_PER_GROUP]
+            profile_refs = detail.get("profile") if isinstance(detail.get("profile"), list) else []
+            meta = detail.get("meta")
+            description = meta if isinstance(meta, str) else ""
+            victims = recent_by_group.get(gname.lower(), [])
+            results.append({
+                "group": gname,
+                "description": description,
+                "onion_urls": onion_urls,
+                "references": [r for r in (profile_refs or []) if isinstance(r, str)][:20],
+                "victims": victims[:50],
+            })
 
     except asyncio.TimeoutError:
         logger.warning("ransomlook.io: request timed out")

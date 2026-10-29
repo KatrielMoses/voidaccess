@@ -86,3 +86,51 @@ def test_fetch_ransomlook_off_without_allowlist_entry(monkeypatch):
     with aioresponses() as m:
         assert asyncio.run(en.fetch_ransomlook("LockBit")) == []
         assert not m.requests
+
+
+def _mock_lockbit(m, recent=None):
+    m.get(f"{RL}/groups", payload=["lockbit3"])
+    m.get(f"{RL}/group/lockbit3", payload=[{"meta": "synthetic", "locations": _locations(2)}])
+    m.get(f"{RL}/recent", payload=recent or [])
+
+
+def test_answers_are_cached_between_runs(monkeypatch):
+    monkeypatch.setenv("VOIDACCESS_ENRICHMENT_SOURCES", "ransomlook")
+    from sources import source_control as sc
+
+    with aioresponses() as m:
+        _mock_lockbit(m)
+        first = asyncio.run(en.fetch_ransomlook("LockBit ransomware"))
+        assert len(m.requests) == 3
+    sc.reset_tracker()  # the next run
+    with aioresponses() as m:
+        second = asyncio.run(en.fetch_ransomlook("LockBit ransomware"))
+        assert not m.requests  # all three answers served from the cache
+    assert first == second and first[0]["group"] == "lockbit3"
+
+
+def test_slow_or_failing_api_falls_back_to_the_stale_copy(monkeypatch, tmp_path):
+    import os
+    import time as _time
+
+    import sources.cache as cache
+    from sources import source_control as sc
+
+    monkeypatch.setenv("VOIDACCESS_ENRICHMENT_SOURCES", "ransomlook")
+    with aioresponses() as m:
+        _mock_lockbit(m)
+        asyncio.run(en.fetch_ransomlook("LockBit ransomware"))
+    # Age every cached file past its TTL and forget the memory copy.
+    old = _time.time() - 2 * 86400
+    for name in os.listdir(tmp_path):
+        os.utime(tmp_path / name, (old, old))
+    for url in [u for u in cache._memory_cache if "ransomlook.io" in u]:
+        cache._memory_cache.pop(url)
+    sc.reset_tracker()
+    with aioresponses() as m:
+        m.get(f"{RL}/groups", exception=asyncio.TimeoutError())
+        m.get(f"{RL}/group/lockbit3", exception=asyncio.TimeoutError())
+        m.get(f"{RL}/recent", exception=asyncio.TimeoutError())
+        groups = asyncio.run(en.fetch_ransomlook("LockBit ransomware"))
+    assert [g["group"] for g in groups] == ["lockbit3"]
+    assert len(groups[0]["onion_urls"]) == 2

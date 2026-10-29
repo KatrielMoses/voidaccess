@@ -216,3 +216,21 @@ def _api_override_isolation():
     app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_ransomlook_cache(monkeypatch, tmp_path):
+    """22S: RansomLook answers are cached on disk and in memory; each test
+    gets its own empty cache so one test's group list never feeds another."""
+    try:
+        import sources.cache as _cache
+        import sources.enrichment as _enrichment
+    except Exception:
+        yield
+        return
+    monkeypatch.setattr(_enrichment, "RANSOMLOOK_CACHE_DIR", str(tmp_path))
+    for _url in [u for u in _cache._memory_cache if "ransomlook.io" in u]:
+        _cache._memory_cache.pop(_url, None)
+    yield
+    for _url in [u for u in _cache._memory_cache if "ransomlook.io" in u]:
+        _cache._memory_cache.pop(_url, None)
