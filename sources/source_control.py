@@ -49,6 +49,9 @@ STATUS_NO_KEY = "no_key"
 STATUS_SKIPPED = "skipped"
 # Some of the source's requests failed and some worked.
 STATUS_PARTIAL = "partial"
+# The provider refused for rate limit (HTTP 429, or 403 with no quota left);
+# the source backed off. Not "ok with 0 results" (22S).
+STATUS_RATE_LIMITED = "rate_limited"
 
 SOURCE_STATUSES = (
     STATUS_OK,
@@ -59,6 +62,7 @@ SOURCE_STATUSES = (
     STATUS_NO_KEY,
     STATUS_SKIPPED,
     STATUS_PARTIAL,
+    STATUS_RATE_LIMITED,
 )
 
 # Search-stage sources (enrichment ids are registered in enrichment_allowlist).
@@ -476,7 +480,8 @@ def resolve_status(
     """The honest status of one source for a finished (or aborted) stage.
 
     Precedence: deny-list, then allowlist refusal recorded by a gate, then a
-    timeout/error the caller observed, then a missing key (only when the source
+    timeout/error the caller observed, then a recorded timeout, error or
+    rate limit, then a missing key (only when the source
     made no request), else ``ok``.
     """
     if is_source_disabled(source_id):
@@ -489,7 +494,7 @@ def resolve_status(
         return STATUS_TIMED_OUT
     if error or not ok:
         return STATUS_ERROR
-    if state in (STATUS_TIMED_OUT, STATUS_ERROR):
+    if state in (STATUS_TIMED_OUT, STATUS_ERROR, STATUS_RATE_LIMITED):
         return state
     made = tracker.request_count(source_id)
     failed = tracker.failure_count(source_id)

@@ -74,7 +74,7 @@ PAGE_OUTCOMES = (
     "ok", "http_404", "http_4xx", "http_5xx", "timeout", "tor_error", "too_large",
     "safety_dropped", "empty", "error",
 )
-SEARCH_STATUSES = ("ok", "error", "timeout", "disabled", "no_key")
+SEARCH_STATUSES = ("ok", "error", "timeout", "disabled", "no_key", "rate_limited")
 ENRICH_STATUSES = ("ok", "error", "timeout", "disabled", "no_key", "skipped")
 SUMMARY_KINDS = ("llm", "fallback", "none")
 
@@ -310,6 +310,8 @@ def map_source_status(status: Any, *, allow_skipped: bool) -> str:
         return "timeout"
     if text == "no_key":
         return "no_key"
+    if text == "rate_limited":
+        return "rate_limited"
     if text in ("disabled", "skipped_by_allowlist"):
         return "disabled"
     if text == "skipped":

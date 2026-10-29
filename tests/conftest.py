@@ -91,6 +91,13 @@ def reset_source_state(monkeypatch):
 
     _source_control.reset_for_tests()
     _cancel.reset_for_tests()
+    # 22S: a GitHub rate-limit cooldown is process-wide too.
+    try:
+        from sources.github_scraper import reset_rate_limit_state
+
+        reset_rate_limit_state()
+    except Exception:
+        pass
     """Give each test a fresh in-memory enrichment cache and reset semaphores."""
     reset_default_cache()
 

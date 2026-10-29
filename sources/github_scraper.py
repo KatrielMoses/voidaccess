@@ -54,8 +54,15 @@ from typing import Optional
 
 import aiohttp
 
+import time
+
 import pacing
-from sources.source_control import request_trace_config, source_gate
+from sources.source_control import (
+    STATUS_RATE_LIMITED,
+    get_tracker,
+    request_trace_config,
+    source_gate,
+)
 from utils.content_safety import (
     is_blocked_query,
     is_blocked_url,
@@ -102,6 +109,58 @@ BLOB_FETCH_RATE_LIMIT_DELAY = 1.0      # core REST; 5,000/hr needs 0.72 s
 
 # Request timeout (`normal` pacing baseline)
 REQUEST_TIMEOUT = 30
+
+# Rate-limit back-off (22S). A 429, or a 403 that says the quota is spent, ends
+# GitHub for the run: no further GitHub request is made and the source reports
+# ``rate_limited`` instead of "ok with 0 results". A Retry-After of at most
+# RETRY_AFTER_MAX_S is waited out once; anything longer is not waited for (the
+# run has a search deadline). Until the reset time GitHub gave (capped at
+# COOLDOWN_MAX_S), later runs in this process skip GitHub without a request.
+RETRY_AFTER_MAX_S = 5.0
+COOLDOWN_MAX_S = 3600.0
+_cooldown_until = 0.0
+
+
+def reset_rate_limit_state() -> None:
+    """Forget the process-wide cooldown (tests)."""
+    global _cooldown_until
+    _cooldown_until = 0.0
+
+
+def _in_cooldown() -> bool:
+    return time.time() < _cooldown_until
+
+
+def _is_rate_limit_response(status: int, headers) -> bool:
+    if status == 429:
+        return True
+    if status != 403:
+        return False
+    remaining = (headers.get("X-RateLimit-Remaining") or "").strip()
+    return remaining == "0" or bool(headers.get("Retry-After"))
+
+
+def _retry_after_seconds(headers) -> Optional[float]:
+    raw = (headers.get("Retry-After") or "").strip()
+    try:
+        return max(0.0, float(raw)) if raw else None
+    except ValueError:
+        return None
+
+
+def _note_rate_limit(headers) -> None:
+    """Record the run's state and the process cooldown from GitHub's headers."""
+    global _cooldown_until
+    get_tracker().set_state("github", STATUS_RATE_LIMITED)
+    now = time.time()
+    until = now + 60.0  # the search quota is per minute
+    retry_after = _retry_after_seconds(headers)
+    reset = (headers.get("X-RateLimit-Reset") or "").strip()
+    if retry_after is not None:
+        until = now + retry_after
+    elif reset.isdigit():
+        until = float(reset)
+    _cooldown_until = max(_cooldown_until, min(until, now + COOLDOWN_MAX_S))
 
 # Security-relevant file extensions to fetch
 SECURITY_EXTENSIONS = {
@@ -151,6 +210,8 @@ class GitHubScraper:
     def __init__(self):
         self._token = os.getenv("GITHUB_TOKEN", "").strip()
         self._session: Optional[aiohttp.ClientSession] = None
+        # Set on the first rate-limit answer; every later call is skipped.
+        self.rate_limited = False
         # Provider-dictated quotas, so scale_delay_floor() — NOT scale_delay(),
         # which shrinks under `aggressive` and would push us past GitHub's
         # published per-minute limits.
@@ -217,7 +278,19 @@ class GitHubScraper:
         all_results: list[dict] = []
         seen_urls: set[str] = set()
 
-        code_task = self._search_code(search_queries[0])
+        if _in_cooldown():
+            # A rate limit earlier in this process has not reset yet.
+            self.rate_limited = True
+            get_tracker().set_state("github", STATUS_RATE_LIMITED)
+            logger.info("GitHub skipped: rate-limit cooldown")
+            return []
+
+        # /search/code requires authentication: without a token it can only
+        # answer 401, so it is not called (one request saved from the
+        # 60-per-hour unauthenticated budget).
+        code_task = (
+            self._search_code(search_queries[0]) if self._token else _no_results()
+        )
         repo_task = self._search_repos(search_queries[0])
 
         code_results, repo_results = await asyncio.gather(
@@ -280,6 +353,42 @@ class GitHubScraper:
 
         return queries[:2]
 
+    async def _get_json(self, url: str, params: Optional[dict] = None):
+        """``(status, data)`` for one GitHub API call, with the rate-limit rule.
+
+        ``(None, None)`` when the source already hit its limit (no request
+        is made). A rate-limit answer is retried once when GitHub asks for a
+        wait of at most RETRY_AFTER_MAX_S seconds; otherwise the source stops
+        for the run (see ``_note_rate_limit``)."""
+        if self.rate_limited or not self._session:
+            return None, None
+        for attempt in (0, 1):
+            async with self._session.get(url, params=params) as resp:
+                limited = _is_rate_limit_response(resp.status, resp.headers)
+                if not limited and resp.status == 403:
+                    # Secondary (abuse) limits can come without the headers;
+                    # GitHub's message names them.
+                    try:
+                        limited = "rate limit" in (await resp.text()).lower()
+                    except Exception:
+                        limited = False
+                if limited:
+                    wait = _retry_after_seconds(resp.headers)
+                    if attempt == 0 and wait is not None and wait <= RETRY_AFTER_MAX_S:
+                        await asyncio.sleep(wait)
+                        continue
+                    self.rate_limited = True
+                    _note_rate_limit(resp.headers)
+                    logger.warning(
+                        "GitHub rate limit hit (HTTP %s); GitHub stops for this run",
+                        resp.status,
+                    )
+                    return resp.status, None
+                if resp.status != 200:
+                    return resp.status, None
+                return resp.status, await resp.json()
+        return None, None
+
     async def _search_code(self, search_query: str) -> list[dict]:
         """Search GitHub code and fetch file content."""
         if not self._session:
@@ -295,32 +404,14 @@ class GitHubScraper:
                 "order": "desc",
             }
 
-            async with self._session.get(
-                f"{GITHUB_API_BASE}/search/code",
-                params=params,
-            ) as resp:
-                if resp.status == 403:
-                    retry_after = int(
-                        resp.headers.get("X-RateLimit-Reset", 60)
-                    )
-                    logger.warning(
-                        "GitHub rate limit hit. Reset in %ss",
-                        retry_after,
-                    )
-                    return []
-
-                if resp.status == 422:
-                    logger.debug(
-                        "GitHub code search query invalid: %s",
-                        search_query,
-                    )
-                    return []
-
-                if resp.status != 200:
-                    return []
-
-                data = await resp.json()
-                items = data.get("items", [])
+            status, data = await self._get_json(
+                f"{GITHUB_API_BASE}/search/code", params
+            )
+            if status == 422:
+                logger.debug("GitHub code search query invalid")
+            if not isinstance(data, dict):
+                return []
+            items = data.get("items", [])
 
             await asyncio.sleep(self._code_search_delay)
 
@@ -370,10 +461,9 @@ class GitHubScraper:
             if blocked:
                 return {}
 
-            async with self._session.get(git_url) as resp:
-                if resp.status != 200:
-                    return {}
-                data = await resp.json()
+            _, data = await self._get_json(git_url)
+            if not isinstance(data, dict):
+                return {}
 
             await asyncio.sleep(self._blob_fetch_delay)
 
@@ -439,19 +529,12 @@ class GitHubScraper:
                 "order": "desc",
             }
 
-            async with self._session.get(
-                f"{GITHUB_API_BASE}/search/repositories",
-                params=params,
-            ) as resp:
-                if resp.status == 403:
-                    logger.warning("GitHub rate limit on repo search")
-                    return []
-
-                if resp.status != 200:
-                    return []
-
-                data = await resp.json()
-                items = data.get("items", [])
+            _, data = await self._get_json(
+                f"{GITHUB_API_BASE}/search/repositories", params
+            )
+            if not isinstance(data, dict):
+                return []
+            items = data.get("items", [])
 
             await asyncio.sleep(self._search_delay)
 
@@ -487,10 +570,9 @@ class GitHubScraper:
 
             readme_url = f"{GITHUB_API_BASE}/repos/{full_name}/readme"
 
-            async with self._session.get(readme_url) as resp:
-                if resp.status != 200:
-                    return {}
-                data = await resp.json()
+            _, data = await self._get_json(readme_url)
+            if not isinstance(data, dict):
+                return {}
 
             await asyncio.sleep(self._blob_fetch_delay)
 
@@ -594,6 +676,10 @@ class GitHubScraper:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
+
+async def _no_results() -> list[dict]:
+    return []
 
 
 def _is_github_scraping_enabled() -> bool:
