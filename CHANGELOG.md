@@ -2,7 +2,16 @@
 
 All notable changes to VoidAccess are documented here.
 
-## 2.2.0 (unreleased)
+## 2.2.0 (2026-10-29)
+
+### Search and sources
+
+- Search results that name the query (title, snippet or URL) are fetched first, and the exact query (or its selector)
+  is sent to every search engine next to the refined one. The fetch count and time budget are unchanged.
+- GitHub searches the exact query, uses `GITHUB_TOKEN` when set, skips code search without one, and reports
+  `rate_limited` (a new source and trace status) instead of "ok, 0 results" when GitHub throttles it.
+- RansomLook (data CC BY 4.0) joins the cloud enrichment allowlist. Its answers are cached with a stale fallback,
+  leak-site seeds are capped at 10 per group, and ordinary-word group names need a threat word in the query.
 
 ### Added
 
