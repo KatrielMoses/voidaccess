@@ -2145,9 +2145,17 @@ async def _run_investigation_impl(
                 "relevance": p.get("relevance", "background"),
                 "relevance_reason": p.get("relevance_reason", "none"),
                 "page_kind": p.get("page_kind", "other"),
+                # Other onion hosts that served this same page (merged after
+                # fetch); hosts are listed here because page URLs already are.
+                "mirror_count": len(p.get("mirrors") or []),
+                "mirrors": list(p.get("mirrors") or []),
             }
             for p in scraped_pages
         ],
+        # Onion mirror hosts merged into a kept page after fetch (count).
+        "mirror_hosts_merged": sum(
+            len(p.get("mirrors") or []) for p in scraped_pages
+        ),
         "communities": communities,
         "community_count": len(set(communities.values())) if communities else 0,
         "seeds_discovered": _discovered_count,
