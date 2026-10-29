@@ -513,12 +513,89 @@ def blocked_host_hashes() -> frozenset[str]:
     return _blocked_host_hashes
 
 
+# ---------------------------------------------------------------------------
+# Ahmia banned-onion list (defence in depth): MD5 of "<address>.onion"
+# ---------------------------------------------------------------------------
+# Ahmia publishes the MD5 of every onion host it has banned (CSAM and similar)
+# at its /blacklist/banned/ page. That list is generated live from Ahmia's
+# index and is not published in any Ahmia repository, so it is not vendored
+# here. An operator who has obtained a copy points AHMIA_BANNED_ENV at it (one
+# 32-hex MD5 per line, "#" comments allowed: the page body as served), or
+# drops it at data/ahmia_banned.md5. Hashes only, never hosts. The engine never
+# fetches it itself. Missing file: empty set, the other rules still apply.
+
+AHMIA_BANNED_FILENAME = "ahmia_banned.md5"
+AHMIA_BANNED_ENV = "VOIDACCESS_AHMIA_BANNED_MD5"
+_MD5_LINE_RE = re.compile(r"^[0-9a-f]{32}$")
+_ahmia_banned: Optional[frozenset[str]] = None
+_ahmia_banned_lock = threading.Lock()
+
+
+def _ahmia_banned_path() -> Optional[str]:
+    env_path = (os.environ.get(AHMIA_BANNED_ENV) or "").strip()
+    if env_path:
+        if os.path.isfile(env_path):
+            return env_path
+        _logger.warning("%s is set but the file does not exist", AHMIA_BANNED_ENV)
+        return None
+    local = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        AHMIA_BANNED_FILENAME,
+    )
+    return local if os.path.isfile(local) else None
+
+
+def ahmia_banned_md5s() -> frozenset[str]:
+    """The Ahmia banned-host MD5 set, loaded once (empty when not supplied)."""
+    global _ahmia_banned
+    if _ahmia_banned is not None:
+        return _ahmia_banned
+    with _ahmia_banned_lock:
+        if _ahmia_banned is None:
+            hashes: set[str] = set()
+            path = _ahmia_banned_path()
+            if path is not None:
+                try:
+                    with open(path, encoding="utf-8", errors="replace") as fh:
+                        for line in fh:
+                            line = line.strip().lower()
+                            if _MD5_LINE_RE.match(line):
+                                hashes.add(line)
+                except OSError as exc:
+                    _logger.warning("Ahmia banned list unreadable: %s", type(exc).__name__)
+                _logger.info("Ahmia banned list loaded: %d hashes", len(hashes))
+            _ahmia_banned = frozenset(hashes)
+    return _ahmia_banned
+
+
+def reset_ahmia_banned_cache() -> None:
+    """Forget the loaded Ahmia list (tests, or after the file changes)."""
+    global _ahmia_banned
+    with _ahmia_banned_lock:
+        _ahmia_banned = None
+
+
+def is_ahmia_banned_host(value: str) -> bool:
+    """True when the onion service host of *value* is on the Ahmia list."""
+    host = normalize_host(value)
+    if not host.endswith(".onion"):
+        return False
+    hashes = ahmia_banned_md5s()
+    if not hashes:
+        return False
+    service = ".".join(host.split(".")[-2:])  # drop any subdomain
+    return hashlib.md5(service.encode("utf-8"), usedforsecurity=False).hexdigest() in hashes
+
+
 def is_blocked_host(value: str) -> bool:
     """True when the host of *value*, or a parent domain of it, is on the
-    host blocklist."""
+    host blocklist or (onion hosts) the Ahmia banned list."""
     host = normalize_host(value)
     if not host:
         return False
+    if is_ahmia_banned_host(host):
+        return True
     hashes = blocked_host_hashes()
     if not hashes:
         return False
