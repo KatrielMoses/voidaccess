@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import logging
 import random
 import re
@@ -26,8 +27,16 @@ from sources.source_control import record_request, source_gate
 from progress import trace as _trace
 from utils import cancel
 from utils.content_safety import gate_search_results
+from search.result_clean import (
+    dedup_key,
+    is_search_engine_host,
+    merge_duplicates,
+    normalize_result_url,
+    unwrap_redirect,
+)
 from utils.async_utils import run_async
 from search import config as search_config
+from search import engine_status as _engine_status
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +47,9 @@ ENGINE_WEIGHTS = {
 
 
 def _normalize_for_dedup(url: str) -> str:
-    url = url.lower().rstrip("/")
-    url = url.replace("https://", "http://")
-    return url
+    # Lower-cased, no trailing slash, http/https folded, and (23B-B3) without
+    # tracking/session parameters or fragment.
+    return dedup_key(url)
 
 
 USER_AGENTS = [
@@ -76,6 +85,13 @@ class EngineResult:
     took_ms: int = 0
     # Results the content-safety gate removed from ``links`` (traced, never used).
     safety_dropped: list[dict] = field(default_factory=list)
+    # 23B-B2: "unreachable" / "rate_limited" / "error" when the attempt failed
+    # (search/engine_status.py); None lets the error text decide.
+    failure: Optional[str] = None
+    # 23B-B4: result pages read (1 unless the engine paginates), and how long
+    # page 1 took (what the adaptive per-engine timeout learns from).
+    pages: int = 1
+    first_page_ms: Optional[int] = None
 
 
 def _get_tor_session():
@@ -129,19 +145,42 @@ async def fetch_with_timeout(
     return await session.get(url, timeout=aiohttp.ClientTimeout(total=search_config.search_timeout()))
 
 
+# 23B-B4 paging: stop this long before the engine's own budget ends, and do not
+# start a page fetch with less than this left.
+PAGE_MARGIN_S = 1.0
+PAGE_MIN_BUDGET_S = 3.0
+# A further page gets at most this many times page 1's own time (a page takes
+# about as long as page 1 on the same circuit), so paging a fast engine never
+# holds the fan-out up to the engine's full timeout.
+PAGE_TIME_FACTOR = 1.5
+# The fan-out sets this per engine task (a contextvar, so _fetch_engine keeps
+# its four-argument call shape).
+_PAGE_STOP_AT: contextvars.ContextVar[Optional[float]] = contextvars.ContextVar(
+    "search_page_stop_at", default=None
+)
+
+
 async def _fetch_engine(
     engine: dict,
     query: str,
     session: aiohttp.ClientSession,
     semaphore: asyncio.Semaphore,
+    stop_at: Optional[float] = None,
 ) -> EngineResult:
+    """Page 1 of *engine* for *query* (with retries), then, for an engine with
+    a ``pages`` entry whose page 1 was full, its further pages concurrently,
+    only within the time left before *stop_at* (a ``time.monotonic()``
+    instant: the engine's own timeout or the search deadline, whichever is
+    first). Without *stop_at* only page 1 is read."""
     url = engine["url"].format(query=query)
     name = engine["name"]
-    is_onion = _is_onion_url(url)
-    
+    if stop_at is None:
+        stop_at = _PAGE_STOP_AT.get()
+
     headers = {"User-Agent": random.choice(USER_AGENTS)}
-    
+
     async with semaphore:
+        started = time.monotonic()
         for attempt in range(search_config.engine_retry_count() + 1):
             if cancel.is_cancelled():
                 return EngineResult(name=name, links=[], error="cancelled")
@@ -156,25 +195,100 @@ async def _fetch_engine(
                             name=name,
                             links=[],
                             error=f"HTTP {resp.status}",
+                            failure=_engine_status.failure_for_http(resp.status),
                         )
-                    
+
                     text = await resp.text()
 
-                    links = _parse_html_links(text, url)
-                    return EngineResult(name=name, links=links)
+                links = _parse_html_links(text, url)
+                result = EngineResult(
+                    name=name, links=links,
+                    first_page_ms=int((time.monotonic() - started) * 1000),
+                )
+                try:
+                    await _fetch_more_pages(engine, query, session, headers, result, stop_at)
+                except Exception as exc:  # paging never costs page 1
+                    logger.debug("Engine %s paging failed (ignored): %s", name, type(exc).__name__)
+                return result
 
             except asyncio.TimeoutError:
                 if attempt < search_config.engine_retry_count():
                     await asyncio.sleep(search_config.retry_backoff(attempt))
                     continue
-                return EngineResult(name=name, links=[], error="timeout")
+                return EngineResult(name=name, links=[], error="timeout", failure=_engine_status.UNREACHABLE)
             except Exception as e:
                 if attempt < search_config.engine_retry_count():
                     await asyncio.sleep(search_config.retry_backoff(attempt))
                     continue
-                return EngineResult(name=name, links=[], error=str(e))
-        
+                return EngineResult(
+                    name=name, links=[], error=str(e),
+                    failure=_engine_status.failure_for_exception(e),
+                )
+
         return EngineResult(name=name, links=[], error="max retries")
+
+
+async def _fetch_more_pages(
+    engine: dict,
+    query: str,
+    session: aiohttp.ClientSession,
+    headers: dict,
+    result: EngineResult,
+    stop_at: Optional[float],
+) -> None:
+    """23B-B4: add pages 2..max of a paginating engine to *result* in place.
+
+    Runs only when the engine declares ``pages`` in the catalog, paging is on
+    (``VOIDACCESS_SEARCH_PAGES``), page 1 had at least ``full`` links and at
+    least PAGE_MIN_BUDGET_S remain before *stop_at*. The pages are fetched
+    concurrently, once each (no retries), within PAGE_TIME_FACTOR x page 1's
+    time and never past *stop_at*; whatever has not arrived by then is
+    cancelled and page 1 is kept.
+    Links already on an earlier page are skipped."""
+    cfg = engine.get("pages")
+    if not cfg or stop_at is None or not search_config.engine_pages_enabled():
+        return
+    if len(result.links) < int(cfg.get("full", 1)) or cancel.is_cancelled():
+        return
+    budget = stop_at - time.monotonic() - PAGE_MARGIN_S
+    if budget < PAGE_MIN_BUDGET_S:
+        return
+    if result.first_page_ms is not None:
+        budget = min(budget, max(PAGE_MIN_BUDGET_S, PAGE_TIME_FACTOR * result.first_page_ms / 1000.0))
+    page_urls = [
+        cfg["url"].format(query=query, page=page)
+        for page in range(2, int(cfg.get("max", 2)) + 1)
+    ]
+    if not page_urls:
+        return
+    timeout = aiohttp.ClientTimeout(total=min(budget, search_config.search_timeout()))
+
+    async def one_page(page_url: str) -> Optional[list[dict]]:
+        record_request("tor_search")
+        async with session.get(page_url, headers=headers, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            return _parse_html_links(await resp.text(), page_url)
+
+    tasks = [asyncio.ensure_future(one_page(u)) for u in page_urls]
+    done, pending = await asyncio.wait(tasks, timeout=budget)
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+    seen = {dedup_key(link.get("link", "")) for link in result.links}
+    for task in tasks:  # page order
+        if task not in done or task.cancelled() or task.exception() is not None:
+            continue
+        page_links = task.result()
+        if page_links is None:
+            continue
+        result.pages += 1
+        for link in page_links:
+            key = dedup_key(link.get("link", ""))
+            if key and key not in seen:
+                seen.add(key)
+                result.links.append(link)
 
 
 def _parse_html_links(html: str, base_url: str) -> list[dict]:
@@ -182,18 +296,30 @@ def _parse_html_links(html: str, base_url: str) -> list[dict]:
 
     Handles three common formats:
     - Direct href:    <a href="http://x.onion/path">
-    - Redirect param: <a href="/results?url=http://x.onion/path">
+    - Redirect param: <a href="/results?url=http://x.onion/path"> (also l=, u=,
+      redirect_url=, q= on a redirect path; see search/result_clean.py)
     - Plain text:     URLs mentioned in body text but not hyperlinked
+
+    Links are normalised (tracking/session parameters and fragment removed),
+    and links on the engine's own host or on any other search engine's host
+    are dropped (23B-B3).
     """
-    from urllib.parse import urlparse, parse_qs, unquote  # noqa: PLC0415
+    from urllib.parse import urlparse  # noqa: PLC0415
 
     links: list[dict] = []
     seen: set[str] = set()
     base_host = (urlparse(base_url).hostname or "").lower()
 
+    def _host(url: str) -> str:
+        try:
+            return (urlparse(url).hostname or "").lower()
+        except ValueError:
+            return ""
+
     def _add(url: str, title: str) -> None:
-        host = (urlparse(url).hostname or "").lower()
-        if host == base_host:
+        url = normalize_result_url(url)
+        host = _host(url)
+        if host == base_host or is_search_engine_host(host):
             return
         norm = url.lower().rstrip("/")
         if norm not in seen:
@@ -209,26 +335,23 @@ def _parse_html_links(html: str, base_url: str) -> list[dict]:
             if not href or len(title) < 3:
                 continue
 
-            # 1. Direct absolute .onion URL in href
+            # 1. A target wrapped in a redirect parameter (on the engine's own
+            #    host, relative, or absolute): the decoded target only.
+            target = unwrap_redirect(href) if ".onion" in href.lower() or "%2e" in href.lower() else None
+            if target:
+                for match in _ONION_URL_RE.findall(target):
+                    _add(match, title)
+                continue
+
+            # 2. Direct absolute .onion URL in href
             for match in _ONION_URL_RE.findall(href):
                 _add(match, title)
 
-            # 2. .onion URL hidden in a query parameter (redirect, url, link, site)
-            if ".onion" in href and not _ONION_URL_RE.search(href):
-                try:
-                    qs = parse_qs(urlparse(href).query)
-                    for param in ("url", "redirect", "link", "site", "address", "q"):
-                        for val in qs.get(param, []):
-                            decoded = unquote(val)
-                            for match in _ONION_URL_RE.findall(decoded):
-                                _add(match, title)
-                except Exception:
-                    pass
-
         # 3. Any .onion URLs in the raw HTML text not captured via <a> tags
         for match in _ONION_URL_RE.findall(html):
-            host = (urlparse(match).hostname or "").lower()
-            if host != base_host:
+            match = normalize_result_url(match)
+            host = _host(match)
+            if host != base_host and not is_search_engine_host(host):
                 norm = match.lower().rstrip("/")
                 if norm not in seen:
                     seen.add(norm)
@@ -296,6 +419,8 @@ async def _search_async(
         key=lambda e: engine_priority_score(stats_by_name.get(e["name"], _default_stats(e["name"]))),
         reverse=True,
     )
+    stage_start = time.monotonic()
+    deadline = search_config.search_deadline()
     active_engines: list[dict] = []
     skipped_results: list[EngineResult] = []
     record_tasks: list[asyncio.Task] = []
@@ -324,6 +449,12 @@ async def _search_async(
             # including the wait_for timeout below, which cancels this
             # coroutine and so runs the finally.
             session, iso_key = tor_isolation.acquire_engine_session(engine_url)
+            # 23B-B4: extra result pages must finish before this engine's own
+            # timeout and before the search deadline.
+            stop_at = start + timeout
+            if deadline is not None:
+                stop_at = min(stop_at, stage_start + deadline)
+            _PAGE_STOP_AT.set(stop_at)
             try:
                 return await _fetch_engine(engine, query, session, semaphore)
             finally:
@@ -338,7 +469,9 @@ async def _search_async(
                 # A cancel is not an engine failure: leave the breaker alone.
                 return result
             success = result.error is None
-            task = record_engine_attempt_async(name, success, len(result.links), result.took_ms)
+            # The breaker's adaptive timeout learns page-1 time, not paging.
+            stat_ms = result.first_page_ms if result.first_page_ms is not None else result.took_ms
+            task = record_engine_attempt_async(name, success, len(result.links), stat_ms)
             if task is not None:
                 record_tasks.append(task)
             if result.error:
@@ -352,14 +485,20 @@ async def _search_async(
             if task is not None:
                 record_tasks.append(task)
             logger.warning(f"Engine {name} timed out")
-            return EngineResult(name=name, links=[], error="timeout", took_ms=took_ms)
+            return EngineResult(
+                name=name, links=[], error="timeout", took_ms=took_ms,
+                failure=_engine_status.UNREACHABLE,
+            )
         except Exception as e:
             took_ms = int((time.monotonic() - start) * 1000)
             task = record_engine_attempt_async(name, False, 0, took_ms)
             if task is not None:
                 record_tasks.append(task)
             logger.warning(f"Engine {name} exception: {e}")
-            return EngineResult(name=name, links=[], error=str(e), took_ms=took_ms)
+            return EngineResult(
+                name=name, links=[], error=str(e), took_ms=took_ms,
+                failure=_engine_status.failure_for_exception(e),
+            )
 
     async def run_engine_traced(engine: dict) -> EngineResult:
         result = await run_engine(engine)
@@ -369,7 +508,6 @@ async def _search_async(
 
     run_one = run_engine_traced if _trace.active() else run_engine
 
-    deadline = search_config.search_deadline()
     if deadline is None and cancel.current() is None:
         tasks = [run_one(e) for e in active_engines]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -408,6 +546,7 @@ async def _search_async(
                 name=engine_tasks[t],
                 links=[],
                 error="cancelled" if cancelled_run else "deadline",
+                failure=None if cancelled_run else _engine_status.UNREACHABLE,
             )
             for t in pending
         ]
@@ -435,8 +574,8 @@ async def _search_async(
         and active_engines
         and not cancel.is_cancelled()
     ):
-        alternatives = await diversify_query(query, result_count, llm_client)
-        top_engines = active_engines[:3]
+        top_engines = _alternative_engines(active_engines, processed)
+        alternatives = await diversify_query(query, result_count, llm_client) if top_engines else []
         for alt_index, alternative in enumerate(alternatives[:2], start=query_index + 1):
             _trace.query_refined("collect", alt_index, alternative)
             processed.extend(
@@ -461,6 +600,8 @@ async def _search_async(
             "active": len(active_engines),
             "circuits_open": circuit_open_count,
             "results": final_count,
+            # 23B-B2: engines / engine_status_counts / engines_attempted
+            **_engine_status.summarize(processed),
         }
     logger.info(
         "Search complete: %d/%d engines, %d results, %d circuits open",
@@ -472,8 +613,34 @@ async def _search_async(
     return processed
 
 
+def _alternative_engines(
+    active_engines: list[dict], processed: list[EngineResult], n: int = 3
+) -> list[dict]:
+    """Engines for the diversified alternative queries (23B-B5).
+
+    Only engines that answered in this run (``ok`` first, by result count,
+    then ``empty``), at most *n*. An engine that was unreachable a moment ago
+    would only hold each alternative fan-out until its timeout again, and in
+    the cloud runner (a fresh database per run) the circuit breaker has no
+    memory to skip it. None answered: no alternatives at all."""
+    best: dict[str, tuple[int, int]] = {}
+    for result in processed:
+        outcome = _engine_status.outcome_of(result)
+        if outcome not in (_engine_status.OK, _engine_status.EMPTY):
+            continue
+        rank = (1 if outcome == _engine_status.OK else 0, len(result.links))
+        if rank > best.get(result.name, (-1, -1)):
+            best[result.name] = rank
+    healthy = [e for e in active_engines if e["name"] in best]
+    healthy.sort(key=lambda e: best[e["name"]], reverse=True)
+    return healthy[:n]
+
+
 def _trace_engine_result(result: EngineResult, query_index: int) -> None:
-    """``search.result`` for one engine, then ``url.found`` for its links."""
+    """``search.result`` for one engine, then ``url.found`` for its links.
+
+    ``status`` keeps its pre-23B values (``ok`` also for 0 links: the cloud
+    runner reads it as "answered"); ``outcome`` is the 23B-B2 engine outcome."""
     error = result.error
     if error is None:
         status = "ok"
@@ -482,7 +649,8 @@ def _trace_engine_result(result: EngineResult, query_index: int) -> None:
     else:
         status = "error"
     _trace.search_result(
-        result.name, status, len(result.links), result.took_ms, query_index=query_index
+        result.name, status, len(result.links), result.took_ms, query_index=query_index,
+        outcome=_engine_status.outcome_of(result),
     )
     for link in result.links:
         _trace.url_found("collect", link.get("link", ""), engine=result.name, title=link.get("title"))
@@ -579,6 +747,11 @@ def get_search_results_async(
         _search_with_exact(query, max_workers, llm_client, exact_query)
     )
 
+    if exact_results and _LAST_SEARCH_SUMMARY:
+        # The per-engine outcome covers both fan-outs (an engine that found
+        # nothing for the refined query may have answered the exact one).
+        _LAST_SEARCH_SUMMARY.update(_engine_status.summarize([*results, *exact_results]))
+
     all_links = _weighted_links(results)
     if exact_results:
         extra = _weighted_links(exact_results)
@@ -621,15 +794,10 @@ def get_search_results_async(
 
 
 def _dedupe_links(links: list[dict]) -> list[dict]:
-    seen: set[str] = set()
-    unique = []
-    for link_dict in links:
-        link = link_dict.get("link", "")
-        normalized = _normalize_for_dedup(link)
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            unique.append(link_dict)
-    return unique
+    """Exact-duplicate URLs (after 23B-B3 normalisation) merged into one, at
+    the first one's position, recording every engine that found it
+    (``found_by`` / ``engine_count``); see search.result_clean.merge_duplicates."""
+    return merge_duplicates(links)
 
 
 def get_search_results(query: str, max_workers: int = MAX_CONCURRENT) -> list[dict]:

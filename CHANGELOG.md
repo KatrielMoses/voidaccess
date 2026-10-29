@@ -31,6 +31,30 @@ All notable changes to VoidAccess are documented here.
   MD5 hashes of banned onion hosts (or place it at `data/ahmia_banned.md5`) and those hosts are blocked like the
   built-in host blocklist. The list is not shipped and is never fetched by the engine.
 
+### Search engines
+
+- Engine cull: Torgle (down), Torgol (answers with 0 links), Amnesia and Torland (the same fixed links for every
+  query, gibberish included) are quarantined, and so are the Torch and Haystack side-source engines (down, or page
+  chrome only). Evidence in `search/ENGINE_CULL.md`. The fan-out is now 7 engines (was 11 plus 2 side engines).
+- Per-engine outcome: every engine attempt ends `ok`, `empty`, `unreachable`, `rate_limited` or `error`. The
+  investigate JSON has a new `search_engines` block (per-engine status, result count, attempts, ms; counts per
+  outcome; `nothing_found`: `no_results` / `engines_unreachable` / `engines_failed`; a one-line `message`), the
+  terminal and Markdown report say "N of M engines unreachable" or "engines answered but found nothing", and
+  `get_last_search_summary()` gains `engines`, `engine_status_counts` and `engines_attempted`. Trace
+  `search.result` gains an optional `outcome` field; `status` is unchanged.
+- Cleaner results before ranking: links to search-engine hosts (every catalog engine, the side engines and other
+  known onion search engines) are dropped; redirect-wrapped links (`l=`, `u=`, `url=`, `redirect_url=`, ... and `q=`
+  on a redirect path, double-encoded too) are unwrapped; tracking and session parameters (`utm_*`, `ref`,
+  `fbclid`, session ids) and fragments are stripped. Exact duplicates merge into one candidate that records
+  `found_by` / `engine_count`; ranking gives a small capped bonus for multi-engine agreement.
+- More results per engine: Onionway (pages 2-3), Excavator and The Deep Searches (page 2) are read concurrently
+  when page 1 was full, within 1.5x page 1's time and never past the engine's own deadline or the search
+  deadline. On 4 probe queries: 70/72/62/76 -> 130/106/116/136 unique results; direct results 18 -> 51 for
+  LockBit, unchanged on the other three; the slowest engine (OnionLand, not paged) still sets the fan-out time.
+  `VOIDACCESS_SEARCH_PAGES=0` turns paging off.
+- Diversified alternative queries go only to engines that answered in this run (most results first), never to
+  one that was just unreachable.
+
 ## 2.2.0 (2026-10-29)
 
 ### Search and sources

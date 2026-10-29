@@ -122,7 +122,8 @@
         "query_index": {"$ref": "#/$defs/count"},
         "status": {"enum": ["ok", "error", "timeout", "disabled", "no_key"]},
         "results": {"$ref": "#/$defs/count"},
-        "ms": {"$ref": "#/$defs/ms"}
+        "ms": {"$ref": "#/$defs/ms"},
+        "outcome": {"enum": ["ok", "empty", "unreachable", "rate_limited", "error"]}
       }
     },
     "urlFound": {

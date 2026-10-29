@@ -912,10 +912,11 @@ async def _run_investigation_impl(
     rss_pages: list[dict] = []
     telegram_pages: list[dict] = []
     onion_pages: list[dict] = []
-    search_summary: dict[str, int] = {}
+    search_summary: dict[str, Any] = {}
+    tor_link_count = 0
 
     async def _tor_search() -> None:
-        nonlocal search_links, search_summary
+        nonlocal search_links, search_summary, tor_link_count
         if not no_tor:
             try:
                 from search import get_last_search_summary, get_search_results_async
@@ -934,6 +935,7 @@ async def _run_investigation_impl(
                 )
                 display.update_substep("Searching dark web", "Tor engines", "ok")
                 search_summary = get_last_search_summary()
+                tor_link_count = len(search_links)
                 sources_used["tor_search"] = source_entry("tor_search", count=len(search_links))
             except Exception as exc:
                 display.update_substep("Searching dark web", "Tor engines", "fail")
@@ -983,7 +985,7 @@ async def _run_investigation_impl(
             sources_used[key] = source_entry(key, ok=False, error=type(exc).__name__)
             res = []
         status = _trace.map_source_status(sources_used[key].get("status"), allow_skipped=False)
-        if key == "onion_search" and no_tor:
+        if key == "onion_search" and (no_tor or not _onionsearch_enabled()):
             status = "disabled"
         elif key == "telegram" and not (
             os.getenv("TELEGRAM_API_ID", "").strip() and os.getenv("TELEGRAM_API_HASH", "").strip()
@@ -1008,6 +1010,8 @@ async def _run_investigation_impl(
         # consequence rather than a downstream filter after Tor was contacted.
         if no_tor:
             return []
+        # 23B: a quarantined Torch/Haystack is skipped there without a request
+        # (status "skipped_quarantined").
         from sources.engines import search_onionsearch
         return await search_onionsearch(refined)
 
@@ -1045,7 +1049,7 @@ async def _run_investigation_impl(
             "snippet": onion.get("snippet", ""),
             "source_engine": onion.get("source", ""),
         })
-    if no_tor:
+    if no_tor or not _onionsearch_enabled():
         # The combined onion-engine entry is not "ok with zero results" when no
         # engine was contacted.
         sources_used["onion_search"] = source_entry("onion_search", status=STATUS_SKIPPED)
@@ -1095,6 +1099,9 @@ async def _run_investigation_impl(
     for _link in _unsafe_links:
         _trace.url_dropped("collect", str(_link.get("link", "")), "safety")
 
+    # 23B-B2: which case an empty engine fan-out was ("N of M engines
+    # unreachable" vs "engines answered but found nothing").
+    search_engines_report = _search_engines_report(search_summary, tor_link_count, no_tor)
     if not no_tor and search_summary:
         display.update_step(
             "Searching dark web",
@@ -1102,6 +1109,7 @@ async def _run_investigation_impl(
             (
                 f"{search_summary.get('active', 0)}/{search_summary.get('total', 0)} engines active, "
                 f"{search_summary.get('circuits_open', 0)} circuits open, {len(search_links)} results"
+                + (f"; {search_engines_report['message']}" if search_engines_report.get("message") else "")
             ),
         )
     else:
@@ -2161,6 +2169,10 @@ async def _run_investigation_impl(
         "seeds_discovered": _discovered_count,
         # Items the content-safety gate dropped this run, by kind (counts only).
         "content_safety": _safety_counts(),
+        # 23B-B2: per-engine outcome of the Tor engine fan-out (ok / empty /
+        # unreachable / rate_limited / error), counts, and the one-line reason
+        # when it found nothing. Counts and engine names only.
+        "search_engines": search_engines_report,
         # How the output relates to the query (22R-9): per-tier counts and the
         # only removals the tiers make. Counts only.
         "relevance": _relevance.build_relevance_block(
@@ -2309,7 +2321,10 @@ async def _run_investigation_impl(
             }
         )
     else:
-        emitter.failed("no_results", "no entities or pages found")
+        _no_results_message = "no entities or pages found"
+        if search_engines_report.get("nothing_found"):
+            _no_results_message += f" (search: {search_engines_report['message']})"
+        emitter.failed("no_results", _no_results_message)
 
     # Close any cached aiohttp sessions so the event loop exits cleanly
     # (otherwise aiohttp prints "Unclosed client session" warnings).
@@ -2351,6 +2366,41 @@ def _rss_feed_items_capped() -> int:
         return int(last_run_stats().get("feed_items_capped", 0))
     except Exception:
         return 0
+
+
+def _search_engines_report(summary: dict, results_found: int, no_tor: bool) -> dict:
+    """The ``search_engines`` block of the JSON report (23B-B2)."""
+    from search import engine_status
+
+    if no_tor or not summary:
+        return {
+            "engines": {},
+            "engine_status_counts": {k: 0 for k in engine_status.ENGINE_OUTCOMES},
+            "engines_attempted": 0,
+            "results": 0,
+            "nothing_found": None,
+            "message": "not run (--no-tor)" if no_tor else "",
+        }
+    return {
+        "engines": dict(summary.get("engines") or {}),
+        "engine_status_counts": dict(
+            summary.get("engine_status_counts")
+            or {k: 0 for k in engine_status.ENGINE_OUTCOMES}
+        ),
+        "engines_attempted": int(summary.get("engines_attempted") or 0),
+        "results": int(results_found),
+        "nothing_found": engine_status.nothing_found_reason(summary, results_found),
+        "message": engine_status.describe(summary, results_found),
+    }
+
+
+def _onionsearch_enabled() -> bool:
+    """False when Torch and Haystack are both quarantined (sources/engines.py)."""
+    try:
+        from sources.engines import onionsearch_enabled
+    except Exception:  # noqa: BLE001
+        return True
+    return onionsearch_enabled()
 
 
 def _safety_counts() -> dict[str, int]:
@@ -2966,6 +3016,9 @@ def _render_markdown(payload: dict[str, Any]) -> str:
         if info.get("requests"):
             detail += f" [{info['requests']} requests]"
         lines.append(f"- {glyph} {name}{detail}")
+    _engines_block = payload.get("search_engines") or {}
+    if _engines_block.get("message"):
+        lines.append(f"- Tor search engines: {_engines_block['message']}")
 
     if relevance:
         background = by_tier["background"]

@@ -76,6 +76,21 @@ def _rank_text(candidate: dict) -> str:
         return link
 
 
+#: 23B-B3: multi-engine agreement. A candidate several engines returned gets a
+#: small bonus per extra engine on top of its semantic score (capped), enough to
+#: break near-ties, never enough to lift an off-topic result over a relevant one.
+AGREEMENT_BONUS_PER_ENGINE = 0.02
+AGREEMENT_BONUS_CAP = 0.06
+
+
+def agreement_bonus(candidate: dict) -> float:
+    try:
+        extra = int(candidate.get("engine_count") or 1) - 1
+    except (TypeError, ValueError):
+        return 0.0
+    return min(AGREEMENT_BONUS_CAP, max(0, extra) * AGREEMENT_BONUS_PER_ENGINE)
+
+
 def _cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity of two equal-length vectors; 0.0 on degenerate input."""
     if not a or not b or len(a) != len(b):
@@ -236,14 +251,20 @@ def semantic_rank(
     if not query_vec:
         # Embedder unavailable — preserve the previous static-weight ordering so
         # this is never a regression relative to pre-P3.2 behavior.
-        candidates.sort(key=lambda r: r.get("source_weight", 0.5), reverse=True)
+        candidates.sort(
+            key=lambda r: (r.get("source_weight", 0.5), int(r.get("engine_count") or 1)),
+            reverse=True,
+        )
         return candidates
 
     for cand, vec in zip(candidates, cand_vecs):
         cand["semantic_score"] = _cosine(query_vec, vec) if vec else 0.0
 
     candidates.sort(
-        key=lambda r: (r.get("semantic_score", 0.0), r.get("source_weight", 0.5)),
+        key=lambda r: (
+            r.get("semantic_score", 0.0) + agreement_bonus(r),
+            r.get("source_weight", 0.5),
+        ),
         reverse=True,
     )
     return candidates

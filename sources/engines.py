@@ -41,6 +41,15 @@ _logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Torch and Haystack — specifically called out in concept.md; not in search.py
+#
+# Both quarantined 2026-10-29 (23B), same lifecycle `status` as
+# search/engine_catalog.py: "active" engines are queried, anything else is
+# skipped without a request (status "skipped_quarantined"). To revive one, set
+# its status back to "active". Evidence: competitor study probe 2026-10-29,
+# tools/competition results/ENGINES.md — both down 11/11. 3-query live re-check
+# the same day: Haystack still unreachable (SOCKS error); Torch answered, but
+# with the same 32 links for every query including gibberish (page chrome, not
+# results).
 _ONIONSEARCH_ENGINES = [
     {
         "name": "Torch",
@@ -48,6 +57,7 @@ _ONIONSEARCH_ENGINES = [
             "http://torchdeedp3i2jigzjdmfpn5ttjhthh5wbmda2rr3jvqjg5p77c54dqd"
             ".onion/search?query={query}"
         ),
+        "status": "quarantined",
     },
     {
         "name": "Haystack",
@@ -55,8 +65,18 @@ _ONIONSEARCH_ENGINES = [
             "http://haystak5njsmn2hqkewecpaxetahtwhsbsa64jom2k22z5afxhnpxfid"
             ".onion/?q={query}"
         ),
+        "status": "quarantined",
     },
 ]
+
+
+def _is_active(engine: dict) -> bool:
+    return engine.get("status", "active") == "active"
+
+
+def onionsearch_enabled() -> bool:
+    """True when at least one Torch/Haystack engine is active."""
+    return any(_is_active(engine) for engine in _ONIONSEARCH_ENGINES)
 
 # `normal` pacing baseline; scaled per call by _timeout().
 _CONNECT_TIMEOUT = 15
@@ -113,6 +133,9 @@ async def search_onionsearch(query: str) -> List[dict]:
         for engine in _ONIONSEARCH_ENGINES:
             url = engine["url"].replace("{query}", encoded)
             name = engine["name"]
+            if not _is_active(engine):
+                _LAST_ONIONSEARCH_STATUS[name] = "skipped_quarantined"
+                continue
             if not source_gate(name.lower()):
                 _LAST_ONIONSEARCH_STATUS[name] = "disabled"
                 continue

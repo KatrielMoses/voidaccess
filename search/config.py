@@ -69,3 +69,14 @@ def search_deadline() -> "float | None":
         logger.warning("Invalid %s=%r - ignoring", SEARCH_DEADLINE_ENV, raw)
         return None
     return value if value > 0 else None
+
+
+# 23B-B4: read pages 2..N of the engines that declare `pages` in the catalog
+# (only when page 1 was full, concurrently, within the engine's own deadline).
+# On by default; "0" / "off" turns it off.
+SEARCH_PAGES_ENV = "VOIDACCESS_SEARCH_PAGES"
+
+
+def engine_pages_enabled() -> bool:
+    raw = (os.getenv(SEARCH_PAGES_ENV) or "").strip().lower()
+    return raw not in ("0", "off", "false", "no")
