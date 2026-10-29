@@ -51,7 +51,7 @@ is unchanged. Shape: `{type: "trace", schema: 2, run_id, seq, at, stage, kind, d
 |---|---|---|
 | `query.refined` | `index`\*, `text`\* (≤ 200 chars) | refine (index 0); collect for the LLM's alternative queries (1, 2) |
 | `search.request` | `engine`\*, `query_index`\* | each Tor engine and side source (`paste_sites`, `github`, `gitlab`, `rss`, `onion_search`, `telegram`) |
-| `search.result` | `engine`\*, `query_index`\*, `status`\* (`ok` `error` `timeout` `disabled` `no_key`), `results`\*, `ms` | when it answers; circuit-open engines report `disabled` with no request |
+| `search.result` | `engine`\*, `query_index`\*, `status`\* (`ok` `error` `timeout` `disabled` `no_key`), `results`\*, `ms`, `outcome` (`ok` `empty` `unreachable` `rate_limited` `error`) | when it answers; circuit-open engines report `disabled` with no request. `status` `ok` means answered (also with 0 results); `outcome` (2.2.1, onion engines only) says whether it answered with results (`ok`), answered with none (`empty`), never answered (`unreachable`: connection, timeout or search deadline), answered HTTP 429 (`rate_limited`) or failed otherwise (`error`) |
 | `url.found` | `url_id`\*, `host`\*, `engine`, `depth` (0 = seed) | first sighting of a URL |
 | `url.kept` | `url_id`\*, `score` (0..1, the semantic rank when there is one) | filter; shared-corpus seeds in fetch |
 | `url.dropped` | `url_id`\*, `reason`\* (`duplicate` `irrelevant` `cap` `invalid` `ssrf` `safety` `disabled_source`) | collect, filter, fetch |

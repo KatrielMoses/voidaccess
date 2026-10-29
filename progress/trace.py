@@ -75,6 +75,9 @@ PAGE_OUTCOMES = (
     "safety_dropped", "empty", "error",
 )
 SEARCH_STATUSES = ("ok", "error", "timeout", "disabled", "no_key", "rate_limited")
+# 23B-B2: per-engine outcome, an extra `search.result` field next to `status`
+# (same values as search/engine_status.ENGINE_OUTCOMES).
+SEARCH_OUTCOMES = ("ok", "empty", "unreachable", "rate_limited", "error")
 ENRICH_STATUSES = ("ok", "error", "timeout", "disabled", "no_key", "skipped")
 SUMMARY_KINDS = ("llm", "fallback", "none")
 
@@ -486,6 +489,7 @@ def search_result(
     results: int,
     ms: Optional[int] = None,
     query_index: int = 0,
+    outcome: Optional[str] = None,
 ) -> None:
     t = current()
     if t is None:
@@ -499,6 +503,8 @@ def search_result(
         }
         if ms is not None:
             data["ms"] = max(0, int(ms))
+        if outcome in SEARCH_OUTCOMES:
+            data["outcome"] = outcome
         t.trace("collect", "search.result", data)
     except Exception as exc:
         logger.debug("trace hook failed (ignored): %s", exc)
