@@ -383,7 +383,7 @@ def _prepare_fetch_pipeline(tmp_path, monkeypatch, n_pages, cancel_after, token)
          "snippet": "lockbit ransomware"}
         for i in range(n_pages)
     ]
-    monkeypatch.setattr(search_pkg, "get_search_results_async", lambda q, w, llm: list(links))
+    monkeypatch.setattr(search_pkg, "get_search_results_async", lambda q, w, llm, *a, **k: list(links))
     monkeypatch.setattr(search_pkg, "get_last_search_summary", lambda: {"active": 1, "total": 1})
 
     async def no_onion(_q):

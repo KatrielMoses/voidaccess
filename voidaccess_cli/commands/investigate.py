@@ -451,6 +451,12 @@ CLI_PHASE_TIMEOUTS: dict[str, int] = {
 }
 
 
+def _precision_tier(item: dict, matcher: Any) -> str:
+    from search.precision import candidate_tier
+
+    return candidate_tier(item, matcher)
+
+
 def _clearnet_page_text(page: dict) -> str:
     """Return the text field used both for scoring and later extraction."""
     return (
@@ -890,6 +896,9 @@ async def _run_investigation_impl(
     _metric_finish("query_refinement")
     emitter.refined([refined])
     _trace.query_refined("refine", 0, refined)
+    # 22S: matches search results (title, snippet, URL) against the query
+    # before anything is fetched; see search/precision.py.
+    precision_matcher = _relevance.QueryMatcher(query_intent, refined)
     display.stage_end(Stage.REFINE, "skipped" if llm is None else "end")
 
     # --- Step 2 — search fan-out -----------------------------------------
@@ -910,12 +919,18 @@ async def _run_investigation_impl(
         if not no_tor:
             try:
                 from search import get_last_search_summary, get_search_results_async
+                from search.precision import exact_query, matching_filter
+
                 display.update_substep("Searching dark web", "Tor engines", "active")
+                # 22S: the user's own words (or the selector) go to every engine
+                # too, next to the refined query; only its matching results join.
                 search_links = await asyncio.to_thread(
                     get_search_results_async,
                     refined,
                     _preset_workers(preset, "max_workers", SEARCH_WORKERS_ENV),
                     llm,
+                    exact_query(query_intent, refined),
+                    matching_filter(precision_matcher),
                 )
                 display.update_substep("Searching dark web", "Tor engines", "ok")
                 search_summary = get_last_search_summary()
@@ -1003,10 +1018,16 @@ async def _run_investigation_impl(
         channels = [c.strip() for c in os.getenv("TELEGRAM_CHANNELS", "").split(",") if c.strip()]
         return await fetch_telegram_messages(channels, refined)
 
+    # 22S: GitHub search ANDs every word, so an added word such as "darkweb"
+    # in the refined query empties it; search the user's own words (or the
+    # selector). One search either way, so the same rate-limit cost.
+    from search.precision import exact_query as _exact_query
+
+    github_query = _exact_query(query_intent, refined) or refined
     side_tasks = await cancel.run_cancellable(
         asyncio.gather(
             _safe(lambda: _scrape_pastes(refined), "Paste sites", "paste_sites"),
-            _safe(lambda: _scrape_github(refined), "GitHub", "github"),
+            _safe(lambda: _scrape_github(github_query), "GitHub", "github"),
             _safe(lambda: _scrape_gitlab(refined), "GitLab", "gitlab"),
             _safe(lambda: _scrape_rss(refined), "RSS feeds", "rss"),
             _safe(_onionsearch, "Torch + Haystack", "onion_search"),
@@ -1112,6 +1133,13 @@ async def _run_investigation_impl(
     # Why a search link that does not survive the filter was dropped (trace).
     filter_drop_reason = "cap"
     filtered_links = search_links[: filter_top_n * 2] if search_links else []
+    # 22S: candidates that name the query come first everywhere below (stable
+    # inside a tier), so the LLM's default-first-N and the heuristic's ties
+    # favour them too. Same fetch count; see search/precision.py.
+    from search.precision import precision_order, tier_sort
+
+    search_links = tier_sort(search_links or [], precision_matcher)
+    precision_counts: dict[str, int] = {}
     if llm is not None and search_links:
         try:
             from voidaccess.llm import filter_results
@@ -1120,13 +1148,21 @@ async def _run_investigation_impl(
             llm_raw = await asyncio.to_thread(filter_results, llm, refined, search_links, onion_n * 2)
             filter_fallback["onion"] = (not llm_raw) or bool(getattr(llm_raw, "fallback", False))
             llm_picked = llm_raw or search_links
+            # Direct matches first (also ones the LLM passed over, unless the
+            # title or host is a sensitive name), then related, then the rest.
+            llm_picked, precision_counts = precision_order(
+                search_links, llm_picked, precision_matcher
+            )
             filtered_links, backfill_pool = select_diverse(llm_picked, onion_n)
             filter_drop_reason = "irrelevant"
             display.update_step("Filtering results", "ok", f"top {len(filtered_links)}")
         except Exception as exc:
             display.update_step("Filtering results", "fail", str(exc))
             filter_fallback["onion"] = True
-            filtered_links, backfill_pool = select_diverse(search_links, onion_n)
+            ranked, precision_counts = precision_order(
+                search_links, search_links, precision_matcher
+            )
+            filtered_links, backfill_pool = select_diverse(ranked, onion_n)
         if filter_fallback["onion"]:
             # 22R-7: pages reached only through the fallback earn a tier from
             # their content alone.
@@ -1141,9 +1177,10 @@ async def _run_investigation_impl(
         try:
             from voidaccess.llm import _heuristic_filter
             picked = _heuristic_filter(search_links, refined or query, len(search_links))
-            filtered_links, backfill_pool = select_diverse(
-                [search_links[i - 1] for i in picked], onion_n
+            ranked, precision_counts = precision_order(
+                search_links, [search_links[i - 1] for i in picked], precision_matcher
             )
+            filtered_links, backfill_pool = select_diverse(ranked, onion_n)
             filter_drop_reason = "irrelevant"
             display.update_step(
                 "Filtering results",
@@ -1157,6 +1194,15 @@ async def _run_investigation_impl(
     else:
         filtered_links, backfill_pool = select_diverse(search_links or [], onion_n)
         display.update_step("Filtering results", "skip" if no_llm else "ok", f"{len(filtered_links)} kept")
+    if precision_counts:
+        logger.info(
+            "Retrieval precision: candidates direct=%d related=%d none=%d, "
+            "promoted=%d, fetched-first direct=%d",
+            precision_counts.get("direct", 0), precision_counts.get("related", 0),
+            precision_counts.get("none", 0), precision_counts.get("promoted", 0),
+            sum(1 for _l in filtered_links if isinstance(_l, dict)
+                and _precision_tier(_l, precision_matcher) == "direct"),
+        )
 
     # Keep the existing Tor/onion list and scoring path untouched. Clearnet
     # source pages are scored separately before they reach the merge below.

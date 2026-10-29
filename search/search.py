@@ -261,13 +261,20 @@ async def _search_async(
     engines: Optional[list[dict]] = None,
     allow_diversify: bool = True,
     query_index: int = 0,
+    record_summary: bool = True,
 ) -> list[EngineResult]:
+    """One fan-out of *query* over the active engines.
+
+    *record_summary* False leaves ``get_last_search_summary()`` alone (the
+    exact-query fan-out runs next to the refined one and must not overwrite
+    its summary)."""
     global _LAST_SEARCH_SUMMARY
     if not source_gate("tor_search"):
         # VOIDACCESS_DISABLED_SOURCES: the whole onion-engine fan-out is off.
-        _LAST_SEARCH_SUMMARY = {
-            "success": 0, "total": 0, "active": 0, "circuits_open": 0, "results": 0,
-        }
+        if record_summary:
+            _LAST_SEARCH_SUMMARY = {
+                "success": 0, "total": 0, "active": 0, "circuits_open": 0, "results": 0,
+            }
         _trace.search_result("tor_search", "disabled", 0, query_index=query_index)
         return []
     semaphore = asyncio.Semaphore(max_workers)
@@ -447,13 +454,14 @@ async def _search_async(
     circuit_open_count = sum(1 for r in processed if r.error == "circuit_open")
     total = len(engine_list)
     final_count = sum(len(r.links) for r in processed)
-    _LAST_SEARCH_SUMMARY = {
-        "success": success_count,
-        "total": total,
-        "active": len(active_engines),
-        "circuits_open": circuit_open_count,
-        "results": final_count,
-    }
+    if record_summary:
+        _LAST_SEARCH_SUMMARY = {
+            "success": success_count,
+            "total": total,
+            "active": len(active_engines),
+            "circuits_open": circuit_open_count,
+            "results": final_count,
+        }
     logger.info(
         "Search complete: %d/%d engines, %d results, %d circuits open",
         success_count,
@@ -498,14 +506,42 @@ def _trace_merged_links(all_links: list[dict], deduped: list[dict], ranked: list
         )
 
 
-def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_client=None) -> list[dict]:
-    """Async search - call from async context."""
-    import time
-    start = time.monotonic()
+# query_index of the exact-query fan-out in trace events (0 is the refined
+# query, 1 and 2 the diversified alternatives).
+EXACT_QUERY_INDEX = 3
 
-    results = run_async(_search_async(query, max_workers, llm_client=llm_client))
 
-    all_links = []
+async def _search_with_exact(
+    query: str,
+    max_workers: int,
+    llm_client,
+    exact_query: Optional[str],
+) -> tuple[list[EngineResult], list[EngineResult]]:
+    """The refined-query fan-out and, at the same time, the exact-query one.
+
+    Both run under the same search deadline concurrently, so the search stage
+    takes no longer. A failing exact fan-out never fails the search."""
+    if not exact_query:
+        return await _search_async(query, max_workers, llm_client=llm_client), []
+    _trace.query_refined("collect", EXACT_QUERY_INDEX, exact_query)
+    primary, exact = await asyncio.gather(
+        _search_async(query, max_workers, llm_client=llm_client),
+        _search_async(
+            exact_query, max_workers, llm_client=None, allow_diversify=False,
+            query_index=EXACT_QUERY_INDEX, record_summary=False,
+        ),
+        return_exceptions=True,
+    )
+    if isinstance(primary, BaseException):
+        raise primary
+    if isinstance(exact, BaseException):
+        logger.warning("Exact-query search failed: %s", type(exact).__name__)
+        exact = []
+    return primary, exact
+
+
+def _weighted_links(results: list[EngineResult]) -> list[dict]:
+    links: list[dict] = []
     for result in results:
         engine_name = result.name.lower()
         weight = 0.5
@@ -516,9 +552,49 @@ def get_search_results_async(query: str, max_workers: int = MAX_CONCURRENT, llm_
         for link in result.links:
             link["source_engine"] = result.name
             link["source_weight"] = weight
-            all_links.append(link)
+            links.append(link)
         status = "ok" if not result.error else result.error
         logger.debug(f"Engine {result.name}: {len(result.links)} links ({status})")
+    return links
+
+
+def get_search_results_async(
+    query: str,
+    max_workers: int = MAX_CONCURRENT,
+    llm_client=None,
+    exact_query: Optional[str] = None,
+    keep_exact=None,
+) -> list[dict]:
+    """Async search - call from async context.
+
+    *exact_query* (22S): also send this query (the user's own words, or the
+    selector) to every engine, concurrently with *query*. Of its results only
+    those *keep_exact* accepts are added (all when it is None), after the
+    refined query's own, so the candidate list grows only by results that
+    match what the user searched for."""
+    import time
+    start = time.monotonic()
+
+    results, exact_results = run_async(
+        _search_with_exact(query, max_workers, llm_client, exact_query)
+    )
+
+    all_links = _weighted_links(results)
+    if exact_results:
+        extra = _weighted_links(exact_results)
+        if keep_exact is not None:
+            kept_extra = [link for link in extra if keep_exact(link)]
+            if _trace.active():
+                kept_ids = {id(link) for link in kept_extra}
+                primary_urls = {_normalize_for_dedup(link.get("link", "")) for link in all_links}
+                for link in extra:
+                    if id(link) not in kept_ids and (
+                        _normalize_for_dedup(link.get("link", "")) not in primary_urls
+                    ):
+                        _trace.url_dropped("collect", link.get("link", ""), "irrelevant")
+            extra = kept_extra
+        logger.info("Exact-query search: %d matching results added", len(extra))
+        all_links.extend(extra)
 
     deduped = unique = _dedupe_links(all_links)
 
