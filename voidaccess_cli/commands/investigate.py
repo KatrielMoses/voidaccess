@@ -2294,6 +2294,8 @@ async def _run_investigation_impl(
                     if isinstance(entry, dict)
                 },
                 "summary_kind": summary_kind,
+                # Summary pages flagged as likely prompt-injection attempts.
+                "prompt_injection_suspects": pipeline_metrics.prompt_injection_suspects,
                 "report_path": str(md_path) if fmt in ("md", "both") else None,
                 "data_path": str(json_path) if fmt in ("json", "both") else None,
             }

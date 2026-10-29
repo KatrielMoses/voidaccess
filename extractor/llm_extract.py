@@ -494,7 +494,8 @@ async def _extract_chunk(chunk: str, llm) -> str:
     generate_summary) keep their streaming output unchanged.
     """
     try:
-        prompt = _PROMPT_TEMPLATE.format(chunk=chunk)
+        from voidaccess.fence import format_prompt
+        prompt = format_prompt(_PROMPT_TEMPLATE, chunk=chunk)
         # ``bind(callbacks=[])`` conflicts with callbacks already carried by
         # some LangChain chat models and causes ``agenerate_prompt`` to receive
         # the keyword twice. ``with_config`` overrides callbacks for this call

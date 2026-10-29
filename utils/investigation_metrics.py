@@ -34,6 +34,11 @@ class StepMetric:
 class InvestigationMetrics:
     def __init__(self, investigation_id: Any):
         self.investigation_id = investigation_id
+        # Pages the summary flagged as likely prompt-injection attempts
+        # (voidaccess.fence.looks_like_injection). In-memory only, not a DB
+        # column: surfaced through the progress hook's ``completed`` metrics.
+        # Keyed by page URL so a summary retry does not count a page twice.
+        self.prompt_injection_suspect_pages: set[str] = set()
         self.steps: dict[str, StepMetric] = {
             name: StepMetric()
             for name in (
@@ -84,6 +89,10 @@ class InvestigationMetrics:
                 total[source_id] = total.get(source_id, 0) + n
         return total
 
+    @property
+    def prompt_injection_suspects(self) -> int:
+        return len(self.prompt_injection_suspect_pages)
+
     def _active_metrics(self) -> list[StepMetric]:
         return [metric for metric in self.steps.values() if metric._started is not None]
 
@@ -125,6 +134,12 @@ def record_llm_call() -> None:
     metrics = current()
     if metrics is not None:
         metrics.record_llm_call()
+
+
+def record_prompt_injection_suspects(pages: list[str]) -> None:
+    metrics = current()
+    if metrics is not None:
+        metrics.prompt_injection_suspect_pages.update(pages)
 
 
 def record_extraction(cache_hit: bool) -> None:

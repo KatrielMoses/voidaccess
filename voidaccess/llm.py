@@ -9,6 +9,7 @@ os.environ["USE_TORCH"] = "1"
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage
 from langchain_core.output_parsers import StrOutputParser
+from voidaccess.fence import Fence, SUSPECT_LABEL, looks_like_injection
 from voidaccess.llm_utils import _common_llm_params, resolve_model_config, get_model_choices, DEFAULT_MODELS, DEFAULT_MODEL
 import logging
 from typing import Any
@@ -864,12 +865,16 @@ def filter_results(llm, query, results, top_n: int = _FILTER_TOP_N):
 
     system_prompt = _filter_system_prompt(query, top_n)
 
-    final_str = _escape_braces(_generate_final_string(results))
+    # Titles and links are attacker-controlled: they go inside a data fence.
+    fence = Fence()
+    final_str = _escape_braces(fence.block(_generate_final_string(results)))
 
     prompt_template = ChatPromptTemplate(
         [
             SystemMessage(content=OSINT_SYSTEM_PROMPT),
             ("system", system_prompt),
+            # After the fixed system prompts, so their prefix stays cacheable.
+            SystemMessage(content=fence.rule()),
             ("user", "{results}"),
         ]
     )
@@ -884,7 +889,7 @@ def filter_results(llm, query, results, top_n: int = _FILTER_TOP_N):
             "truncated titles",
             e,
         )
-        final_str = _escape_braces(_generate_final_string(results, truncate=True))
+        final_str = _escape_braces(fence.block(_generate_final_string(results, truncate=True)))
         record_llm_call()
         result_indices = chain.invoke({"results": final_str})
 
@@ -1225,26 +1230,44 @@ def generate_summary(
         f"pages for summary"
     )
 
-    # Build page content string; label RSS articles so the LLM cites them
-    page_content_parts = []
+    # Build page content string; label RSS articles so the LLM cites them.
+    # Everything taken from the page (URL, title, text) goes inside one data
+    # fence; our own labels (relevance tier, feed name, injection flag) sit on
+    # token-signed header lines the page text cannot forge.
+    fence = Fence()
+    records = []
     total_content_chars = 0
+    injection_suspects: list[str] = []
     for p in selected_pages:
         url = p.get("url") or p.get("link") or "Unknown source"
         text = p.get("_summary_text") or p.get("content") or p.get("text") or ""
-        if tiered:
-            url = f"{url}\nRELEVANCE: {str(p.get('relevance') or 'background').upper()}"
+        labels = []
+        title = p.get("title", "") if p.get("source_type") == "rss_feed" else ""
         if p.get("source_type") == "rss_feed":
-            source_name = p.get("source_name", "Threat Intel Feed")
-            title = p.get("title", "")
+            # The feed name comes from our feed list; the rest from the feed.
+            labels.append(f"[THREAT INTEL ARTICLE - {p.get('source_name', 'Threat Intel Feed')}]")
+        if tiered:
+            labels.append(f"RELEVANCE: {str(p.get('relevance') or 'background').upper()}")
+        if looks_like_injection(text) or looks_like_injection(title) or looks_like_injection(url):
+            injection_suspects.append(str(url))
+            labels.append(SUSPECT_LABEL)
+        body = ""
+        if p.get("source_type") == "rss_feed":
+            body = f"Title: {title}\n"
             published = p.get("published_at", "")
-            header = f"[THREAT INTEL ARTICLE - {source_name}]\nTitle: {title}"
             if published:
-                header += f"\nPublished: {published}"
-            page_content_parts.append(f"{header}\nSOURCE: {url}\nCONTENT: {text}\n---")
-        else:
-            page_content_parts.append(f"SOURCE: {url}\nCONTENT: {text}\n---")
+                body += f"Published: {published}\n"
+        body += f"SOURCE: {url}\nCONTENT: {text}"
+        records.append((" | ".join(labels), body))
         total_content_chars += len(text)
-    page_content = "\n".join(page_content_parts)
+    page_content = fence.records(records)
+    if injection_suspects:
+        from utils.investigation_metrics import record_prompt_injection_suspects
+        record_prompt_injection_suspects(injection_suspects)
+        logging.warning(
+            "generate_summary: %d page(s) look like prompt-injection attempts; flagged for the model",
+            len(injection_suspects),
+        )
 
     # Build entity context only when page content is thin (< 2000 chars)
     entity_context = ""
@@ -1272,7 +1295,8 @@ def generate_summary(
         if entity_lines:
             entity_context = (
                 "\n\nWhile page content was limited, the following entities were extracted "
-                "from the dark web sources:\nKEY ENTITIES FOUND:\n" + "\n".join(entity_lines)
+                "from the dark web sources:\nKEY ENTITIES FOUND:\n"
+                + fence.block("\n".join(entity_lines))
             )
 
     system_prompt = _preset_system_prompt(preset)
@@ -1298,6 +1322,8 @@ def generate_summary(
         [
             SystemMessage(content=OSINT_SYSTEM_PROMPT),
             ("system", system_prompt),
+            # After the fixed system prompts, so their prefix stays cacheable.
+            SystemMessage(content=fence.rule()),
             ("user", user_prompt),
         ]
     )
@@ -1317,7 +1343,9 @@ def generate_summary(
     if hasattr(llm, "invoke") and not is_runnable_llm:
         try:
             record_llm_call()
-            direct_result = llm.invoke(user_prompt)
+            # A plain (non-Runnable) model gets only this string, so the
+            # data rule travels with it.
+            direct_result = llm.invoke(user_prompt + "\n\n" + fence.rule())
             if isinstance(direct_result, str):
                 return direct_result
             content = getattr(direct_result, "content", None)
