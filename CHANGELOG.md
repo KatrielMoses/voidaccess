@@ -18,6 +18,19 @@ All notable changes to VoidAccess are documented here.
   CVE, crypto wallet, onion address, hash, @handle); if the rewrite drops or alters one, the original query is
   used.
 
+### Crawling and safety
+
+- Onion addresses written in page text, not only in links, are found, including defanged forms (`[.]onion`,
+  `(dot)onion`, ` dot onion`, `hxxp://`, spaces or zero-width characters inside the address). Only v3 addresses
+  with a valid checksum count. Each one passes the URL safety gate first, then joins the crawl frontier behind
+  every real link and inside the same page budget, and is reported as an `ONION_URL` entity.
+- Near-identical pages fetched from different onion hosts are merged into the best-ranked one. The investigate
+  JSON adds `mirror_count` and `mirrors` (hosts) to each `pages_scraped` entry and a top-level
+  `mirror_hosts_merged` count. The crawler result adds `text_urls_discovered`.
+- Optional Ahmia banned-host list as a second CSAM defence: point `VOIDACCESS_AHMIA_BANNED_MD5` at a file of
+  MD5 hashes of banned onion hosts (or place it at `data/ahmia_banned.md5`) and those hosts are blocked like the
+  built-in host blocklist. The list is not shipped and is never fetched by the engine.
+
 ## 2.2.0 (2026-10-29)
 
 ### Search and sources

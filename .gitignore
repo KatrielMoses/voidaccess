@@ -310,3 +310,6 @@ cti_data/enterprise-attack.json
 /.venv-verify-*/
 /pip/
 /.pytest-tmp/
+
+# Ahmia banned-host MD5 list: operator-supplied, licence unclear, never committed
+data/ahmia_banned.md5

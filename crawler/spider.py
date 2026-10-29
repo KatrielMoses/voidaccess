@@ -41,6 +41,7 @@ import pacing
 from crawler.dedup import ContentDedup, UrlDedup
 from crawler.frontier import Frontier
 from crawler.utils import extract_onion_links, is_valid_onion, normalize_url
+from utils.onion_sweep import gated_text_onion_urls
 from scraper import tor_pool
 from scraper.scrape import _extract_text, sniffs_as_text
 from vector import bulk_check_cache, upsert_page
@@ -67,6 +68,11 @@ _CONNECT_TIMEOUT = 10                  # seconds
 _READ_TIMEOUT = 45                     # seconds
 _DOMAIN_MAX_CONCURRENT = 3             # asyncio.Semaphore value per domain
 _GLOBAL_CONCURRENCY = 10               # max simultaneous page fetches overall
+# Onion addresses found in page text, not in an <a href>: at most this many per
+# page, queued this far below any real link (scores are 0..1, so a penalty of
+# 1.0 puts every text-found address behind every real link).
+TEXT_ONIONS_PER_PAGE = 10
+TEXT_ONION_PRIORITY_PENALTY = 1.0
 
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) "
@@ -91,6 +97,8 @@ class CrawlResult:
     pages_failed: int = 0
     new_urls_discovered: int = 0
     results: List[Dict] = field(default_factory=list)
+    # Of new_urls_discovered: addresses found in page text, not in a link.
+    text_urls_discovered: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +141,7 @@ class Spider:
         self._pages_crawled = 0
         self._pages_failed = 0
         self._new_urls_discovered = 0
+        self._text_urls_discovered = 0
         self._results: List[Dict] = []
 
     # ------------------------------------------------------------------
@@ -421,6 +430,14 @@ class Spider:
                             if link_score >= self.min_relevance:
                                 self._frontier.push(normed, depth + 1, link_score)
 
+                    # Onion addresses printed in the page text (mirrors, file
+                    # servers, defanged links) that no <a href> carried. Each is
+                    # safety-gated inside gated_text_onion_urls, must clear the
+                    # same min_relevance as a real link, and is pushed one full
+                    # point lower so every real link is popped first. They come
+                    # out of the same max_pages budget as everything else.
+                    self._push_text_onions(html, links, text, depth)
+
             except Exception as exc:
                 self._pages_failed += 1
                 _logger.warning("Unexpected error processing %s: %s", url, exc, exc_info=True)
@@ -429,6 +446,34 @@ class Spider:
             finally:
                 if iso_key is not None:
                     tor_pool.release_tor_session(iso_key)
+
+    def _push_text_onions(
+        self, html: str, href_links: List[str], text: str, depth: int
+    ) -> None:
+        """Queue text-found onion addresses behind the page's real links."""
+        href_hosts = {(urlparse(u).hostname or "").lower() for u in href_links}
+        try:
+            found = gated_text_onion_urls(
+                html or "",
+                exclude_hosts=href_hosts,
+                max_results=TEXT_ONIONS_PER_PAGE,
+            )
+        except Exception as exc:
+            _logger.debug("Text onion sweep failed: %s", exc)
+            return
+        for link in found:
+            normed = normalize_url(link)
+            if not normed or not is_valid_onion(normed):
+                continue
+            if not self._url_dedup.is_new(normed):
+                continue
+            self._new_urls_discovered += 1
+            self._text_urls_discovered += 1
+            self._url_dedup.mark_seen(normed)
+            self._db_upsert_source(normed, "discovered")
+            link_score = self._frontier.score(normed, (text or "")[:500])
+            if link_score >= self.min_relevance:
+                self._frontier.push(normed, depth + 1, link_score - TEXT_ONION_PRIORITY_PENALTY)
 
     # ------------------------------------------------------------------
     # Main crawl loop
@@ -527,6 +572,7 @@ class Spider:
             pages_failed=self._pages_failed,
             new_urls_discovered=self._new_urls_discovered,
             results=self._results,
+            text_urls_discovered=self._text_urls_discovered,
         )
 
 
