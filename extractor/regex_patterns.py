@@ -1618,7 +1618,23 @@ def _extract_ens(text: str) -> list[str]:
 
 
 def _extract_onion(text: str) -> list[str]:
-    return _dedup(_findall(_ONION_RE, text))
+    found = _dedup(_findall(_ONION_RE, text))
+    # Defanged or split v3 addresses ("[.]onion", " dot onion", spaces or
+    # zero-width characters inside the address, "hxxp") that the plain regex
+    # cannot see. Only checksum-valid v3 addresses whose host the regex did
+    # not already report are added, and each passes the URL safety gate.
+    if "onion" not in text.lower():
+        return found
+    try:
+        from utils.onion_sweep import gated_text_onion_urls
+
+        hosts = {
+            m.lower().split("://", 1)[-1].split("/", 1)[0] for m in found
+        }
+        found.extend(gated_text_onion_urls(text, exclude_hosts=hosts))
+    except Exception:
+        pass
+    return found
 
 
 def _extract_email(text: str) -> list[str]:

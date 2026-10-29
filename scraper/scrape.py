@@ -1155,6 +1155,25 @@ def extract_onion_outlinks(page_url: str, raw: bytes) -> list[str]:
         out.append(link)
         if len(out) >= MAX_OUTLINKS_PER_PAGE:
             break
+    # Addresses printed in the page text (not in any href) go last, so every
+    # real link outranks them; the same per-page cap applies. Each one has
+    # passed the URL safety gate inside gated_text_onion_urls.
+    room = MAX_OUTLINKS_PER_PAGE - len(out)
+    if room > 0:
+        try:
+            from utils.onion_sweep import gated_text_onion_urls
+
+            linked_hosts = {(urlparse(u).hostname or "").lower() for u in out}
+            linked_hosts.add((urlparse(page_url).hostname or "").lower())
+            for link in gated_text_onion_urls(
+                html, exclude_hosts=linked_hosts, max_results=room
+            ):
+                key = link.rstrip("/")
+                if key not in seen:
+                    seen.add(key)
+                    out.append(link)
+        except Exception as exc:
+            _logger.debug("Text onion sweep failed: %s", exc)
     return out
 
 async def scrape_multiple(
