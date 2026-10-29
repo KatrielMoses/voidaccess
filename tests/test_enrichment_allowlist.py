@@ -72,7 +72,8 @@ def test_unregistered_call_site_id_is_rejected():
 
 def test_cloud_value_ids_all_registered():
     ids = CLOUD_ENRICHMENT_SOURCES.split(",")
-    assert set(ids) == {"rdap", "crtsh", "wayback", "cisa_kev", "nvd", "mitre_attack"}
+    assert set(ids) == {"rdap", "crtsh", "wayback", "cisa_kev", "nvd", "mitre_attack", "ransomlook"}
+    assert "ransomware_live" not in ids  # T&C: no commercial use without approval
     assert all(i in ENRICHMENT_SOURCE_IDS for i in ids)
 
 

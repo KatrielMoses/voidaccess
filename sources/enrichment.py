@@ -688,6 +688,35 @@ def _group_name_matches_text(name: str, text: str, aliases: Iterable[str] = ()) 
     return False
 
 
+def _group_matches_query(name: str, query: str, aliases: Iterable[str] = ()) -> bool:
+    """Whether a tracked group is what *query* asks about (22S).
+
+    The whole-word rule of ``_group_name_matches_text``, plus: a group whose
+    name is an ordinary word ("telegram", "play", "root", "global") matches
+    only when the query also carries a threat cue next to it ("Play
+    ransomware", "Hive group"), or when the query is that threat name itself
+    (the 22R intent). Otherwise "Telegram channel credentials" would pull
+    in a ransomware group's leak-site data."""
+    if not _group_name_matches_text(name, query, aliases):
+        return False
+    try:
+        from extractor import relevance_gate as _gate
+    except Exception:  # pragma: no cover - import guard
+        return True
+    candidates = [c for c in (name, *aliases) if (c or "").strip()]
+    if not any(_gate.is_ambiguous(c, "RANSOMWARE_GROUP") for c in candidates):
+        return True
+    intent_keys = _gate._intent_keys()
+    if any(_gate.key(c) in intent_keys for c in candidates):
+        return True
+    index = _gate.TokenIndex(query or "")
+    for c in candidates:
+        for span in _gate.find_spans(query or "", c):
+            if _gate.has_cue(index, span, c, "RANSOMWARE_GROUP"):
+                return True
+    return False
+
+
 def _rl_extract_onion_urls(group: dict) -> list[str]:
     """Extract .onion leak-site URLs from a group dict (available sites first)."""
     locations = group.get("locations") or []
@@ -763,7 +792,7 @@ async def fetch_ransomware_live(query: str) -> list[dict]:
             if not isinstance(g, dict):
                 continue
             aliases = [g["altname"]] if isinstance(g.get("altname"), str) else []
-            if _group_name_matches_text(g.get("name") or "", query, aliases):
+            if _group_matches_query(g.get("name") or "", query, aliases):
                 matched_summary.append(g)
 
         if not matched_summary:
@@ -1004,6 +1033,10 @@ async def _gather_with_partial_results(
 # ``raw_content_hash`` dedup is the backstop. Free, no key required.
 
 _RANSOMLOOK_BASE = "https://www.ransomlook.io/api"
+# Leak-site addresses kept per group (available sites first). RansomLook lists
+# every mirror it ever saw (LockBit 3.0: 120); each becomes a seed page, so an
+# uncapped list floods the run with near-identical stub pages (22S).
+RANSOMLOOK_MAX_ONIONS_PER_GROUP = 10
 _RANSOMLOOK_HEADERS = {"User-Agent": "VoidAccess-OSINT/1.1 (security research)", "Accept": "application/json"}
 
 
@@ -1061,7 +1094,7 @@ async def fetch_ransomlook(query: str) -> list[dict]:
                 all_groups = await resp.json(content_type=None)
 
             group_names = [g for g in all_groups if isinstance(g, str)] if isinstance(all_groups, list) else []
-            matched = [name for name in group_names if _group_name_matches_text(name, query)]
+            matched = [name for name in group_names if _group_matches_query(name, query)]
 
             if not matched:
                 logger.info("ransomlook.io: no groups matched %r", query)
@@ -1119,7 +1152,9 @@ async def fetch_ransomlook(query: str) -> list[dict]:
             # ── 4. Assemble results ────────────────────────────────────────────
             for gname in matched:
                 detail = group_details.get(gname, {})
-                onion_urls = _ransomlook_onion_from_locations(detail.get("locations") or [])
+                onion_urls = _ransomlook_onion_from_locations(
+                    detail.get("locations") or []
+                )[:RANSOMLOOK_MAX_ONIONS_PER_GROUP]
                 profile_refs = detail.get("profile") if isinstance(detail.get("profile"), list) else []
                 meta = detail.get("meta")
                 description = meta if isinstance(meta, str) else ""

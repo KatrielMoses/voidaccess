@@ -1495,7 +1495,7 @@ The gate sits inside the `sources/` modules (and `feeds/`, `credential_presence/
 **Recommended cloud value** (the licence-table "fine on our keys" sources that are enrichment sources, exported as `sources.enrichment_allowlist.CLOUD_ENRICHMENT_SOURCES`; not applied by default):
 
 ```
-VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack
+VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack,ransomlook
 ```
 
 With that value, CVE fusion (`sources/cve_intel.py`) still runs on NVD and CISA KEV. EPSS and Exploit-DB are skipped with no request, the unified CVE page says which feeds were not queried, and the stored priority tags gain `cve_priority_partial` because the band is a lower bound (no EPSS or public-exploit uplift). If every fusion feed is off, no CVE page is emitted and nothing is written back, so an unknown CVE is never labelled `low`. The `blocklists` feeds (including Ransomwhere), Pwned Passwords and the justice.gov press feed are off under this value.
@@ -1508,8 +1508,8 @@ The licence column is the verdict in `platform/docs/baseline/E0-LICENCE-TABLE.md
 | `malwarebazaar` | abuse.ch MalwareBazaar (recent samples; hash lookup) | `sources/enrichment.py`, `sources/hash_reputation.py` | off (BYO) |
 | `threatfox` | abuse.ch ThreatFox IOC search; hash lookup | `sources/enrichment.py`, `sources/hash_reputation.py` | off (BYO) |
 | `urlhaus` | abuse.ch URLhaus tag search | `sources/enrichment.py` | off (BYO) |
-| `ransomware_live` | ransomware.live API v2 group/victim data | `sources/enrichment.py` | off |
-| `ransomlook` | RansomLook group/victim data | `sources/enrichment.py` | off |
+| `ransomware_live` | ransomware.live data feeds (groups.json, victims.json) | `sources/enrichment.py` | off (T&C, updated 2026-08-19: "Commercial use of the Data is strictly prohibited without prior written approval") |
+| `ransomlook` | RansomLook group/victim data | `sources/enrichment.py` | on, with attribution (22S, checked 2026-10-29: README and /about put "website, API responses, and datasets" under CC BY 4.0, "even commercially, provided that appropriate credit is given"; the E0 row said unverified). Group names that are ordinary words need a threat cue in the query; at most 10 leak-site seeds per group |
 | `cisa_kev` | CISA KEV catalogue and CISA advisories feed | `sources/cisa.py`, `sources/historical_intel.py` | on our keys |
 | `nvd` | NIST NVD 2.0 CVE data and CPE product lookup | `sources/nvd.py` | on our keys |
 | `epss` | FIRST EPSS exploit-probability scores (CVE fusion) | `sources/epss.py` | conditional (confirm with FIRST) |
@@ -1660,7 +1660,7 @@ Search-stage source ids (enrichment ids are in 13.16):
 VOIDACCESS_DISABLED_SOURCES=openphish,sslbl,phishtank,ransomwhere,hibp_pwned_passwords,fbi_doj_press,pastebin,paste_ee,dpaste,rentry,gitlab,telegram
 ```
 
-Use it together with `VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack`. Still running under both values, and not on the licence table's "fine on our keys" list: `rss` (conditional: the scraper also fetches each matching article's body and passes it to extraction and the summary, which is more than "headline, link and short snippet"), `github` (fine only with one token and caching, never token pooling), `torch`/`haystack`/`tor_search` (no terms, a legal decision), and the non-source services ScrapingAnt (a paid proxy, resale terms unread) and DeepL (a free key is off; only a paid plan is fine).
+Use it together with `VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack,ransomlook`. Still running under both values, and not on the licence table's "fine on our keys" list: `rss` (conditional: the scraper also fetches each matching article's body and passes it to extraction and the summary, which is more than "headline, link and short snippet"), `github` (fine only with one token and caching, never token pooling), `torch`/`haystack`/`tor_search` (no terms, a legal decision), and the non-source services ScrapingAnt (a paid proxy, resale terms unread) and DeepL (a free key is off; only a paid plan is fine).
 
 **`sources_used` (CLI JSON and the `sources_status` metric).** Each entry is `{"status", "count", "requests"}` (plus `"error"` carrying an exception class name, never its message):
 
@@ -1673,6 +1673,7 @@ Use it together with `VOIDACCESS_ENRICHMENT_SOURCES=rdap,crtsh,wayback,cisa_kev,
 | `disabled` | `VOIDACCESS_DISABLED_SOURCES` names it, or its own off switch is set (`PASTE_SCRAPING_ENABLED=false` and friends) |
 | `no_key` | it needs an API key that is not set and it made no request |
 | `skipped` | not run in this mode, for example the onion engines under `--no-tor` |
+| `rate_limited` | the provider refused for rate limit (HTTP 429, or 403 with the quota spent) and the source backed off for the run; `count` may be partial (GitHub today) |
 
 `requests` is the number of HTTP calls the source actually made (a cache hit is zero). It is counted at the shared HTTP chokepoints by mapping the URL to a source id (`sources/source_control.py::SOURCE_URL_RULES`), so no module keeps its own tally. The same counts are in the `completed` progress event: `metrics.source_requests` (total per source id) and `metrics.source_requests_by_step` (per pipeline step, so a runner can report `enrichment_calls` per source). In the API, `sources_used` keeps its flat string form and gains the strings `disabled` and `skipped_by_allowlist` for those sources.
 

@@ -76,7 +76,11 @@ ENRICHMENT_SOURCE_IDS: dict[str, str] = {
 
 # Recommended value for the hosted/cloud product: the E0 licence table's
 # "fine on our keys" sources that are enrichment sources. NOT applied by default.
-CLOUD_ENRICHMENT_SOURCES = "rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack"
+# ransomlook (22S): CC BY 4.0 for website, API responses and datasets, "even
+# commercially", attribution required (README "Usage of the API and License"
+# and ransomlook.io/about, checked 2026-10-29). ransomware_live stays off: its
+# T&C prohibit commercial use without written approval.
+CLOUD_ENRICHMENT_SOURCES = "rdap,crtsh,wayback,cisa_kev,nvd,mitre_attack,ransomlook"
 
 
 class EnrichmentAllowlistError(ValueError):
