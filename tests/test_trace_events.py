@@ -925,3 +925,24 @@ def test_full_run_jsonl_leaks_nothing(full_run):
     assert displays.get("EMAIL_ADDRESS", "n[@]x").startswith("n***")
     assert displays.get("AWS_ACCESS_KEY", "AKIA[REDACTED]") == "AKIA[REDACTED]"
     assert displays.get("CVE_NUMBER") == "CVE-2021-44228"
+
+
+def test_full_run_json_report_has_per_engine_statuses(tmp_path, monkeypatch):
+    """23B-B2: the JSON report lists each engine's outcome, and the trace
+    carries it next to the unchanged `status`."""
+    _events, lines, _ = _full_run(tmp_path, monkeypatch)
+    report = json.loads(next((tmp_path / "out").glob("*.json")).read_text())
+    block = report["search_engines"]
+    assert {name: e["status"] for name, e in block["engines"].items()} == {
+        "Ahmia": "ok", "Torgle": "ok", "Amnesia": "unreachable",
+    }
+    assert block["engine_status_counts"] == {
+        "ok": 2, "empty": 0, "unreachable": 1, "rate_limited": 0, "error": 0,
+    }
+    assert block["engines_attempted"] == 3 and block["nothing_found"] is None
+    assert block["message"] == "2 of 3 engines returned results (1 unreachable)"
+    results = [line["data"] for line in lines if line.get("kind") == "search.result"
+               and line["data"]["engine"] in ("Ahmia", "Torgle", "Amnesia")]
+    assert {(d["engine"], d["status"], d.get("outcome")) for d in results} >= {
+        ("Ahmia", "ok", "ok"), ("Amnesia", "timeout", "unreachable"),
+    }
