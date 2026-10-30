@@ -5,12 +5,12 @@ services:
     container_name: voidaccess-postgres
     environment:
       POSTGRES_USER: voidaccess
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: voidaccess
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U voidaccess -d voidaccess"]
       interval: 10s
@@ -26,10 +26,10 @@ services:
       dockerfile: docker/Dockerfile.tor
     container_name: voidaccess-tor
     ports:
-      - "9050:9050"
+      - "127.0.0.1:9050:9050"
       # Destination-isolated SocksPort used by the Playwright renderer — see
       # docker/Dockerfile.tor for why that path needs its own port.
-      - "9250:9250"
+      - "127.0.0.1:9250:9250"
     volumes:
       - tor_data:/var/lib/tor
     healthcheck:
@@ -43,19 +43,18 @@ services:
 
   # Meilisearch — the owned persistent index (P3.0). Pinned to the version the
   # owned_index client was validated against (userProvided vector embedder +
-  # hybrid semanticRatio search). MEILI_MASTER_KEY gates writes; leave unset for
-  # keyless local dev only.
+  # hybrid semanticRatio search). The master key protects the shared index.
   meilisearch:
     image: getmeili/meilisearch:v1.11.3
     container_name: voidaccess-meili
     environment:
-      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env (at least 16 bytes)}
       MEILI_NO_ANALYTICS: "true"
       MEILI_ENV: ${MEILI_ENV:-production}
     volumes:
       - meili_data:/meili_data
     ports:
-      - "7700:7700"
+      - "127.0.0.1:7700:7700"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
       interval: 10s
@@ -71,13 +70,11 @@ services:
       context: .
       dockerfile: docker/Dockerfile.fastapi
       args:
-        OTX_API_KEY: ${OTX_API_KEY}
-        ABUSECH_API_KEY: ${ABUSECH_API_KEY}
-        BLOCKCYPHER_TOKEN: ${BLOCKCYPHER_TOKEN}
-        ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY}
         PLAYWRIGHT_ENABLED: ${PLAYWRIGHT_ENABLED:-false}
         GPU: ${GPU:-false}
     container_name: voidaccess-fastapi
+    env_file:
+      - .env
     # depends_on only affects RUNTIME (not build), allowing parallel builds
     depends_on:
       postgres:
@@ -91,7 +88,7 @@ services:
       TOR_PROXY_HOST: tor
       TOR_PROXY_PORT: 9050
       MEILI_HOST: http://meilisearch:7700
-      MEILI_KEY: ${MEILI_MASTER_KEY:-}
+      MEILI_KEY: ${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env (at least 16 bytes)}
       MEILI_INDEX: ${MEILI_INDEX:-onion_pages}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
@@ -103,14 +100,13 @@ services:
       CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001"
       TF_ENABLE_ONEDNN_OPTS: 0
       TF_CPP_MIN_LOG_LEVEL: 3
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       PLAYWRIGHT_ENABLED: ${PLAYWRIGHT_ENABLED:-false}
       DEEPL_API_KEY: ${DEEPL_API_KEY}
       I18N_LANGUAGES: ${I18N_LANGUAGES:-en,ru,zh}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - .:/app
       - chroma_data:/app/chroma_db
       - monitors_data:/app/data
     networks:
@@ -137,9 +133,9 @@ services:
         condition: service_healthy
     environment:
       NEXT_PUBLIC_API_URL: http://fastapi:8000
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     networks:
       - voidaccess-net
 

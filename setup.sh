@@ -413,10 +413,12 @@ print_step "3" "Secrets"
 if [ -n "$PY_CMD" ]; then
     JWT_SECRET=$($PY_CMD -c "import secrets; print(secrets.token_hex(32))")
     POSTGRES_PASSWORD=$($PY_CMD -c "import secrets; print(secrets.token_hex(16))")
+    MEILI_MASTER_KEY=$($PY_CMD -c "import secrets; print(secrets.token_hex(32))")
 else
     if [ -f /dev/urandom ]; then
         JWT_SECRET=$(cat /dev/urandom | tr -dc 'a-f0-9' | head -c 64)
         POSTGRES_PASSWORD=$(cat /dev/urandom | tr -dc 'a-f0-9' | head -c 32)
+        MEILI_MASTER_KEY=$(cat /dev/urandom | tr -dc 'a-f0-9' | head -c 64)
     else
         printf "${RED}  ✗${NC}  Cannot generate secrets — install Python 3\n"
         exit 1
@@ -434,7 +436,8 @@ fi
 
 env_update "JWT_SECRET" "$JWT_SECRET"
 env_update "POSTGRES_PASSWORD" "$POSTGRES_PASSWORD"
-print_ok "Generated JWT_SECRET and POSTGRES_PASSWORD"
+env_update "MEILI_MASTER_KEY" "$MEILI_MASTER_KEY"
+print_ok "Generated JWT_SECRET, POSTGRES_PASSWORD and MEILI_MASTER_KEY"
 
 # =============================================================================
 # STEP 4: LLM Provider Selection
