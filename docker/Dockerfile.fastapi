@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Copy project metadata and source for installation from the authoritative
 # dependency manifest in pyproject.toml.
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md alembic.ini ./
 COPY api/ api/
 COPY analysis/ analysis/
 COPY auth/ auth/
@@ -72,6 +72,7 @@ RUN --mount=type=cache,target=/root/.pip \
     OTX_API_KEY=$OTX_API_KEY ABUSECH_API_KEY=$ABUSECH_API_KEY \
     python scripts/download_seed.py || true
 
+RUN pip install --no-cache-dir psycopg2-binary asyncpg "uvicorn[standard]"
 
 # --- Runtime stage ---
 FROM python:3.11-slim

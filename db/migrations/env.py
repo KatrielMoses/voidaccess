@@ -95,7 +95,7 @@ def run_migrations_online() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,  # no pooling needed for one-shot migration runs
     )
-    with connectable.connect() as connection:
+    with connectable.begin() as connection:
         _ensure_version_column_capacity(connection)
         # ``_ensure_version_column_capacity`` issues a read (``inspect``) and
         # possibly an ALTER. Under SQLAlchemy 2.0 that autobegins a transaction
