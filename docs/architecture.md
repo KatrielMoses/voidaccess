@@ -34,7 +34,7 @@ Four services compose the stack ([`docker-compose.yml`](../docker-compose.yml)):
 | `postgres` | postgres:16-alpine | 5433 → 5432 | Persistent storage for all investigation data |
 | `tor` | custom Dockerfile.tor | 9050 → 9050 | SOCKS5 proxy for all `.onion` requests |
 | `fastapi` | custom Dockerfile.fastapi | 8000 → 8000 | Python 3.11 backend; runs the investigation pipeline |
-| `nextjs` | custom Dockerfile.nextjs | 3001 → 3000 | Next.js 14 frontend |
+| `nextjs` | custom Dockerfile.nextjs | 3001 → 3000 | Next.js 16 / React 19 frontend on Node.js 24 LTS |
 
 ### 1.2 Service Communication
 

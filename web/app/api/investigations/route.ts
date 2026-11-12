@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(request: Request) {
-  const token = getSessionAuthorization();
+  const token = await getSessionAuthorization();
   const { searchParams } = new URL(request.url);
   const skip = searchParams.get("skip");
   const limit = searchParams.get("limit");

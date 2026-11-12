@@ -3,12 +3,12 @@ import { getBackendUrl } from "@/lib/backend";
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const token = getSessionAuthorization();
+  const token = await getSessionAuthorization();
 
   const backendRes = await fetch(
-    `${getBackendUrl()}/investigations/${params.id}/progress`,
+    `${getBackendUrl()}/investigations/${(await params).id}/progress`,
     {
       headers: {
         Accept: "text/event-stream",

@@ -732,8 +732,7 @@ export function GraphVisualization({
       defaultEdgeColor:           EDGE_DEFAULT,
       stagePadding:               90,
       labelRenderedSizeThreshold: 18,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      drawLabel: (context: CanvasRenderingContext2D, data: any, settings: any) => {
+      labelRenderer: (context, data, settings) => {
         const { x, y, label, size } = data;
         if (!label) return;
 
@@ -764,8 +763,7 @@ export function GraphVisualization({
       },
 
       // Override hover renderer — same black pill, white text, blue accent border
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      hoverRenderer: (context: CanvasRenderingContext2D, data: any, settings: any) => {
+      hoverRenderer: (context, data, settings) => {
         const { x, y, label, size, color } = data;
 
         // Subtle ring around node (no gray disc)

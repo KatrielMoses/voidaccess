@@ -2,9 +2,9 @@ import { getSessionAuthorization } from "@/lib/session"
 import { NextResponse } from "next/server";
 import { getBackendUrl } from "@/lib/backend";
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  const token = getSessionAuthorization();
-    const { id } = params;
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const token = await getSessionAuthorization();
+    const { id } = await params;
   try {
     const res = await fetch(`${getBackendUrl()}/export/${encodeURIComponent(id)}/sigma`, {cache: "no-store",
       headers: {

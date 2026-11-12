@@ -1,7 +1,7 @@
 import { cookies } from "next/headers"
 
-export function getSessionAuthorization(): string | null {
-  const token = cookies().get("va_token")?.value
+export async function getSessionAuthorization(): Promise<string | null> {
+  const token = (await cookies()).get("va_token")?.value
   return token ? `Bearer ${token}` : null
 }
 
