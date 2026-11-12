@@ -67,6 +67,10 @@ voidaccess export <id> --format stix     # stix, misp, sigma, yara, snort, suric
 
 No Tor or LLM key yet? `voidaccess investigate "LockBit ransomware" --no-llm --no-tor --depth shallow` runs a clearnet-only pass. For the full stack (PostgreSQL, Tor, API and web UI) with Docker Compose, see the [self-hosting guide](docs/self-hosting.md). Python 3.10+.
 
+### One-click deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/VoidAccess/)
+
 <details>
 <summary><b>CLI reference</b></summary>
 
