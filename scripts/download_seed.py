@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import gzip
-import io
 import json
 import os
 import sys
-import zipfile
 from datetime import datetime
 from typing import Any
 
@@ -107,49 +105,6 @@ def _normalize_threatfox_ioc(ioc: dict[str, Any]) -> dict[str, Any]:
         "confidence": conf_f,
         "tags": tags,
     }
-
-
-def _flatten_threatfox_export(data: Any) -> list[dict[str, Any]]:
-    """ThreatFox /export/json/recent/ returns a dict keyed by id -> list[IOC]."""
-    rows: list[dict[str, Any]] = []
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    if isinstance(data, dict):
-        if isinstance(data.get("data"), list):
-            return [x for x in data["data"] if isinstance(x, dict)]
-        for v in data.values():
-            if isinstance(v, list):
-                rows.extend(x for x in v if isinstance(x, dict))
-            elif isinstance(v, dict):
-                rows.append(v)
-    return rows
-
-
-def _parse_threatfox_export_body(data: Any) -> list[dict[str, Any]]:
-    """Parse ThreatFox public JSON export (recent) into normalized IOC dicts."""
-    rows = _flatten_threatfox_export(data)
-    out: list[dict[str, Any]] = []
-    for i in rows:
-        o = _normalize_threatfox_ioc(i)
-        if o.get("value"):
-            out.append(o)
-    return out
-
-
-def _flatten_urlhaus_payload(data: Any) -> list[dict[str, Any]]:
-    """URLhaus full JSON is dict id -> [ {url, threat, tags, ...} ]."""
-    out: list[dict[str, Any]] = []
-    if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
-    if isinstance(data, dict):
-        if isinstance(data.get("urls"), list):
-            return [x for x in data["urls"] if isinstance(x, dict)]
-        for v in data.values():
-            if isinstance(v, list):
-                out.extend(x for x in v if isinstance(x, dict))
-            elif isinstance(v, dict):
-                out.append(v)
-    return out
 
 
 def _normalize_mb_sample(s: dict[str, Any]) -> dict[str, Any]:
@@ -268,7 +223,7 @@ async def fetch_ransomware_live() -> list[dict[str, Any]]:
 
 
 async def fetch_threatfox_bulk() -> list[dict[str, Any]]:
-    """Fetch maximum ThreatFox IOCs (API + export fallback)."""
+    """Fetch maximum ThreatFox IOCs (API bulk, then per-family search)."""
     results: list[dict[str, Any]] = []
     connector = aiohttp.TCPConnector(ssl=False)
     merge_headers = {**_base_headers(), **_abusech_headers()}
@@ -337,20 +292,6 @@ async def fetch_threatfox_bulk() -> list[dict[str, Any]]:
                             print(f"ThreatFox search [{family}]: +{len(data.get('data', []))} IOCs")
                 except Exception as e:
                     print(f"ThreatFox {family} failed: {e}")
-
-        if not results:
-            try:
-                async with session.get(
-                    "https://threatfox.abuse.ch/export/json/recent/",
-                    timeout=aiohttp.ClientTimeout(total=120),
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json(content_type=None)
-                        parsed = _parse_threatfox_export_body(data)
-                        results.extend(parsed)
-                        print(f"ThreatFox export fallback: {len(parsed)} IOCs")
-            except Exception as e:
-                print(f"ThreatFox export fallback failed: {e}")
 
     seen: set[str] = set()
     deduped: list[dict[str, Any]] = []
@@ -450,69 +391,6 @@ async def fetch_malwarebazaar_expanded() -> list[dict[str, Any]]:
 
     print(f"MalwareBazaar total: {len(results)} samples")
     return results
-
-
-async def fetch_urlhaus_active() -> list[dict[str, Any]]:
-    """Fetch active URLhaus URLs (zip JSON primary, json_online secondary)."""
-    connector = aiohttp.TCPConnector(ssl=False)
-    async with aiohttp.ClientSession(connector=connector, headers=_base_headers()) as session:
-        try:
-            async with session.get(
-                "https://urlhaus.abuse.ch/downloads/json_online/",
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json(content_type=None)
-                    urls = _flatten_urlhaus_payload(data)
-                    if urls:
-                        out = [
-                            {
-                                "source": "urlhaus",
-                                "url": u.get("url"),
-                                "threat": u.get("threat"),
-                                "tags": u.get("tags") or [],
-                            }
-                            for u in urls
-                        ]
-                        print(f"URLhaus json_online: {len(out)} URLs")
-                        return out
-        except Exception as e:
-            print(f"URLhaus json_online failed: {e}")
-
-        try:
-            async with session.get(
-                "https://urlhaus.abuse.ch/downloads/json/",
-                timeout=aiohttp.ClientTimeout(total=120),
-            ) as resp:
-                if resp.status != 200:
-                    print(f"URLhaus zip/json: HTTP {resp.status}")
-                    return []
-                content = await resp.read()
-                data: Any
-                if len(content) >= 2 and content[:2] == b"PK":
-                    with zipfile.ZipFile(io.BytesIO(content)) as z:
-                        data = None
-                        for name in z.namelist():
-                            if name.endswith(".json"):
-                                with z.open(name) as f:
-                                    data = json.loads(f.read().decode("utf-8"))
-                                break
-                        if data is None:
-                            return []
-                else:
-                    data = json.loads(content.decode("utf-8"))
-                urls = _flatten_urlhaus_payload(data)
-                out = [
-                    {"source": "urlhaus", "url": u.get("url"), "threat": u.get("threat"), "tags": u.get("tags") or []}
-                    for u in urls
-                    if isinstance(u, dict)
-                ]
-                print(f"URLhaus json/zip: {len(out)} URLs")
-                return out
-        except Exception as e:
-            print(f"URLhaus json/zip failed: {e}")
-
-    return []
 
 
 async def fetch_otx_top_pulses(api_key: str) -> list[dict[str, Any]]:
@@ -651,11 +529,10 @@ async def main() -> None:
 
     otx_key = (os.environ.get("OTX_API_KEY") or "").strip()
 
-    ransomware, threatfox, malwarebazaar, urlhaus, otx, misp = await asyncio.gather(
+    ransomware, threatfox, malwarebazaar, otx, misp = await asyncio.gather(
         fetch_ransomware_live(),
         fetch_threatfox_bulk(),
         fetch_malwarebazaar_expanded(),
-        fetch_urlhaus_active(),
         fetch_otx_top_pulses(otx_key),
         fetch_misp_galaxy_actors(),
         return_exceptions=True,
@@ -672,7 +549,6 @@ async def main() -> None:
         "ransomware_victims": _list_result(ransomware, "ransomware"),
         "threatfox_iocs": _list_result(threatfox, "threatfox"),
         "malwarebazaar_samples": _list_result(malwarebazaar, "malwarebazaar"),
-        "urlhaus_urls": _list_result(urlhaus, "urlhaus"),
         "otx_pulses": _list_result(otx, "otx"),
         "misp_galaxy": _list_result(misp, "misp"),
     }
@@ -681,7 +557,6 @@ async def main() -> None:
         "ransomware_victims",
         "threatfox_iocs",
         "malwarebazaar_samples",
-        "urlhaus_urls",
         "otx_pulses",
         "misp_galaxy",
     )

@@ -1563,7 +1563,7 @@ async def _run_investigation_impl(
             sources_used["enrichment"] = source_entry(
                 "enrichment", count=len(enrichment_pages), status="ok"
             )
-            for _source_name in ("nvd", "ransomlook", "cve_intel", "sslbl", "openphish", "phishtank", "ransomwhere"):
+            for _source_name in ("nvd", "ransomlook", "cve_intel", "sslbl", "openphish", "phishtank", "ransomwhere", "netapi"):
                 _count = sum(
                     1 for _page in enrichment_pages
                     if (_page.get("source") or _page.get("source_type")) == _source_name

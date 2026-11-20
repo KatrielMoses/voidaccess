@@ -1,19 +1,21 @@
 """
 sources/ip_reputation.py — IP reputation enrichment.
 
-Checks extracted IP addresses against four sources:
+Checks extracted IP addresses against five sources:
   - Feodo Tracker (abuse.ch): confirmed C2 IPs for banking trojans/ransomware loaders
   - C2IntelFeeds (montysecurity/C2-Tracker): framework-specific C2 IPs
+  - NetAPI: IPv4 addresses that attacked NetAPI's honeypot sensors in the last 48 h
   - AbuseIPDB: community abuse reports (requires ABUSEIPDB_API_KEY)
   - GreyNoise: scanner classification (requires GREYNOISE_API_KEY)
 
 GreyNoise "benign" IPs (known legitimate scanners) are SUPPRESSED from results.
-All other sources run without API keys — Feodo and C2IntelFeeds are fully public.
+All other sources run without API keys — Feodo, C2IntelFeeds and NetAPI are fully public.
 
 Public interface
 ----------------
 async load_feodo_feed()                    → dict[ip, malware_family]
 async load_c2_feeds()                      → dict[framework, set[ip]]
+async load_netapi_feed()                   → set[ip]
 async check_ip_reputation(ip, base_conf)   → dict with suppress/tags/threat_confidence
 async enrich_ip_entities(extraction_results, investigation_id) → (results, stats)
 """
@@ -53,6 +55,10 @@ MAX_GREYNOISE_LOOKUPS = 12
 
 FEODO_CSV_URL = "https://feodotracker.abuse.ch/downloads/ipblocklist.csv"
 
+# NetAPI honeypot attacker list: plain text, one IPv4 per line, regenerated
+# hourly, no key, CC BY 4.0 (https://netapi.com/compromised-ips/).
+NETAPI_IP_URL = "https://netapi.com/api2/?method=compromised&dataset_type=ip&header=0"
+
 C2_FEED_URLS: dict[str, str] = {
     "cobalt_strike": "https://raw.githubusercontent.com/montysecurity/C2-Tracker/main/data/Cobalt%20Strike%20C2%20IPs.txt",
     "sliver":        "https://raw.githubusercontent.com/montysecurity/C2-Tracker/main/data/Sliver%20C2%20IPs.txt",
@@ -66,10 +72,11 @@ C2_FEED_URLS: dict[str, str] = {
 _feed_cache: dict[str, dict] = {
     "feodo":   {"ips": {}, "loaded_at": 0.0},
     "c2feeds": {"ips": {}, "loaded_at": 0.0},
+    "netapi":  {"ips": set(), "loaded_at": 0.0},
 }
 
 # Module-level enrichment cache singleton (lazy-init on first lookup).
-# Feodo and C2IntelFeeds use the in-memory feed cache above — skip those.
+# Feodo, C2IntelFeeds and NetAPI use the in-memory feed cache above — skip those.
 _enrichment_cache_singleton: Optional[Any] = None
 
 
@@ -207,6 +214,32 @@ async def load_c2_feeds() -> dict[str, set[str]]:
     cache["ips"] = results
     cache["loaded_at"] = time.time()
     return results
+
+
+async def load_netapi_feed() -> set[str]:
+    """Fetch and cache the NetAPI honeypot attacker list. Returns a set of IPs."""
+    cache = _feed_cache["netapi"]
+    if time.time() - cache["loaded_at"] < _feed_ttl_seconds() and cache["ips"]:
+        return cache["ips"]  # type: ignore[return-value]
+
+    logger.info("ip_reputation: Refreshing NetAPI honeypot feed")
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with http_pool.clearnet_session() as session:
+            async with session.get(NETAPI_IP_URL, timeout=timeout) as resp:
+                if resp.status != 200:
+                    logger.warning("ip_reputation: NetAPI returned HTTP %s", resp.status)
+                    return set(cache["ips"])
+                text = await resp.text()
+
+        parsed = _parse_c2_txt(text)
+        cache["ips"] = parsed
+        cache["loaded_at"] = time.time()
+        logger.info("ip_reputation: NetAPI: %d honeypot attacker IPs loaded", len(parsed))
+        return parsed
+    except Exception as exc:
+        logger.warning("ip_reputation: NetAPI fetch failed: %s", exc)
+        return set(cache["ips"])
 
 
 # ---------------------------------------------------------------------------
@@ -370,10 +403,10 @@ async def check_ip_reputation(
     greynoise_budget: Optional[GreyNoiseBudget] = None,
 ) -> dict[str, Any]:
     """
-    Run all four reputation checks for a single IP address.
+    Run all five reputation checks for a single IP address.
 
     Returns a dict with keys:
-        ip, feodo_hit, feodo_malware, c2feed_hit, c2feed_framework,
+        ip, feodo_hit, feodo_malware, c2feed_hit, c2feed_framework, netapi_hit,
         abuseipdb_score, abuseipdb_categories, greynoise_classification,
         suppress, tags, threat_confidence
     """
@@ -383,6 +416,7 @@ async def check_ip_reputation(
         "feodo_malware": None,
         "c2feed_hit": False,
         "c2feed_framework": None,
+        "netapi_hit": False,
         "abuseipdb_score": None,
         "abuseipdb_categories": [],
         "greynoise_classification": None,
@@ -404,13 +438,14 @@ async def check_ip_reputation(
     if not is_enrichment_source_enabled("greynoise"):
         greynoise_key = ""
 
-    # Load local feeds (both are cached — near-instant after first load)
+    # Load local feeds (all cached — near-instant after first load)
     async def _no_feed() -> dict:
         return {}
 
-    feodo_data, c2feeds_data = await asyncio.gather(
+    feodo_data, c2feeds_data, netapi_data = await asyncio.gather(
         load_feodo_feed() if is_enrichment_source_enabled("feodo_tracker") else _no_feed(),
         load_c2_feeds() if is_enrichment_source_enabled("c2_tracker") else _no_feed(),
+        load_netapi_feed() if is_enrichment_source_enabled("netapi") else _no_feed(),
     )
 
     # --- Feodo Tracker check ---
@@ -432,6 +467,12 @@ async def check_ip_reputation(
                 result["tags"].append("confirmed_c2")
             result["tags"].append(f"confirmed_c2_{framework}")
             break
+
+    # --- NetAPI honeypot check ---
+    if ip in netapi_data:
+        result["netapi_hit"] = True
+        result["tags"].append("honeypot_attacker")
+        result["tags"].append("honeypot_attacker_netapi")
 
     # --- AbuseIPDB check ---
     if abuseipdb_key:
@@ -474,6 +515,8 @@ async def check_ip_reputation(
         conf += 0.15
     if result["c2feed_hit"]:
         conf += 0.15
+    if result["netapi_hit"]:
+        conf += 0.10
     score = result["abuseipdb_score"]
     if score is not None:
         if score > 80:
@@ -578,7 +621,7 @@ async def enrich_ip_entities(
 
     - Collects IP_ADDRESS entities from *extraction_results*
     - Limits to MAX_IPS unique IPs per investigation
-    - Runs all four checks concurrently
+    - Runs all five checks concurrently
     - Suppresses benign scanner IPs (GreyNoise benign): removes from results + DB
     - Updates confidence and corroborating_sources for remaining IPs
 
@@ -632,6 +675,7 @@ async def enrich_ip_entities(
         "suppressed": 0,
         "c2_confirmed": 0,
         "abuse_confirmed": 0,
+        "honeypot_attackers": 0,
         "greynoise_lookups": greynoise_budget.used,
         "greynoise_capped": greynoise_budget.capped,
     }
@@ -648,6 +692,8 @@ async def enrich_ip_entities(
             stats["c2_confirmed"] += 1
         if (rep["abuseipdb_score"] or 0) > 50:
             stats["abuse_confirmed"] += 1
+        if rep["netapi_hit"]:
+            stats["honeypot_attackers"] += 1
         if rep["tags"] or rep["threat_confidence"] > seen[ip]:
             db_updates.append((ip, rep["threat_confidence"], rep["tags"]))
 

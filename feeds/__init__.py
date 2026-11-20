@@ -3,7 +3,7 @@
 Generalizes the P1.3 ``sources/exploitdb.py`` shape: download a bulk blocklist ONCE
 (``CachedFeed`` + TTL), parse it into an in-memory index memoized by raw length, and
 match investigation entities against it by membership — zero per-entity network. Used
-for abuse.ch SSLBL, OpenPhish, and PhishTank here; reusable for P3 index-seeding and
+for abuse.ch SSLBL, OpenPhish, PhishTank, ransomwhe.re and NetAPI here; reusable for P3 index-seeding and
 P4 feed cross-validation.
 
 Every feed-derived artifact is stamped with its source feed + license (``provenance``)
@@ -72,6 +72,11 @@ LICENSES: dict[str, dict[str, str]] = {
         "license": "Open dataset (ransomwhe.re)",
         "attribution": "ransomwhe.re",
         "url": "https://ransomwhe.re/",
+    },
+    "netapi": {
+        "license": "CC BY 4.0",
+        "attribution": "NetAPI compromised domain list (netapi.com)",
+        "url": "https://netapi.com/compromised-urls/",
     },
     "hibp_pwned_passwords": {
         "license": "HIBP Pwned Passwords (CC BY 4.0 / Acceptable Use)",
@@ -376,7 +381,20 @@ RANSOMWHERE = BlocklistFeed(
     tag_builder=lambda family: [f"ransom_wallet_{_slug(family)}"],
 )
 
-_FEEDS = [SSLBL, OPENPHISH, PHISHTANK, RANSOMWHERE]
+NETAPI = BlocklistFeed(
+    name="netapi",
+    # Keyless, CC BY 4.0, regenerated hourly: domains currently listed as
+    # compromised or malicious, one per line.
+    url="https://netapi.com/api2/?method=compromised&dataset_type=url&header=0",
+    cache_path="/tmp/voidaccess_netapi_domains.txt",
+    ttl_seconds=43200,  # 12 h
+    parser=parse_url_lines,
+    match_entity_types={"DOMAIN"},
+    license_id="netapi",
+    flag_tags=["compromised_domain", "compromised_domain_netapi"],
+)
+
+_FEEDS = [SSLBL, OPENPHISH, PHISHTANK, RANSOMWHERE, NETAPI]
 
 
 # --------------------------------------------------------------------------- #

@@ -58,7 +58,7 @@ def test_the_recommended_cloud_value_is_valid_and_covers_the_licence_gap(monkeyp
 def test_umbrella_ids_deny_their_children(monkeypatch):
     monkeypatch.setenv(sc.DISABLED_ENV, "paste_sites,blocklists")
     for child in ("pastebin", "paste_ee", "dpaste", "rentry", "sslbl", "openphish",
-                  "phishtank", "ransomwhere"):
+                  "phishtank", "ransomwhere", "netapi"):
         assert sc.is_source_disabled(child), child
     assert not sc.is_source_disabled("nvd")
 

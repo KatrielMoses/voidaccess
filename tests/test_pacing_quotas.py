@@ -198,6 +198,7 @@ async def test_capped_investigation_reports_an_honest_status(monkeypatch):
     monkeypatch.setattr(ip_reputation, "_check_greynoise", _fake_check)
     monkeypatch.setattr(ip_reputation, "load_feodo_feed", _no_feeds)
     monkeypatch.setattr(ip_reputation, "load_c2_feeds", _no_feeds)
+    monkeypatch.setattr(ip_reputation, "load_netapi_feed", _no_feeds)
     monkeypatch.setattr(
         ip_reputation, "_update_entity_reputations", lambda *a, **k: None
     )

@@ -1292,7 +1292,7 @@ _NEW_SOURCE_IDS: dict[str, tuple[str, ...]] = {
     "historical": ("mitre_attack", "fbi_doj_press"),
     "cve_fusion": ("cve_intel", "epss", "exploitdb"),
     "mitre_overlay": ("mitre_attack",),
-    "blocklists": ("sslbl", "openphish", "phishtank", "ransomwhere"),
+    "blocklists": ("sslbl", "openphish", "phishtank", "ransomwhere", "netapi"),
 }
 # Outer-gather task names -> source ids.
 _OUTER_SOURCE_IDS: dict[str, tuple[str, ...]] = {
@@ -1971,7 +1971,7 @@ async def enrich_investigation(
     ]
     _new_source_ids = (
         "cisa_kev", "nvd", "shodan_internetdb", "virustotal", "mitre_attack",
-        "fbi_doj_press", "blocklists", "sslbl", "openphish", "phishtank", "ransomwhere",
+        "fbi_doj_press", "blocklists", "sslbl", "openphish", "phishtank", "ransomwhere", "netapi",
         "epss", "exploitdb",
     )
     _named: list[tuple[str, Any]] = [

@@ -1741,8 +1741,8 @@ async def _run_investigation_task(
         _cve_intel_n = sum(1 for p in enrichment_pages if p.get("source") == "cve_intel")
         sources_used["cve_intel"] = _src_status(_cve_intel_n, "enrichment")
 
-        # P1.4/P1.5 — blocklist matches (SSLBL / OpenPhish / PhishTank / ransomwhe.re).
-        for _feed_name in ("sslbl", "openphish", "phishtank", "ransomwhere"):
+        # P1.4/P1.5 — blocklist matches (SSLBL / OpenPhish / PhishTank / ransomwhe.re / NetAPI).
+        for _feed_name in ("sslbl", "openphish", "phishtank", "ransomwhere", "netapi"):
             _feed_n = sum(1 for p in enrichment_pages if p.get("source") == _feed_name)
             sources_used[_feed_name] = _src_status(_feed_n, "enrichment")
 
