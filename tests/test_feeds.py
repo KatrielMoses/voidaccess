@@ -155,6 +155,27 @@ async def test_ransomwhere_flags_wallet_case_sensitive_with_family_and_provenanc
     assert page["provenance"]["attribution"] == "ransomwhe.re"
 
 
+_NETAPI_TXT = "# NetAPI.com - compromised URLs\nevil-shop.example\nbad.example.org\n"
+
+
+async def test_netapi_flags_listed_domain_with_provenance(monkeypatch):
+    _use_feed(monkeypatch, feeds.NETAPI, _NETAPI_TXT)
+    entities = [
+        {"entity_type": "DOMAIN", "value": "Evil-Shop.example."},  # case + trailing dot
+        {"entity_type": "DOMAIN", "value": "clean.example"},
+        {"entity_type": "IP_ADDRESS", "value": "bad.example.org"},  # wrong type
+    ]
+    matches = await feeds.NETAPI.match(entities)
+
+    assert [m[0]["value"] for m in matches] == ["Evil-Shop.example."]
+    assert set(matches[0][1]) == {
+        "compromised_domain", "compromised_domain_netapi", "feed:netapi",
+    }
+    page = feeds._feed_page(feeds.NETAPI, matches)
+    assert page["provenance"]["license"] == "CC BY 4.0"
+    assert page["provenance"]["url"] == "https://netapi.com/compromised-urls/"
+
+
 def test_license_registry_has_attribution_for_cc_by():
     assert feeds.LICENSES["ransomlook"]["license"] == "CC BY 4.0"
     assert feeds.provenance("ransomlook")["attribution"]

@@ -91,6 +91,7 @@ PARENT_IDS: dict[str, str] = {
     "openphish": "blocklists",
     "phishtank": "blocklists",
     "ransomwhere": "blocklists",
+    "netapi": "blocklists",
 }
 # ``fbi_doj_press`` has no parent: denying ``rss`` also stops the RSS scraper's
 # FBI/DOJ feeds (see is_rss_feed_disabled), but not the separate justice.gov
@@ -170,6 +171,7 @@ SOURCE_URL_RULES: tuple[tuple[str, str, str], ...] = (
     ("auth.abuse.ch", "", "urlhaus"),
     ("sslbl.abuse.ch", "", "sslbl"),
     ("feodotracker.abuse.ch", "", "feodo_tracker"),
+    ("netapi.com", "", "netapi"),
     ("ransomware.live", "", "ransomware_live"),
     ("ransomlook.io", "", "ransomlook"),
     ("api.ransomwhe.re", "", "ransomwhere"),

@@ -95,7 +95,7 @@ Optional clearnet requests can use [ScrapingAnt](https://scrapingant.com/?ref=mz
 | Dark-web search | 12+ Tor search engines and curated `.onion` seeds |
 | Open-web collection | Paste sites, GitHub, GitLab and curated RSS feeds |
 | Threat feeds | AlienVault OTX, abuse.ch (MalwareBazaar, ThreatFox, URLhaus), CISA KEV |
-| IP and domain context | Shodan InternetDB, GreyNoise, AbuseIPDB, Feodo Tracker, crt.sh, URLScan.io, Wayback Machine, CIRCL PDNS, RDAP |
+| IP and domain context | Shodan InternetDB, GreyNoise, AbuseIPDB, Feodo Tracker, NetAPI, crt.sh, URLScan.io, Wayback Machine, CIRCL PDNS, RDAP |
 | File and identity context | VirusTotal, Hybrid Analysis, Have I Been Pwned, EmailRep |
 | Blockchain | BlockCypher and Etherscan |
 

@@ -81,7 +81,7 @@ def test_required_ids_registered():
     required = (
         "otx malwarebazaar threatfox urlhaus ransomware_live ransomlook cisa_kev nvd epss "
         "exploitdb shodan_internetdb virustotal mitre_attack blocklists feodo_tracker "
-        "c2_tracker abuseipdb greynoise crtsh wayback urlscan hybrid_analysis hibp emailrep "
+        "c2_tracker netapi abuseipdb greynoise crtsh wayback urlscan hybrid_analysis hibp emailrep "
         "disposable_email xposedornot leakcheck hudsonrock rdap circl securitytrails "
         "blockcypher etherscan hibp_pwned_passwords"
     ).split()
@@ -311,7 +311,7 @@ async def test_blocklist_feed_gating_and_umbrella(monkeypatch):
 
         monkeypatch.setenv(ENV, "blocklists")
         await feeds.enrich_blocklists(entities)
-        assert set(seen) == {"sslbl", "openphish", "phishtank", "ransomwhere"} - {"phishtank"} | (
+        assert set(seen) == {"sslbl", "openphish", "phishtank", "ransomwhere", "netapi"} - {"phishtank"} | (
             {"phishtank"} if feeds.PHISHTANK._has_key() else set())
 
         seen.clear()

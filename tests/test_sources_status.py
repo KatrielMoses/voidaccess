@@ -26,6 +26,7 @@ from tests import e1c_harness as h
         ("https://www.justice.gov/news/press-releases/rss", "fbi_doj_press"),
         ("https://raw.githubusercontent.com/mitre/cti/master/x.json", "mitre_attack"),
         ("https://raw.githubusercontent.com/montysecurity/C2-Tracker/main/data/x", "c2_tracker"),
+        ("https://netapi.com/api2/?method=compromised&dataset_type=ip&header=0", "netapi"),
         ("https://gitlab.com/exploit-database/exploitdb/-/raw/main/f.csv", "exploitdb"),
         ("https://gitlab.com/api/v4/search", "gitlab"),
         ("https://pastebin.com/raw/abcd1234", "pastebin"),

@@ -370,6 +370,7 @@ Cancellation checkpoint after this step.
 **Step 6.1 — IP reputation enrichment**
 - `sources/ip_reputation.py` enriches `IP_ADDRESS` entities (up to 50 per investigation).
 - **Feodo Tracker** (abuse.ch) and **C2IntelFeeds** (montysecurity/C2-Tracker, 6 frameworks): IPs on either list are tagged `C2` and their confidence is raised to 1.0. Both are public and require no key. Blocklists are cached in-memory and refreshed every `C2_FEED_CACHE_TTL` hours.
+- **NetAPI** (netapi.com): IPv4 addresses that attacked NetAPI's honeypot sensors in the last 48 hours. IPs on the list are tagged `honeypot_attacker` and their confidence is raised by 0.10. Public, no key, CC BY 4.0; cached and refreshed like the two lists above.
 - **AbuseIPDB** (`ABUSEIPDB_API_KEY`): abuse confidence score and usage type. Skipped if key absent. Free tier: 1,000 checks/day.
 - **GreyNoise** (`GREYNOISE_API_KEY`): classifies IPs as `benign_scanner`, `malicious`, or `unknown`. IPs classified `benign_scanner` are suppressed from the entity list before DB write. Skipped if key absent.
 - `MALWARE_FAMILY` entities are auto-created from C2 feed framework names and linked to the source IP.
@@ -380,6 +381,7 @@ Cancellation checkpoint after this step.
 - **URLScan.io** (`URLSCAN_API_KEY`): fetches existing scan results, malicious verdict, and communicating IPs. Key is optional; public scan results are available without one. `URLSCAN_SUBMIT=true` submits a new scan (public — disabled by default for OPSEC).
 - **Wayback Machine**: CDX API query for historical snapshots; tags domains with an `ARCHIVED` flag when historical content exists. No key required.
 - Results are cached 24 h (crt.sh, Wayback) or 6 h (URLScan.io).
+- **NetAPI compromised-domain list** (`feeds/__init__.py`, matched in memory with the other bulk blocklists): `DOMAIN` entities on the list are tagged `compromised_domain` and `feed:netapi`. Public, no key, CC BY 4.0, refreshed every 12 h.
 
 **Step 6.3 — Hash reputation enrichment**
 - `sources/hash_reputation.py` enriches `FILE_HASH_MD5`, `FILE_HASH_SHA1`, `FILE_HASH_SHA256` entities (up to 50 per investigation; SHA-256 prioritised). All sources are queried concurrently. Cache TTL: 48 h.
@@ -736,6 +738,7 @@ Creates `PAID_TO` edges in the entity graph between wallets that transacted. Lim
 |---|---|---|---|
 | **Feodo Tracker** | C2 IPs for banking trojans and ransomware loaders | None | Yes (public) |
 | **C2IntelFeeds** | C2 IPs for Cobalt Strike, Sliver, Metasploit, Brute Ratel, PoshC2, Havoc | None | Yes (public) |
+| **NetAPI** | IPv4 addresses that attacked NetAPI's honeypot sensors in the last 48 hours | None | Yes (public, CC BY 4.0) |
 | **AbuseIPDB** | Abuse confidence score; usage type | `ABUSEIPDB_API_KEY` — skipped if absent | Yes; 1,000 checks/day |
 | **GreyNoise** | Scanner classification; suppresses `benign_scanner` IPs before DB write | `GREYNOISE_API_KEY` — skipped if absent | Free tier available |
 
@@ -797,7 +800,7 @@ The following table maps all post-extraction enrichment steps to their pipeline 
 
 | Step | Entity types enriched | Sources | Config |
 |---|---|---|---|
-| **6.1** IP reputation | `IP_ADDRESS` (up to 50) | Feodo Tracker, C2IntelFeeds, AbuseIPDB, GreyNoise | `ABUSEIPDB_API_KEY`, `GREYNOISE_API_KEY`, `C2_FEED_CACHE_TTL` |
+| **6.1** IP reputation | `IP_ADDRESS` (up to 50) | Feodo Tracker, C2IntelFeeds, NetAPI, AbuseIPDB, GreyNoise | `ABUSEIPDB_API_KEY`, `GREYNOISE_API_KEY`, `C2_FEED_CACHE_TTL` |
 | **6.2** Domain reputation | `DOMAIN`, `DOMAIN_NAME` (up to 30) | crt.sh, URLScan.io, Wayback Machine | `URLSCAN_API_KEY`, `URLSCAN_SUBMIT` |
 | **6.3** Hash reputation | `FILE_HASH_MD5/SHA1/SHA256` (up to 50) | Hybrid Analysis, MalwareBazaar, ThreatFox, VirusTotal | `HYBRID_ANALYSIS_API_KEY`, `VT_API_KEY`, `ABUSECH_API_KEY` |
 | **6.4** Email reputation | `EMAIL_ADDRESS` (up to 30) | HIBP, EmailRep, disposable blocklist | `HIBP_API_KEY`, `EMAILREP_API_KEY` |
@@ -1444,7 +1447,7 @@ GET /admin/enrichment-cache/stats
 |---|---|---|
 | `ABUSEIPDB_API_KEY` | — | AbuseIPDB community abuse reports. Optional; skipped if absent. Free tier: 1,000 checks/day |
 | `GREYNOISE_API_KEY` | — | GreyNoise scanner classification. Optional; skipped if absent. IPs classified `benign_scanner` are removed from entity results before DB write |
-| `C2_FEED_CACHE_TTL` | `24` | Hours between in-memory refreshes of the Feodo Tracker and C2IntelFeeds blocklists |
+| `C2_FEED_CACHE_TTL` | `24` | Hours between in-memory refreshes of the Feodo Tracker, C2IntelFeeds and NetAPI blocklists |
 
 ### 13.12 Domain Reputation Enrichment
 
@@ -1518,13 +1521,14 @@ The licence column is the verdict in `platform/docs/baseline/E0-LICENCE-TABLE.md
 | `virustotal` | VirusTotal file-hash lookups (entity enrichment and hash reputation) | `sources/virustotal.py`, `sources/hash_reputation.py` | BYO |
 | `mitre_attack` | MITRE ATT&CK STIX actor-to-technique mapping and the technique overlay | `sources/historical_intel.py`, `sources/enrichment.py` | on our keys |
 | `fbi_doj_press` | justice.gov press-release RSS matched against actors | `sources/historical_intel.py` | not in table (cf. row 39, RSS feeds) |
-| `blocklists` | Umbrella id: enables `sslbl`, `openphish`, `phishtank` and `ransomwhere` together | `feeds/__init__.py` | not in table |
+| `blocklists` | Umbrella id: enables `sslbl`, `openphish`, `phishtank`, `ransomwhere` and `netapi` together | `feeds/__init__.py` | not in table |
 | `sslbl` | abuse.ch SSL Blacklist | `feeds/__init__.py` | not in table (abuse.ch terms, cf. row 12) |
 | `openphish` | OpenPhish community feed | `feeds/__init__.py` | not in table |
 | `phishtank` | PhishTank bulk feed | `feeds/__init__.py` | not in table |
 | `ransomwhere` | Ransomwhere BTC ransom-wallet list | `feeds/__init__.py` | not in table |
 | `feodo_tracker` | abuse.ch Feodo Tracker C2 IP list | `sources/ip_reputation.py` | off |
 | `c2_tracker` | C2-Tracker / C2IntelFeeds GitHub lists | `sources/ip_reputation.py` | off |
+| `netapi` | NetAPI compromised-domain list and honeypot attacker IP list | `feeds/__init__.py`, `sources/ip_reputation.py` | not in table (CC BY 4.0, attribution) |
 | `abuseipdb` | AbuseIPDB IP check | `sources/ip_reputation.py` | BYO |
 | `greynoise` | GreyNoise Community IP check | `sources/ip_reputation.py` | off (BYO) |
 | `crtsh` | crt.sh certificate-transparency subdomains | `sources/domain_reputation.py` | on our keys |
@@ -1635,7 +1639,7 @@ Why enrichment is not run concurrently with scraping or extraction: the query-on
 
 **Unknown id: hard error**, like the allowlist, because a typo would leave a source running that the operator meant to switch off. The CLI validates it at startup (exit code 2); the API validates it when an investigation starts (`SourceControlError`, a `ValueError`).
 
-**Umbrella ids.** `paste_sites` denies `pastebin`, `paste_ee`, `dpaste` and `rentry`; `blocklists` denies `sslbl`, `openphish`, `phishtank` and `ransomwhere`; `rss` denies every RSS feed including the FBI and DOJ ones. `fbi_doj_press` on its own denies both the justice.gov press-release lookup in historical intel and the two FBI/DOJ feeds in the RSS scraper.
+**Umbrella ids.** `paste_sites` denies `pastebin`, `paste_ee`, `dpaste` and `rentry`; `blocklists` denies `sslbl`, `openphish`, `phishtank`, `ransomwhere` and `netapi`; `rss` denies every RSS feed including the FBI and DOJ ones. `fbi_doj_press` on its own denies both the justice.gov press-release lookup in historical intel and the two FBI/DOJ feeds in the RSS scraper.
 
 Search-stage source ids (enrichment ids are in 13.16):
 

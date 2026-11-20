@@ -8,6 +8,7 @@ confidence calculation, cache TTL, private IP filtering, and concurrency.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import time
@@ -25,6 +26,8 @@ from sources.ip_reputation import (
     _feed_cache,
 )
 
+_REAL_LOAD_NETAPI_FEED = ipr.load_netapi_feed
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -36,6 +39,14 @@ def _reset_cache():
     _feed_cache["feodo"]["loaded_at"] = 0.0
     _feed_cache["c2feeds"]["ips"] = {}
     _feed_cache["c2feeds"]["loaded_at"] = 0.0
+    _feed_cache["netapi"]["ips"] = set()
+    _feed_cache["netapi"]["loaded_at"] = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _no_live_netapi_feed(monkeypatch):
+    """Keep the NetAPI feed offline unless a test patches it explicitly."""
+    monkeypatch.setattr(ipr, "load_netapi_feed", AsyncMock(return_value=set()))
 
 
 def _make_entity(ip: str, confidence: float = 1.0):
@@ -446,3 +457,149 @@ async def test_concurrent_enrichment_of_10_ips():
     assert stats["suppressed"] == 0
     # All private IPs (10.x.x.x) return immediately, no tags
     assert len(filtered[0].entities) == 10
+
+
+# ---------------------------------------------------------------------------
+# 15. NetAPI honeypot list: parsing, hit tags, confidence, gate, stats
+# ---------------------------------------------------------------------------
+
+class _FakeResp:
+    def __init__(self, status: int, body: str):
+        self.status = status
+        self._body = body
+
+    async def text(self) -> str:
+        return self._body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class _FakeSession:
+    def __init__(self, status: int, body: str):
+        self.urls: list[str] = []
+        self._status = status
+        self._body = body
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        return _FakeResp(self._status, self._body)
+
+
+def _install_session(monkeypatch, session):
+    @contextlib.asynccontextmanager
+    async def _cm():
+        yield session
+
+    monkeypatch.setattr(ipr.http_pool, "clearnet_session", _cm)
+
+
+@pytest.mark.asyncio
+async def test_netapi_feed_loads_plain_list(monkeypatch):
+    _reset_cache()
+    monkeypatch.setattr(ipr, "load_netapi_feed", _REAL_LOAD_NETAPI_FEED)
+    session = _FakeSession(200, "1.2.3.4\n5.6.7.8\n\n# comment\n5.6.7.8\n")
+    _install_session(monkeypatch, session)
+
+    result = await ipr.load_netapi_feed()
+
+    assert result == {"1.2.3.4", "5.6.7.8"}
+    assert session.urls == [ipr.NETAPI_IP_URL]
+    assert _feed_cache["netapi"]["ips"] == {"1.2.3.4", "5.6.7.8"}
+
+    # Second call within the TTL is served from the cache
+    again = await ipr.load_netapi_feed()
+    assert again == result
+    assert len(session.urls) == 1
+
+
+@pytest.mark.asyncio
+async def test_netapi_feed_http_error_keeps_previous_list(monkeypatch):
+    _reset_cache()
+    monkeypatch.setattr(ipr, "load_netapi_feed", _REAL_LOAD_NETAPI_FEED)
+    _feed_cache["netapi"]["ips"] = {"9.9.9.9"}
+    _feed_cache["netapi"]["loaded_at"] = 0.0  # stale, forces a refresh
+    _install_session(monkeypatch, _FakeSession(503, ""))
+
+    result = await ipr.load_netapi_feed()
+
+    assert result == {"9.9.9.9"}
+
+
+@pytest.mark.asyncio
+async def test_netapi_hit_adds_honeypot_tags_and_boosts_confidence():
+    _reset_cache()
+    ip = "45.33.32.156"
+
+    with patch.object(ipr, "load_feodo_feed", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_c2_feeds", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_netapi_feed", new=AsyncMock(return_value={ip})):
+        env = {k: v for k, v in os.environ.items()}
+        env.pop("ABUSEIPDB_API_KEY", None)
+        env.pop("GREYNOISE_API_KEY", None)
+        with patch.dict(os.environ, env, clear=True):
+            result = await check_ip_reputation(ip, base_confidence=0.8)
+
+    assert result["netapi_hit"] is True
+    assert "honeypot_attacker" in result["tags"]
+    assert "honeypot_attacker_netapi" in result["tags"]
+    assert "confirmed_c2" not in result["tags"]
+    assert result["threat_confidence"] == pytest.approx(0.8 + 0.10)
+
+
+@pytest.mark.asyncio
+async def test_netapi_miss_leaves_result_unchanged():
+    _reset_cache()
+
+    with patch.object(ipr, "load_feodo_feed", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_c2_feeds", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_netapi_feed", new=AsyncMock(return_value={"1.1.1.2"})):
+        env = {k: v for k, v in os.environ.items()}
+        env.pop("ABUSEIPDB_API_KEY", None)
+        env.pop("GREYNOISE_API_KEY", None)
+        with patch.dict(os.environ, env, clear=True):
+            result = await check_ip_reputation("8.8.4.4", base_confidence=0.8)
+
+    assert result["netapi_hit"] is False
+    assert result["tags"] == []
+    assert result["threat_confidence"] == pytest.approx(0.8)
+
+
+@pytest.mark.asyncio
+async def test_netapi_disabled_by_allowlist_is_not_loaded(monkeypatch):
+    _reset_cache()
+    netapi_mock = AsyncMock(return_value={"45.33.32.156"})
+    monkeypatch.setenv("VOIDACCESS_ENRICHMENT_SOURCES", "feodo_tracker,c2_tracker")
+
+    with patch.object(ipr, "load_feodo_feed", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_c2_feeds", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_netapi_feed", new=netapi_mock):
+        result = await check_ip_reputation("45.33.32.156", base_confidence=0.8)
+
+    netapi_mock.assert_not_called()
+    assert result["netapi_hit"] is False
+
+
+@pytest.mark.asyncio
+async def test_enrich_counts_honeypot_attackers():
+    _reset_cache()
+    ips = ["45.33.32.156", "45.33.32.157"]
+    results = [_make_result([_make_entity(ip, 0.8) for ip in ips])]
+
+    with patch.object(ipr, "load_feodo_feed", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_c2_feeds", new=AsyncMock(return_value={})), \
+         patch.object(ipr, "load_netapi_feed", new=AsyncMock(return_value={ips[0]})), \
+         patch.object(ipr, "_suppress_entities_in_db", return_value=None), \
+         patch.object(ipr, "_update_entity_reputations", return_value=None):
+        env = {k: v for k, v in os.environ.items()}
+        env.pop("ABUSEIPDB_API_KEY", None)
+        env.pop("GREYNOISE_API_KEY", None)
+        with patch.dict(os.environ, env, clear=True):
+            _, stats = await enrich_ip_entities(results, "test-investigation-id")
+
+    assert stats["checked"] == 2
+    assert stats["honeypot_attackers"] == 1
+    assert stats["c2_confirmed"] == 0
